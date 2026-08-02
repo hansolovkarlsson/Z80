@@ -24,11 +24,11 @@ The emulator lives in `emu/src/`, the assembler in `asm/src/`, the
 disassembler in `disasm/src/`; the Makefile builds all three into `bin/`.
 
 ```
-make               # builds bin/z80_emulator, bin/z80asm, and bin/z80dasm
+make               # builds bin/z80, bin/z80asm, and bin/z80dasm
 make emulator      # just the emulator
 make assembler     # just the assembler
 make disassembler  # just the disassembler
-make run           # build the emulator, then ./bin/z80_emulator | less (runs zexall.com)
+make run           # build the emulator, then ./bin/z80 | less (runs zexall.com)
 make clean         # remove object files and all three binaries
 ```
 
@@ -46,7 +46,7 @@ argv[1] (paths are resolved relative to the working directory you invoke
 the binary from, typically the repo root):
 
 ```
-./bin/z80_emulator zexdoc.com
+./bin/z80 zexdoc.com
 ```
 
 (`zexdoc.com`/`zexall.com` live in `emu/zexall/ZEXALL-main/`, which is also
@@ -164,7 +164,7 @@ rather than pure text substitution. See `docs/ASSEMBLER.md` for the syntax
 this all produces/consumes, and `docs/ROADMAP.md` for exact project
 status — as of the last update, `bin/z80asm` assembles the real,
 unmodified `zexall.z80`/`zexdoc.z80` with zero errors, and the result runs
-cleanly through `bin/z80_emulator`.
+cleanly through `bin/z80`.
 
 ## Disassembler (`disasm/src/`)
 

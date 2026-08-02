@@ -25,7 +25,7 @@ generally.
 
 **Milestone reached**: `bin/z80asm emu/zexall/ZEXALL-main/zexall.z80` now
 assembles with zero errors, and running the result through
-`bin/z80_emulator` reports the same clean 67/67 OK / 0 errors / "Tests
+`bin/z80` reports the same clean 67/67 OK / 0 errors / "Tests
 complete" as the original pre-built `zexall.com` — i.e. our own assembler,
 assembling the real unmodified `zexall.z80` source, produces a program our
 own (independently ZEXALL-validated) emulator executes correctly. Getting
@@ -59,7 +59,7 @@ there surfaced and fixed several real dialect gaps, documented below.
   directory, not the invoking working directory. Also added `ERROR
   'message'`, used by `zexall.z80`'s own macros as a self-check.
 - [x] Four example programs (`asm/examples/`) assembled and run through
-  `bin/z80_emulator` as an end-to-end correctness check — not just
+  `bin/z80` as an end-to-end correctness check — not just
   assembled, actually executed and checked for the right behavior:
   `hello.asm` (labels, `DJNZ`, conditional jumps, CP/M BDOS calls),
   `selftest.asm` ((IX+d)/(IY+d) addressing, `PUSH`/`POP` IX/IY,

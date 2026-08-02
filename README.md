@@ -17,7 +17,7 @@ directives, expression evaluation, conditional assembly
 (`IF`/`ELSE`/`ENDIF`), and `MACRO`/`ENDM`/`LOCAL`/`INCLUDE`. It's proven
 against the real target: `bin/z80asm` assembles the actual, unmodified
 `zexall.z80`/`zexdoc.z80` source with zero errors, and running the result
-through `bin/z80_emulator` passes all 67 tests, same as the original
+through `bin/z80` passes all 67 tests, same as the original
 pre-built binaries.
 
 A disassembler (`disasm/`) covers the same instruction set in reverse:
@@ -34,7 +34,7 @@ next, what's done, and known gaps (I/O ports, interrupts).
 ## Build & run
 
 ```
-make               # builds bin/z80_emulator, bin/z80asm, and bin/z80dasm
+make               # builds bin/z80, bin/z80asm, and bin/z80dasm
 make emulator      # just the emulator
 make assembler     # just the assembler
 make disassembler  # just the disassembler
@@ -44,12 +44,12 @@ make clean         # remove build output
 
 Correctness is verified by running the ZEXALL/ZEXDOC exerciser and reading
 its console output: every opcode should report `OK`; a wrong flag or result
-shows up as an `ERROR` line naming the instruction. `bin/z80_emulator`
+shows up as an `ERROR` line naming the instruction. `bin/z80`
 defaults to running `emu/zexall/ZEXALL-main/zexall.com`; pass a different
 `.com` file as an argument to run something else:
 
 ```
-./bin/z80_emulator emu/zexall/ZEXALL-main/zexdoc.com
+./bin/z80 emu/zexall/ZEXALL-main/zexdoc.com
 ```
 
 The assembler takes a source file and writes a raw binary (an `ORG 100h`
@@ -57,7 +57,7 @@ source produces a CP/M `.com`-ready image):
 
 ```
 ./bin/z80asm asm/examples/hello.asm -o hello.com
-./bin/z80_emulator hello.com
+./bin/z80 hello.com
 ```
 
 The disassembler takes a binary and prints a listing (default load

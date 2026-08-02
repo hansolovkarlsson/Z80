@@ -6,7 +6,7 @@ BIN_DIR := bin
 EMU_SRC_DIR := emu/src
 EMU_SRCS := $(wildcard $(EMU_SRC_DIR)/*.c)
 EMU_OBJS := $(EMU_SRCS:.c=.o)
-EMU_TARGET := $(BIN_DIR)/z80_emulator
+EMU_TARGET := $(BIN_DIR)/z80
 
 ASM_SRC_DIR := asm/src
 ASM_SRCS := $(wildcard $(ASM_SRC_DIR)/*.c)
