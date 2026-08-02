@@ -1,0 +1,16 @@
+x1.	Would you like to start by writing the opcode fetch/decode loop and handling basic instructions (like NOP, LD, and simple jumps)?
+2.	Or would you like to see how to handle the prefix opcodes (0xCB, 0xED, 0xDD, 0xFD) using function lookup tables?
+
+x1.	Arithmetic & Logic Unit (ALU): Implement 8-bit ADD/ADC/SUB/SBC operations and the half-carry/overflow flag logic.
+x2.	CP/M Test Runner Setup: Set up a main.c wrapper that loads zexall.com into a 64KB array and runs z80_step() in a loop to start testing.
+
+x1.	8-bit INC / DEC and 16-bit ADD / INC / DEC
+x2.	0xCB Prefix Table Setup (for BIT, SET, RES, RLC, RRC, etc.)
+x3.	Special instructions (CPL, SCF, CCF, NEG)
+
+
+x1.	Block Transfers & Searches (LDIR, CPIR, etc.)
+x2.	IX / IY Index Register Prefixes (0xDD and 0xFD)
+3.	Control Flow, Stack Ops & Exchanges (CALL, RET cc, EXX, EX DE, HL)
+
+aa

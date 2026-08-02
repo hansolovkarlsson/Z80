@@ -1,0 +1,23 @@
+
+Make a z80 emulator
+Plug in GTK and make a computer emulator
+My own design
+Then create a ROM with a user interface
+	a stack VM would be cool
+	and I wonder if Logo prefixed notation
+	can be combined with stack somehow
+
+
+Actually, it looks like Gemini is going to have a CP/M BDOS 
+
+Phase 1:
+	the Z80 emulator, zexall full compatibility
+
+Phase 2:
+	assembler that can read zexall.z80
+
+Phase 3:
+	load CP/M and get it to work on it
+
+Phase 4:
+	
