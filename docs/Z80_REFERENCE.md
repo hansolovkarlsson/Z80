@@ -225,24 +225,23 @@ selection works for this double-prefixed form.
 
 ## Implementation status
 
-Not every instruction real Z80 hardware supports is currently executable
-by `emu/src/z80.c` — the emulator was built incrementally against
-`zexall`/`zexdoc`, which don't exercise everything. The assembler
-(`asm/src/encode.c`) is comprehensive and can *encode* all of the
-instructions above, including several the emulator can't yet execute:
+Nearly every instruction real Z80 hardware supports is executable by
+`emu/src/z80.c` (verified by `zexall`/`zexdoc`, plus `asm/examples/
+gaps_test.asm` for the instructions those exercisers don't touch). The one
+remaining gap:
 
 | Instructions | Emulator status |
 |---|---|
-| `IN A,(n)` / `IN r,(C)` / `OUT (C),r` | Not implemented (`IN` isn't wired into `main_opcode_table` at all) |
-| `OUT (n),A` | Wired up, but the port write is discarded as a no-op |
-| `IM 0` / `IM 1` / `IM 2` | Not implemented — no interrupt-mode state is tracked |
-| `RETI` / `RETN` | Not implemented — `ED 0x4D`/`0x45` fall through to "unimplemented opcode" |
-| `LD A,I` / `LD A,R` / `LD I,A` / `LD R,A` | Not implemented — `ED 0x57`/`0x5F`/`0x47`/`0x4F` likewise |
-| Interrupt delivery (`INT`/`NMI` from the host side) | No mechanism exists at all; `DI`/`EI` just toggle `iff1`/`iff2`, nothing reads them |
+| Interrupt delivery (`INT`/`NMI` from the host side) | No mechanism exists yet — `IM 0`/`1`/`2` set `cpu->im`, and `DI`/`EI`/`RETN` correctly maintain `iff1`/`iff2`, but nothing ever raises an interrupt for them to gate. Deferred to Phase 3, once there's a BIOS device (e.g. a timer) that actually needs one — see `docs/ROADMAP.md`'s "Known gaps" section. |
+
+`IN A,(n)`/`IN r,(C)`/`OUT (n),A`/`OUT (C),r`, `IM 0`/`1`/`2`, `RETI`/
+`RETN`, and `LD A,I`/`LD A,R`/`LD I,A`/`LD R,A` are all implemented,
+including their undocumented duplicate `ED` encodings. `IN`/`OUT` are
+backed by a real 256-entry port array (`cpu->io_ports`) rather than being a
+no-op — no actual devices are attached, but a port read now returns
+whatever was last written to it.
 
 Everything else in this document — including the undocumented
 `IXH`/`IXL`/`IYH`/`IYL` forms, `SLL`, and all the `X`/`Y` flag quirks — is
 implemented and verified: both `zexall.com` and `zexdoc.com` run to
-completion with 67/67 tests OK, 0 errors. See `docs/ROADMAP.md`'s "Known
-gaps" section for the up-to-date list and what's planned to close it
-(Phase 3, since I/O and interrupts matter for a real CP/M BIOS layer).
+completion with 67/67 tests OK, 0 errors.

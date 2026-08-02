@@ -33,6 +33,14 @@ void z80_write_byte(Z80 *cpu, uint16_t address, uint8_t value) {
     cpu->memory[address] = value;
 }
 
+uint8_t z80_io_in(Z80 *cpu, uint8_t port) {
+    return cpu->io_ports[port];
+}
+
+void z80_io_out(Z80 *cpu, uint8_t port, uint8_t value) {
+    cpu->io_ports[port] = value;
+}
+
 // --- Instruction Handlers ---
 
 // Opcode 0x00: NOP (No Operation)
@@ -548,6 +556,69 @@ int z80_op_prefix_ed(Z80 *cpu, uint8_t *ram) {
         case 0x44: case 0x4C: case 0x54: case 0x5C:
         case 0x64: case 0x6C: case 0x74: case 0x7C:
             return z80_op_neg(cpu, ram);
+
+        // --- RETI / RETN ---
+        case 0x4D: // RETI
+            cpu->pc = z80_pop16(cpu);
+            return 14;
+        case 0x45: case 0x55: case 0x5D: case 0x65:
+        case 0x6D: case 0x75: case 0x7D: // RETN (and undocumented duplicates)
+            cpu->pc = z80_pop16(cpu);
+            cpu->iff1 = cpu->iff2;
+            return 14;
+
+        // --- Interrupt Mode ---
+        case 0x46: case 0x4E: case 0x66: case 0x6E: // IM 0
+            cpu->im = 0;
+            return 8;
+        case 0x56: case 0x76: // IM 1
+            cpu->im = 1;
+            return 8;
+        case 0x5E: case 0x7E: // IM 2
+            cpu->im = 2;
+            return 8;
+
+        // --- I/R <-> A transfers ---
+        case 0x47: // LD I, A
+            cpu->i = cpu->a;
+            return 9;
+        case 0x4F: // LD R, A
+            cpu->r = cpu->a;
+            return 9;
+        case 0x57: // LD A, I
+        case 0x5F: { // LD A, R
+            uint8_t val = (ed_opcode == 0x57) ? cpu->i : cpu->r;
+            cpu->a = val;
+            uint8_t flags = cpu->f & FLAG_C; // C unaffected
+            if (val & 0x80) flags |= FLAG_S;
+            if (val == 0) flags |= FLAG_Z;
+            if (cpu->iff2) flags |= FLAG_PV;
+            flags |= (val & (FLAG_X | FLAG_Y));
+            cpu->f = flags;
+            return 9;
+        }
+
+        // --- IN r,(C) / OUT (C),r ---
+        case 0x40: case 0x48: case 0x50: case 0x58:
+        case 0x60: case 0x68: case 0x70: case 0x78: { // IN r,(C)
+            uint8_t reg_idx = (ed_opcode >> 3) & 0x07;
+            uint8_t val = z80_io_in(cpu, cpu->c);
+            if (reg_idx != 6) set_cb_reg(cpu, reg_idx, val); // idx 6 = undocumented IN (C): flags only
+            uint8_t flags = cpu->f & FLAG_C; // C unaffected
+            if (val & 0x80) flags |= FLAG_S;
+            if (val == 0) flags |= FLAG_Z;
+            flags |= calculate_parity(val);
+            flags |= (val & (FLAG_X | FLAG_Y));
+            cpu->f = flags;
+            return 12;
+        }
+        case 0x41: case 0x49: case 0x51: case 0x59:
+        case 0x61: case 0x69: case 0x71: case 0x79: { // OUT (C),r
+            uint8_t reg_idx = (ed_opcode >> 3) & 0x07;
+            uint8_t val = (reg_idx == 6) ? 0 : get_cb_reg(cpu, reg_idx); // undocumented OUT (C),0
+            z80_io_out(cpu, cpu->c, val);
+            return 12;
+        }
 
         // --- Block Transfers ---
         case 0xA0: return z80_alu_block_transfer(cpu,  1, false); // LDI
@@ -1910,8 +1981,14 @@ int z80_op_add_a_n(Z80 *cpu, uint8_t *ram) {
 // 0xD3: OUT (n), A (Output A to port n)
 int z80_op_out_n_a(Z80 *cpu, uint8_t *ram) {
     uint8_t port = fetch_byte(cpu, ram);
-    (void)port; // Port I/O not simulated
-    (void)cpu;
+    z80_io_out(cpu, port, cpu->a);
+    return 11;
+}
+
+// 0xDB: IN A, (n) (Input from port n into A)
+int z80_op_in_a_n(Z80 *cpu, uint8_t *ram) {
+    uint8_t port = fetch_byte(cpu, ram);
+    cpu->a = z80_io_in(cpu, port);
     return 11;
 }
 
@@ -2100,6 +2177,7 @@ void z80_init_tables(void) {
     main_opcode_table[0xA1] = z80_op_and_c;
     main_opcode_table[0xB6] = z80_op_or_hl_mem;
     main_opcode_table[0xD3] = z80_op_out_n_a;
+    main_opcode_table[0xDB] = z80_op_in_a_n;
     main_opcode_table[0xF3] = z80_op_di;
     main_opcode_table[0xFB] = z80_op_ei;
 

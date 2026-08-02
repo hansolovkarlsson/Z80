@@ -36,12 +36,22 @@ typedef struct {
     // 64 KB Memory Array
     uint8_t *memory;
 
+    // I/O port space (256 ports). No real devices are attached; IN reads
+    // back whatever the last OUT to that port wrote (initially 0), which
+    // is enough to make IN/OUT round-trip observably rather than being a
+    // silent no-op.
+    uint8_t io_ports[256];
+
 } Z80;
 
 
 // Bus abstraction for zexall integration
 uint8_t z80_read_byte(Z80 *cpu, uint16_t address);
 void z80_write_byte(Z80 *cpu, uint16_t address, uint8_t value);
+
+// I/O port bus abstraction
+uint8_t z80_io_in(Z80 *cpu, uint8_t port);
+void z80_io_out(Z80 *cpu, uint8_t port, uint8_t value);
 
 typedef int (*Z80OpcodeHandler)(Z80 *cpu, uint8_t *ram);
 

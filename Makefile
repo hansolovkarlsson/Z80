@@ -18,7 +18,7 @@ DASM_SRCS := $(wildcard $(DASM_SRC_DIR)/*.c)
 DASM_OBJS := $(DASM_SRCS:.c=.o)
 DASM_TARGET := $(BIN_DIR)/z80dasm
 
-.PHONY: all emulator assembler disassembler run clean
+.PHONY: all emulator assembler disassembler run test clean
 
 all: emulator assembler disassembler
 
@@ -45,6 +45,9 @@ $(BIN_DIR):
 
 run: emulator
 	./$(EMU_TARGET) | less
+
+test: emulator assembler
+	./tests/run_tests.sh
 
 clean:
 	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET)

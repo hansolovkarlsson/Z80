@@ -13,9 +13,13 @@ working.
 - `zexall.com` and `zexdoc.com` both run to completion: 67/67 tests OK, 0
   errors, 0 unimplemented opcodes.
 
-Deliberately out of scope for this phase, deferred to Phase 3 where they'll
-actually be exercised (see Known gaps below): I/O port instructions and
-interrupt handling.
+I/O ports and interrupt-control instructions (`IN`/`OUT`, `IM`, `RETI`/
+`RETN`, `LD A,I`/`LD A,R`/`LD I,A`/`LD R,A`) were out of scope for the
+ZEXALL/ZEXDOC goal (the exerciser doesn't touch them) but have since been
+implemented as part of closing the Known-gaps list below. Actual interrupt
+*delivery* (a host-side source raising a real maskable/non-maskable
+interrupt) remains deferred to Phase 3, once there's a BIOS device that
+needs one.
 
 ## Phase 2: Assembler — in progress
 
@@ -225,29 +229,44 @@ Aspirational, not yet scoped:
 ## Known gaps / near-term technical debt
 
 Not blocking Phase 1's ZEXALL/ZEXDOC goal (the exerciser doesn't exercise
-any of these), but worth fixing before or during Phase 3:
+any of these):
 
-- **I/O ports**: `IN r,(n)`/`IN r,(C)` aren't implemented at all; `OUT
-  (n),A` is wired up but discards the port write as a no-op.
-- **Interrupts**: `cpu->iff1`/`iff2`/`im` exist on the struct but nothing
-  besides `DI`/`EI` touches them — `IM 0`/`1`/`2` isn't implemented, and
-  there's no interrupt-delivery mechanism at all. `RETI`/`RETN` aren't
-  implemented either (found while writing `docs/Z80_REFERENCE.md`: the
-  `0xED` handler's `switch` has no case for `0x4D`/`0x45`), which matters
-  even without real interrupt delivery since they're also just "pop PC"
-  in practice.
-- **`LD A,I`/`LD A,R`/`LD I,A`/`LD R,A`**: not implemented (same
-  discovery) — `0xED 0x57`/`0x5F`/`0x47`/`0x4F` all fall through to the
-  "unimplemented opcode" default case. `z80asm` can *encode* all of the
-  above (RETI/RETN/LD A,I etc.) even though the emulator can't yet
-  execute them — worth being aware of if testing round-trips between the
-  two.
-- **No automated regression check**: correctness is verified by eyeballing
-  ZEXALL/ZEXDOC console output for `ERROR` lines. Worth adding a thin
-  wrapper (a `make test` target, or a script) that runs both exercisers and
-  fails if the output contains `ERROR`, an `Unimplemented opcode` line, or
-  doesn't reach `Tests complete` — cheap regression protection for Phase 2/3
-  work that touches `z80.c`/`alu.c` again.
+- [x] **I/O ports**: `IN r,(n)`/`IN r,(C)`/`OUT (n),A`/`OUT (C),r` are now
+  implemented (`emu/src/z80.c`'s `z80_op_prefix_ed`, plus `0xD3`/`0xDB` in
+  `main_opcode_table`), backed by a real `cpu->io_ports[256]` array
+  (`z80_io_in`/`z80_io_out` in `z80.c`/`z80.h`) — no actual devices are
+  attached, but `IN` now reads back whatever the last `OUT` to that port
+  wrote instead of being a silent no-op, which is enough for round-trip
+  correctness. The undocumented `IN (C)` (flags-only, discards the result)
+  and `OUT (C),0` forms are also handled.
+- [x] **`RETI`/`RETN`/`LD A,I`/`LD A,R`/`LD I,A`/`LD R,A`**: implemented in
+  `z80_op_prefix_ed`, including the undocumented `RETN` duplicate encodings
+  (`0x55`/`0x5D`/`0x65`/`0x6D`/`0x75`/`0x7D`). `RETN` restores
+  `iff1 := iff2`; `LD A,I`/`LD A,R` set `P/V` from `iff2` (S/Z/X/Y from the
+  result, H/N cleared, C unaffected) — matches documented Z80 behavior, but
+  note the real hardware has a race condition where `P/V` can read wrong if
+  an interrupt lands during the instruction; not modeled here since there's
+  no interrupt delivery yet (see below).
+- [x] **`IM 0`/`1`/`2`**: implemented (`cpu->im` is now set), including the
+  undocumented duplicate encodings. No interrupt-delivery mechanism
+  consumes `cpu->im`/`iff1`/`iff2` yet — see below.
+- **Interrupt delivery**: `cpu->iff1`/`iff2`/`im` are tracked correctly
+  (`DI`/`EI`/`IM n`/`RETN` all touch them now) but nothing actually raises
+  a maskable or non-maskable interrupt — there's no host-side interrupt
+  source (timer, keyboard, etc.) to trigger one yet, and no dispatch logic
+  for `IM 0`/`1`/`2`'s differing behavior. Revisit once Phase 3 has a BIOS
+  device that actually needs to interrupt (e.g. a timer tick) — building
+  the delivery mechanism now would be speculative and hard to validate
+  without a real consumer.
+- [x] **Automated regression check**: `make test` (`tests/run_tests.sh`)
+  runs ZEXALL/ZEXDOC and fails if the output contains `ERROR`, an
+  `Unimplemented opcode` line, or doesn't reach `Tests complete`; it also
+  assembles and runs every `asm/examples/*.asm` program and fails on any
+  `FAIL` line (the `OK n`/`FAIL n` convention `selftest.asm`/
+  `gaps_test.asm` use) or unimplemented-opcode hit. `asm/examples/
+  gaps_test.asm` specifically covers the I/O-port and `RETI`/`RETN`/
+  `LD A,I`-family additions above, since ZEXALL doesn't exercise any of
+  them.
 - **Flat memory model**: `z80_read_byte`/`z80_write_byte` index straight
   into a 64KB array with no bank switching. Fine for CP/M's 64KB TPA;
   revisit only if a later phase needs more than that.

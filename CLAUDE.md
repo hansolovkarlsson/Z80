@@ -29,21 +29,31 @@ make emulator      # just the emulator
 make assembler     # just the assembler
 make disassembler  # just the disassembler
 make run           # build the emulator, then ./bin/z80 | less (runs zexall.com)
+make test          # build, then run tests/run_tests.sh (see below)
 make clean         # remove object files and all three binaries
 ```
 
-There is no test framework — correctness is verified by running the ZEXALL
-exerciser and reading its console output for per-opcode `ERROR` reports vs.
-`OK` lines. ZEXALL/ZEXDOC (`emu/zexall/ZEXALL-main/`) are third-party,
-downloaded pre-built CP/M test binaries (by Frank D. Cringle, via YAZE-AG,
-GPLv2) — not code belonging to this project, and not meant to be edited.
-They're the correctness oracle: if the emulator is right, every opcode
-reports "OK"; a wrong flag or result shows up as an "ERROR" line naming the
-instruction. As of the last full run, both `zexall.com` and `zexdoc.com`
-pass cleanly (67/67 OK, 0 errors, 0 unimplemented opcodes). To run a
-specific CP/M `.com` file instead of the default `zexall.com`, pass it as
-argv[1] (paths are resolved relative to the working directory you invoke
-the binary from, typically the repo root):
+Correctness is primarily verified by running the ZEXALL exerciser and
+reading its console output for per-opcode `ERROR` reports vs. `OK` lines.
+ZEXALL/ZEXDOC (`emu/zexall/ZEXALL-main/`) are third-party, downloaded
+pre-built CP/M test binaries (by Frank D. Cringle, via YAZE-AG, GPLv2) —
+not code belonging to this project, and not meant to be edited. They're the
+correctness oracle: if the emulator is right, every opcode reports "OK"; a
+wrong flag or result shows up as an "ERROR" line naming the instruction. As
+of the last full run, both `zexall.com` and `zexdoc.com` pass cleanly
+(67/67 OK, 0 errors, 0 unimplemented opcodes). `make test`
+(`tests/run_tests.sh`) turns that "eyeball the output" check into an exit
+code: it runs both exercisers and fails on any `ERROR`/`Unimplemented
+opcode` line or a missing `Tests complete`, then assembles and runs every
+`asm/examples/*.asm` program and fails on any `FAIL` line (the `OK n`/
+`FAIL n` convention `selftest.asm`/`gaps_test.asm` use). ZEXALL/ZEXDOC
+don't exercise I/O ports, `IM`, `RETI`/`RETN`, or `LD A,I`/`LD A,R`/`LD
+I,A`/`LD R,A` — `asm/examples/gaps_test.asm` is the only regression
+coverage for those.
+
+To run a specific CP/M `.com` file instead of the default `zexall.com`,
+pass it as argv[1] (paths are resolved relative to the working directory
+you invoke the binary from, typically the repo root):
 
 ```
 ./bin/z80 zexdoc.com
@@ -83,7 +93,8 @@ dispatch via an opcode `switch` inside `z80_op_prefix_cb`/`z80_op_prefix_ed`):
 - `0xCB` → `z80_op_prefix_cb` (rotate/shift/BIT/SET/RES via `get_cb_reg`/
   `set_cb_reg`).
 - `0xED` → `z80_op_prefix_ed` (extended ops: block transfer/search, NEG,
-  16-bit ADC/SBC, `LD SP,(nn)`, `RLD`/`RRD`, etc.).
+  16-bit ADC/SBC, `LD SP,(nn)`, `RLD`/`RRD`, `IN r,(C)`/`OUT (C),r`, `IM
+  0`/`1`/`2`, `RETI`/`RETN`, `LD A,I`/`LD A,R`/`LD I,A`/`LD R,A`, etc.).
 - `0xDD`/`0xFD` → `z80_op_prefix_index`, which explicitly decodes the
   IX/IY-specific opcodes (16-bit load/arith/inc/dec, push/pop, `EX (SP),IX`,
   `JP (IX)`, `LD SP,IX`, `(IX+d)` displacement forms, and the undocumented
@@ -105,7 +116,9 @@ into these rather than duplicating flag math.
 **Memory is a flat 64KB `uint8_t` array** (`RAM_SIZE` in `z80.h`), owned by
 `main.c` and pointed to by `Z80.memory`. `z80_read_byte`/`z80_write_byte` are
 a bus abstraction but currently just index straight into that array (no bank
-switching/MMU).
+switching/MMU). **I/O ports** are a separate 256-entry `cpu->io_ports` array
+with their own `z80_io_in`/`z80_io_out` bus functions — no real devices are
+attached, so a port read just returns whatever was last written there.
 
 **CP/M BDOS emulation (`cpm.c`)** is minimal: `check_cpm_bdos()` runs at the
 top of every `z80_step()` and, when `PC == 0x0005`, handles BDOS function 2
@@ -221,9 +234,10 @@ separation — fed a data region (e.g. embedded message strings), it
 decodes those bytes as instructions too, which is correct behavior for
 what linear disassembly *is*, not a bug, but does mean output quality
 depends on the input being (close to) all code, or on the caller using
-`-l` to bound the range. `docs/Z80_REFERENCE.md` documents which opcodes
-are covered, including several the *emulator* can't execute yet (`IN`/
-`OUT`, `IM`, `RETI`/`RETN`, `LD A,I` etc.) — this disassembler targets
-real Z80 machine code, not just this project's own emulator's current
-capability.
+`-l` to bound the range. `docs/Z80_REFERENCE.md` documents the opcode
+coverage in detail — this disassembler targets real Z80 machine code
+generally, not just this project's own emulator's current capability (the
+two are now aligned, since `IN`/`OUT`, `IM`, `RETI`/`RETN`, `LD A,I` etc.
+are implemented on the emulator side too, but that wasn't always true and
+isn't a given for any future gap).
 

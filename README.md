@@ -29,7 +29,8 @@ instructions too), but the decoding itself is solid: verified against
 the source exactly) and spot-checked against the real `zexall.com`.
 
 See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full picture: what's
-next, what's done, and known gaps (I/O ports, interrupts).
+next, what's done, and known gaps (currently just interrupt delivery —
+I/O ports, `IM`, `RETI`/`RETN`, and `LD A,I`-family are implemented).
 
 ## Build & run
 
@@ -39,12 +40,15 @@ make emulator      # just the emulator
 make assembler     # just the assembler
 make disassembler  # just the disassembler
 make run           # build the emulator, then run it against zexall.com
+make test          # build, then run the regression check (tests/run_tests.sh)
 make clean         # remove build output
 ```
 
 Correctness is verified by running the ZEXALL/ZEXDOC exerciser and reading
 its console output: every opcode should report `OK`; a wrong flag or result
-shows up as an `ERROR` line naming the instruction. `bin/z80`
+shows up as an `ERROR` line naming the instruction. `make test` automates
+this (plus running every `asm/examples/*.asm` program) into a pass/fail
+exit code. `bin/z80`
 defaults to running `emu/zexall/ZEXALL-main/zexall.com`; pass a different
 `.com` file as an argument to run something else:
 
