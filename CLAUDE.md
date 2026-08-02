@@ -6,10 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Z80 CPU emulator written in C, built to run CP/M-80 programs. Phase 1 (a
 complete Z80 core passing ZEXALL/ZEXDOC cleanly) is done; Phase 2 (a Z80
-assembler) is in progress — see `docs/ROADMAP.md` for exact status, what's
-next (macros/`include`, then a full CP/M BDOS/BIOS), and known gaps (I/O
-ports, interrupts). This directory is a git repository (initialized after
-the first working ZEXALL/ZEXDOC pass).
+assembler, including macros/`include`) is far along too — see
+`docs/ROADMAP.md` for exact status, what's next (a full CP/M BDOS/BIOS),
+and known gaps (I/O ports, interrupts). This directory is a git repository
+(initialized after the first working ZEXALL/ZEXDOC pass).
+
+Two reference docs live in `docs/` alongside the roadmap: `Z80_REFERENCE.md`
+(the Z80 instruction set, including undocumented opcodes/flag behavior,
+plus which of those this emulator can actually execute today) and
+`ASSEMBLER.md` (the `z80asm` syntax — directives, expressions, macros).
+This file (`CLAUDE.md`) instead covers *code* architecture — how the
+dispatch/encoding is actually implemented, not the ISA or syntax itself.
 
 ## Build & Run
 
@@ -47,6 +54,10 @@ checks only documented flag behavior; zexall also checks the undocumented
 flags (bits 3 and 5, `FLAG_X`/`FLAG_Y`).
 
 ## Architecture
+
+(For the Z80 instruction set itself — mnemonics, addressing modes,
+undocumented opcodes/flags — see `docs/Z80_REFERENCE.md`. This section is
+about how the dispatch code is structured, not the ISA.)
 
 **Table-driven dispatch.** `z80_init_tables()` (in `z80.c`) populates
 `main_opcode_table[256]` (a `Z80OpcodeHandler` array) mapping each opcode byte
@@ -148,8 +159,9 @@ Preprocessing (`preprocess.c`/`.h`) runs once, before the two passes above,
 flattening `MACRO`/`ENDM`/`LOCAL`-expanded and `INCLUDE`-spliced source into
 a flat line list; conditional assembly (`IF`/`ELSE`/`ENDIF`) is integrated
 into `assemble.c` itself instead, since it needs live `$`/symbol state
-rather than pure text substitution. See `docs/ROADMAP.md` for exact status
-— as of the last update, `bin/z80asm` assembles the real, unmodified
-`zexall.z80`/`zexdoc.z80` with zero errors, and the result runs cleanly
-through `bin/z80_emulator`.
+rather than pure text substitution. See `docs/ASSEMBLER.md` for the syntax
+this all produces/consumes, and `docs/ROADMAP.md` for exact project
+status — as of the last update, `bin/z80asm` assembles the real,
+unmodified `zexall.z80`/`zexdoc.z80` with zero errors, and the result runs
+cleanly through `bin/z80_emulator`.
 

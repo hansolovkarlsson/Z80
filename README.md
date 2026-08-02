@@ -59,7 +59,10 @@ source produces a CP/M `.com`-ready image):
   project's code, not meant to be edited).
 - `asm/src/` — the assembler (`symtab`, `expr`, `encode`, `assemble`,
   `preprocess`, `main`); `asm/examples/` has example `.asm` programs.
-- `docs/` — the project roadmap.
+- `docs/` — the project roadmap ([`ROADMAP.md`](docs/ROADMAP.md)), a Z80
+  CPU reference including undocumented opcodes
+  ([`Z80_REFERENCE.md`](docs/Z80_REFERENCE.md)), and the assembler syntax
+  reference ([`ASSEMBLER.md`](docs/ASSEMBLER.md)).
 - `resources/` — reference links/documents on the Z80, CP/M, etc. (not
   code, just reading material).
 

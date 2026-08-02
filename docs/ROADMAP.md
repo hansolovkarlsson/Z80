@@ -178,7 +178,17 @@ any of these), but worth fixing before or during Phase 3:
   (n),A` is wired up but discards the port write as a no-op.
 - **Interrupts**: `cpu->iff1`/`iff2`/`im` exist on the struct but nothing
   besides `DI`/`EI` touches them — `IM 0`/`1`/`2` isn't implemented, and
-  there's no interrupt-delivery mechanism at all.
+  there's no interrupt-delivery mechanism at all. `RETI`/`RETN` aren't
+  implemented either (found while writing `docs/Z80_REFERENCE.md`: the
+  `0xED` handler's `switch` has no case for `0x4D`/`0x45`), which matters
+  even without real interrupt delivery since they're also just "pop PC"
+  in practice.
+- **`LD A,I`/`LD A,R`/`LD I,A`/`LD R,A`**: not implemented (same
+  discovery) — `0xED 0x57`/`0x5F`/`0x47`/`0x4F` all fall through to the
+  "unimplemented opcode" default case. `z80asm` can *encode* all of the
+  above (RETI/RETN/LD A,I etc.) even though the emulator can't yet
+  execute them — worth being aware of if testing round-trips between the
+  two.
 - **No automated regression check**: correctness is verified by eyeballing
   ZEXALL/ZEXDOC console output for `ERROR` lines. Worth adding a thin
   wrapper (a `make test` target, or a script) that runs both exercisers and
