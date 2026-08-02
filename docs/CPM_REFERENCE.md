@@ -1,0 +1,208 @@
+# CP/M 2.2 BDOS/BIOS Reference
+
+A reference for the CP/M 2.2 system-call interface this project's BDOS
+emulation (`emu/src/cpm.c`) targets, gathered from the CP/M 2.2 Interface
+Guide/Programmer's Guide and the [Seasip CP/M information
+archive](https://www.seasip.info/Cpm/) (both describing Digital Research's
+original, public CP/M 2.2 specification — not this project's code). This
+document is the Phase 3 groundwork item from `docs/ROADMAP.md`: pin down
+real BDOS/BIOS semantics before extending `cpm.c` past the two functions
+(2, 9) it was bootstrapped with for ZEXALL's narrow console-output needs.
+
+Where this project's own implementation status matters, it's called out
+explicitly — see [Implementation status](#implementation-status) at the
+end. Everything else describes real CP/M 2.2 behavior, independent of this
+codebase.
+
+## The calling convention
+
+A CP/M program requests a BDOS service with `CALL 0005h` (not a real
+subroutine — address 5 holds a jump into the actual BDOS entry point,
+wherever the BDOS itself is loaded in high memory). On entry:
+
+- **`C`** holds the function number.
+- **`DE`** (or just `E` for single-byte parameters) holds the input
+  parameter — usually a character, or the address of an FCB or buffer.
+
+On return, results land in **`A`** and/or **`HL`** (`A` is always the low
+byte of `HL` for functions that return a 16-bit result, so code that only
+cares about the low byte can just check `A`). This matches Intel PL/M's
+own calling convention, which CP/M's BDOS interface was deliberately built
+to agree with.
+
+`main.c`/`cpm.c` in this project intercept `PC == 0x0005` directly in
+`z80_step()` rather than actually executing a jump through BDOS code that
+doesn't exist in this emulator's memory image — see [Implementation
+status](#implementation-status).
+
+## BDOS function reference (0–40)
+
+| # | Name | Input | Output | Description |
+|---|---|---|---|---|
+| 0 | `P_TERMCPM` | — | — | Terminate program, return to CCP. |
+| 1 | `C_READ` | — | `A`=char | Wait for a console keypress, echo it, return it. |
+| 2 | `C_WRITE` | `E`=char | — | Write one character to the console. |
+| 3 | `A_READ` | — | `A`=char | Read from the auxiliary (reader) device. |
+| 4 | `A_WRITE` | `E`=char | — | Write to the auxiliary (punch) device. |
+| 5 | `L_WRITE` | `E`=char | — | Write to the list (printer) device. |
+| 6 | `C_RAWIO` | `E`=code | `A`=varies | Direct console I/O: `E`=0FFh polls for a waiting char (0 if none); other `E` values write that character. |
+| 7 | Get I/O byte | — | `A`=IOBYTE | Read the IOBYTE (device-assignment byte) from address 0003h. |
+| 8 | Set I/O byte | `E`=byte | — | Store a new IOBYTE at address 0003h. |
+| 9 | `C_WRITESTR` | `DE`=addr | — | Print a `$`-terminated string. |
+| 10 | `C_READSTR` | `DE`=addr | — | Buffered line input into a caller-supplied buffer (byte 0 = max length, byte 1 = actual length written, data follows). |
+| 11 | `C_STAT` | — | `A`=status | Console input status: 0 = none waiting, nonzero = a character is ready. |
+| 12 | `S_BDOSVER` | — | `B`=type, `A`=version | System/version number. |
+| 13 | `DRV_ALLRESET` | — | — | Reset disk system: log out all drives, flush buffers, select drive A. |
+| 14 | `DRV_SET` | `E`=drive (0=A:) | `A`=0 or 0FFh | Select the current disk drive. |
+| 15 | `F_OPEN` | `DE`=FCB | `A`=0–3 or 0FFh | Open a file (matches the FCB against the directory, fills in `EX`/`S1`/`S2`/`RC`/`AL`). `A`=0FFh means not found. |
+| 16 | `F_CLOSE` | `DE`=FCB | `A`=0–3 or 0FFh | Close a file, flushing any buffered writes. |
+| 17 | `F_SFIRST` | `DE`=FCB | `A`=0–3 or 0FFh | Find the first directory match (`?` wildcards allowed). |
+| 18 | `F_SNEXT` | — | `A`=0–3 or 0FFh | Find the next match after a prior `F_SFIRST`/`F_SNEXT`. |
+| 19 | `F_DELETE` | `DE`=FCB | `A`=0–3 or 0FFh | Delete all matching files (wildcards allowed). |
+| 20 | `F_READ` | `DE`=FCB | `A`=0 (OK)/1 (EOF)/9 (bad FCB) | Read the next 128-byte sequential record into the DMA buffer. |
+| 21 | `F_WRITE` | `DE`=FCB | `A`=0 (OK)/1 (dir full)/2 (disk full) | Write the next 128-byte sequential record from the DMA buffer. |
+| 22 | `F_MAKE` | `DE`=FCB | `A`=0–3 or 0FFh | Create a new file (0FFh if the directory is full). |
+| 23 | `F_RENAME` | `DE`=FCB (new name at `FCB+16`) | `A`=0–3 or 0FFh | Rename a file. |
+| 24 | `DRV_LOGINVEC` | — | `HL`=bitmap | Bitmap of currently logged-in drives (bit 0 = A:). |
+| 25 | `DRV_GET` | — | `A`=drive | Current default drive number. |
+| 26 | `F_DMAOFF` | `DE`=addr | — | Set the DMA (disk-transfer buffer) address for subsequent read/write calls; defaults to 0080h. |
+| 27 | `DRV_ALLOCVEC` | — | `HL`=addr | Address of the current drive's allocation bitmap. |
+| 28 | `DRV_SETRO` | — | — | Mark the current drive read-only in software until the next reset. |
+| 29 | `DRV_ROVEC` | — | `HL`=bitmap | Bitmap of drives currently software-write-protected. |
+| 30 | `F_ATTRIB` | `DE`=FCB | `A`=0–3 or 0FFh | Set file attributes (the `T1'`/`T2'`/`T3'` flag bits — see [FCB](#the-file-control-block-fcb)). |
+| 31 | `DRV_DPB` | — | `HL`=addr | Address of the current drive's Disk Parameter Block — see [DPB](#the-disk-parameter-block-dpb). |
+| 32 | `F_USERNUM` | `E`=num (0FFh to query) | `A`=num | Set or get the current user number (0–15). |
+| 33 | `F_READRAND` | `DE`=FCB | `A`=0 (OK)/1 (EOF)/… | Random-access read using the record number in `R0`–`R2`. |
+| 34 | `F_WRITERAND` | `DE`=FCB | `A`=0 (OK)/1/2/… | Random-access write; may create sparse extents. |
+| 35 | `F_SIZE` | `DE`=FCB | `R0`–`R2` set | Set the FCB's random-record fields to the file's size in records. |
+| 36 | `F_RANDREC` | `DE`=FCB | `R0`–`R2` set | Set the FCB's random-record fields from its current sequential position. |
+| 37 | `DRV_RESET` | `DE`=drive bitmap | `A`=0 or 0FFh | Selectively reset drives (clears their software read-only flag). |
+| 38 | `DRV_ACCESS` | `DE`=drive bitmap | `A`=0 or 0FFh | Mark drives as having open files, so `DRV_RESET`/login can't disturb them. |
+| 39 | `DRV_FREE` | `DE`=drive bitmap | — | Release the locks `DRV_ACCESS` set. |
+| 40 | `F_WRITEZF` | `DE`=FCB | `A`=0/1/2/… | Random write with zero-fill for any newly allocated blocks skipped over. |
+
+General error convention: disk/file functions return `A`=0FFh on failure
+(file not found, directory full, disk full); success returns a small
+non-negative directory code (0–3), not a fixed `0`. Functions 20/21/33/34/
+40 use a distinct small set of numeric codes instead (see table).
+
+## The File Control Block (FCB)
+
+A 36-byte structure the caller fills in (mostly just drive + filename +
+type) and passes by address in `DE` to any file-oriented BDOS call; BDOS
+fills in the rest as the file is opened/read/written.
+
+| Offset | Field | Size | Purpose |
+|---|---|---|---|
+| `+00h` | `DR` | 1 | Drive: 0 = default, 1–16 = A:–P:. |
+| `+01h`–`+08h` | `F1`–`F8` | 8 | Filename, 7-bit ASCII, space-padded. High bit of each byte doubles as an attribute flag when set via `F_ATTRIB`. |
+| `+09h`–`+0Bh` | `T1`–`T3` | 3 | Filetype, 7-bit ASCII. High bits: `T1'`=read-only, `T2'`=system/hidden, `T3'`=archive (unchanged since last copy). |
+| `+0Ch` | `EX` | 1 | Current extent (a file >16KB spans multiple 16KB "extents"); zero this before `F_OPEN`. |
+| `+0Dh` | `S1` | 1 | Reserved (zero it). |
+| `+0Eh` | `S2` | 1 | Extent high byte; bit 7 is set internally as a "file written" flag. |
+| `+0Fh` | `RC` | 1 | Record count in this extent; zero before `F_OPEN`. |
+| `+10h`–`+1Fh` | `AL` | 16 | Allocation vector — which disk blocks belong to this file/extent; filled in by BDOS, not the caller. |
+| `+20h` | `CR` | 1 | Current record within the extent, for sequential I/O. |
+| `+21h`–`+23h` | `R0`–`R2` | 3 | Random-access record number (16-bit in CP/M 2.2, `R2` used only as an overflow byte). |
+
+A caller only needs to fill in `DR`/`F1`-`F8`/`T1`-`T3` (and zero the rest)
+before `F_OPEN`/`F_MAKE`; the rest is BDOS's bookkeeping.
+
+## The BIOS jump table
+
+The BIOS is a 17-entry table of 3-byte `JP` instructions at a
+system-dependent base address (`b`), immediately below the CCP/BDOS in
+high memory. The BDOS calls through this table for every device/disk
+operation instead of touching hardware directly — this is CP/M's
+portability boundary: porting CP/M to new hardware means rewriting the
+BIOS, not the BDOS.
+
+| Offset | Vector | Entry | Exit | Description |
+|---|---|---|---|---|
+| `+00h` | `BOOT` | — | — | Cold boot: load CCP/BDOS, initialize hardware. |
+| `+03h` | `WBOOT` | — | — | Warm boot: reload the CCP (and BDOS, on some systems). |
+| `+06h` | `CONST` | — | `A`=0 (none) / 0FFh (ready) | Poll console input status without blocking. |
+| `+09h` | `CONIN` | — | `A`=char | Block until a console character is available. |
+| `+0Ch` | `CONOUT` | `C`=char | — | Write a character to the console. |
+| `+0Fh` | `LIST` | `C`=char | — | Write a character to the printer (blocks if not ready). |
+| `+12h` | `PUNCH` | `C`=char | — | Write to the punch/auxiliary output device. |
+| `+15h` | `READER` | — | `A`=char | Read from the tape reader/auxiliary input device (returns `^Z`/26 if none attached). |
+| `+18h` | `HOME` | — | — | Move the selected drive's head to track 0. |
+| `+1Bh` | `SELDSK` | `C`=drive, `E`=login flag | `HL`=DPH addr or 0 | Select a disk drive; returns the address of its Disk Parameter Header (0 = invalid drive). |
+| `+1Eh` | `SETTRK` | `BC`=track | — | Set the track number for the next disk I/O. |
+| `+21h` | `SETSEC` | `BC`=sector | — | Set the sector number for the next disk I/O. |
+| `+24h` | `SETDMA` | `BC`=addr | — | Set the memory address for the next disk read/write. |
+| `+27h` | `READ` | — | `A`=0 (OK)/1 (error)/0FFh (media changed) | Read the currently set track/sector into the DMA address. |
+| `+2Ah` | `WRITE` | `C`=deblocking code | `A`=0 (OK)/1 (error)/2 (read-only)/0FFh (media changed) | Write the DMA buffer to the currently set track/sector. |
+| `+2Dh` | `LISTST` | — | `A`=0 (not ready) / 0FFh (ready) | Printer status, non-blocking. |
+| `+30h` | `SECTRAN` | `BC`=logical sector, `DE`=translate table | `HL`=physical sector | Apply disk sector skewing/interleave. |
+
+### The Disk Parameter Header / Disk Parameter Block
+
+`SELDSK` returns a pointer to a 16-byte **Disk Parameter Header (DPH)**
+per drive (translate table address, 3 scratch words the BDOS uses
+internally, directory buffer address, **DPB** address, checksum-vector
+address, allocation-vector address). The DPH's DPB pointer is what
+actually describes the drive's geometry:
+
+| Offset | Field | Size | Purpose |
+|---|---|---|---|
+| `00h` | `SPT` | 2 | Sectors per track. |
+| `02h` | `BSH` | 1 | Block shift factor (log2 of the allocation block size in sectors). |
+| `03h` | `BLM` | 1 | Block mask (`2^BSH - 1`). |
+| `04h` | `EXM` | 1 | Extent mask (how many logical extents fit in one directory extent, given the block size). |
+| `05h` | `DSM` | 2 | Total disk storage, in allocation blocks, minus one. |
+| `07h` | `DRM` | 2 | Number of directory entries minus one. |
+| `09h` | `AL0`/`AL1` | 2 | Bitmap of which allocation blocks the reserved directory entries occupy. |
+| `0Bh` | `CKS` | 2 | Size of the directory checksum vector (0 for a fixed/non-removable disk). |
+| `0Dh` | `OFF` | 2 | Number of reserved (system) tracks at the start of the disk. |
+
+This level of detail (DPH/DPB, real disk geometry) only matters once
+`cpm.c` emulates actual disk I/O against a CP/M disk image or host
+filesystem — the BDOS file functions (15–23, 33–40) can be implemented
+against a *host* filesystem first without a literal DPB, by mapping FCB
+filenames to host files directly, deferring "real" disk geometry emulation
+until (if ever) booting an unmodified CP/M disk image is the goal (see
+`docs/ROADMAP.md`'s Phase 3 list).
+
+## Zero-page memory layout
+
+CP/M reserves fixed meanings for the first 256 bytes of the 64KB TPA
+(Transient Program Area) — a `.com` program is loaded at 0100h specifically
+so this region is available below it:
+
+| Address | Size | Purpose |
+|---|---|---|
+| `0000h`–`0002h` | 3 | `JP` to `WBOOT` (also how a program locates the BIOS: the target address of this jump, minus BIOS-table offsets, gives the BIOS base). |
+| `0003h` | 1 | IOBYTE — logical-to-physical device assignment (rarely used in practice). |
+| `0004h` | 1 | Current drive (low nibble) / user number (high nibble). |
+| `0005h`–`0007h` | 3 | `JP` to the BDOS entry point — this is the address every BDOS `CALL 0005h` actually jumps through. |
+| `0008h`–`003Ah` | — | Intel 8080 restart (`RST`)/interrupt vector space. |
+| `005Ch`–`006Bh` | 16 | Default FCB 1, auto-parsed from the command line by the CCP before the program starts. |
+| `006Ch`–`007Fh` | 20 | Default FCB 2 (a second command-line filename argument, if any) — overlaps/gets overwritten if FCB 1 is opened, since CP/M assumes most programs only need one file open at a time from the command line. |
+| `0080h` | 1 | Command-line tail length, *and* the default DMA buffer address (128 bytes, `0080h`–`00FFh`) if not overridden via `F_DMAOFF`. |
+| `0081h`–`00FFh` | 127 | Command-line tail text (space-separated, unparsed) / default DMA buffer contents. |
+
+This confirms the choices this project's `main.c` already made independent
+of this research: `.com` programs load at `0100h`, and `RET` is preloaded
+at `0000h`/`0005h` so an unhandled `JP`/`CALL` to either still returns
+safely instead of running off into uninitialized memory.
+
+## Implementation status
+
+`emu/src/cpm.c`'s `check_cpm_bdos()` currently implements exactly two BDOS
+functions — **2** (`C_WRITE`) and **9** (`C_WRITESTR`) — intercepted
+directly at `PC == 0x0005` rather than by placing real BDOS code in memory
+and executing a real `CALL`/jump to it (there is no BIOS jump table or DPH/
+DPB in this emulator's memory image at all yet). This was enough for
+ZEXALL/ZEXDOC, which only need console output. Extending this to the rest
+of the table above — particularly console input (1, 6, 10, 11) and the
+file functions (15–23, 33–40) — is the next concrete Phase 3 step; console
+input is the smaller, more self-contained piece (no filesystem-mapping
+design questions), so it's the more natural place to start.
+
+Nothing in this document is implemented as literal BIOS code (no jump
+table exists at any fixed address in this emulator yet) — real CP/M
+programs that call into BDOS functions this project doesn't yet emulate,
+or that jump into the BIOS directly (uncommon, but not unheard of),
+won't work correctly until that gap closes too.

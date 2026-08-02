@@ -199,16 +199,20 @@ there surfaced and fixed several real dialect gaps, documented below.
 
 ## Phase 3: CP/M BDOS/BIOS
 
-- [ ] **Research the CP/M BDOS/BIOS call specification first** — before
-  writing more of `cpm.c`, pin down function
-  numbers, register-passing conventions, and return/error conventions from
-  a primary source (e.g. the CP/M 2.2 Interface Guide/Programmer's Guide),
-  rather than guessing at BDOS semantics the way the current two functions
-  (2, 9) were bootstrapped for ZEXALL's narrow needs.
+- [x] **Research the CP/M BDOS/BIOS call specification first** — done; see
+  `docs/CPM_REFERENCE.md` for the full BDOS function table (0–40), FCB
+  layout, BIOS 17-vector jump table, DPH/DPB, and zero-page memory map,
+  gathered from the CP/M 2.2 Interface Guide/Programmer's Guide and the
+  Seasip CP/M archive. Confirms `cpm.c`'s current two functions (2, 9) are
+  correct as far as they go, and gives the register/error conventions
+  needed to extend it without guessing.
 - Expand `cpm.c` past the two BDOS functions it has today (2: console char
   out, 9: print `$`-string) to the functions real CP/M-80 programs expect:
-  console input (1, 6, 10), and file I/O (open/close/read/write/make/
-  delete, search).
+  console input (1, 6, 10, 11) is the natural next step (self-contained,
+  no filesystem-mapping design questions), then file I/O (open/close/
+  read/write/make/delete, search — functions 15–23, 33–40), which will
+  need a design decision on how FCB-addressed files map onto the host
+  filesystem (see `docs/CPM_REFERENCE.md`'s Implementation status section).
 - Emulate disk I/O against the host filesystem (a CP/M disk image or a
   mapped subdirectory).
 - Implement the I/O port instructions and interrupt delivery this phase

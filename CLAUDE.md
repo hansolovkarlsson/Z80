@@ -11,12 +11,14 @@ too — see `docs/ROADMAP.md` for exact status, what's next (a full CP/M
 BDOS/BIOS), and known gaps (I/O ports, interrupts). This directory is a
 git repository (initialized after the first working ZEXALL/ZEXDOC pass).
 
-Two reference docs live in `docs/` alongside the roadmap: `Z80_REFERENCE.md`
+Three reference docs live in `docs/` alongside the roadmap: `Z80_REFERENCE.md`
 (the Z80 instruction set, including undocumented opcodes/flag behavior,
-plus which of those this emulator can actually execute today) and
-`ASSEMBLER.md` (the `z80asm` syntax — directives, expressions, macros).
-This file (`CLAUDE.md`) instead covers *code* architecture — how the
-dispatch/encoding is actually implemented, not the ISA or syntax itself.
+plus which of those this emulator can actually execute today), `ASSEMBLER.md`
+(the `z80asm` syntax — directives, expressions, macros), and `CPM_REFERENCE.md`
+(the CP/M 2.2 BDOS/BIOS call spec — function numbers, FCB layout, BIOS
+jump table — that Phase 3's `cpm.c` work targets). This file (`CLAUDE.md`)
+instead covers *code* architecture — how the dispatch/encoding is actually
+implemented, not the ISA, syntax, or OS spec itself.
 
 ## Build & Run
 
