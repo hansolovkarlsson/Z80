@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-A Z80 CPU emulator written in C, built to run CP/M-80 programs. The current
-milestone (per `notes.txt` / `ideas.txt`) is passing the ZEXALL/ZEXDOC
-instruction exerciser; later phases plan an assembler and a full CP/M BDOS.
-This directory is a git repository (initialized after the first working
-ZEXALL/ZEXDOC pass).
+A Z80 CPU emulator written in C, built to run CP/M-80 programs. Phase 1 (a
+complete Z80 core passing ZEXALL/ZEXDOC cleanly) is done; see `ROADMAP.md`
+for what's next (an assembler, then a full CP/M BDOS/BIOS) and known gaps
+(I/O ports, interrupts). This directory is a git repository (initialized
+after the first working ZEXALL/ZEXDOC pass).
 
 ## Build & Run
 
@@ -37,10 +37,10 @@ the binary from, typically the repo root):
 ./bin/z80_emulator zexdoc.com
 ```
 
-(`zexdoc.com`/`zexall.com` live in `zexall/ZEXALL-main/`; a copy of
-`zexall.com` is also kept at the repo root.) The zexdoc variant checks only
-documented flag behavior; zexall also checks the undocumented flags (bits 3
-and 5, `FLAG_X`/`FLAG_Y`).
+(`zexdoc.com`/`zexall.com` live in `zexall/ZEXALL-main/`, which is also
+`main.c`'s default load path when no argv[1] is given.) The zexdoc variant
+checks only documented flag behavior; zexall also checks the undocumented
+flags (bits 3 and 5, `FLAG_X`/`FLAG_Y`).
 
 ## Architecture
 

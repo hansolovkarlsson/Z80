@@ -32,7 +32,7 @@ bool load_file(const char *filename, uint16_t load_address) {
 }
 
 int main(int argc, char *argv[]) {
-    const char *test_file = (argc > 1) ? argv[1] : "zexall.com";
+    const char *test_file = (argc > 1) ? argv[1] : "zexall/ZEXALL-main/zexall.com";
 
     // 1. Initialize CPU & lookup tables
     Z80 cpu = {0};
