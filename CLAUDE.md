@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A Z80 CPU emulator written in C, built to run CP/M-80 programs. The current
 milestone (per `notes.txt` / `ideas.txt`) is passing the ZEXALL/ZEXDOC
 instruction exerciser; later phases plan an assembler and a full CP/M BDOS.
-This directory is not a git repository.
+This directory is a git repository (initialized after the first working
+ZEXALL/ZEXDOC pass).
 
 ## Build & Run
 
