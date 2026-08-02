@@ -17,21 +17,41 @@ Deliberately out of scope for this phase, deferred to Phase 3 where they'll
 actually be exercised (see Known gaps below): I/O port instructions and
 interrupt handling.
 
-## Phase 2: Assembler
+## Phase 2: Assembler — in progress
 
 Goal: an assembler capable of building `zexall.z80`/`zexdoc.z80` from
 source (a natural correctness target — the assembled output should match
 the existing `.com` files byte-for-byte) and CP/M-style `.asm` sources
 generally.
 
-- Two-pass assembler: label/symbol resolution, full Z80 mnemonic and
-  addressing-mode coverage, expression evaluation.
-- Macros and `include` directives.
-- A small library of example programs to exercise it beyond the exerciser
-  sources.
-- Decide whether to target compatibility with an existing CP/M assembler's
-  syntax/output format (e.g. ZSM4, as `zexall/ZEXALL-main/README.md`
-  mentions) rather than inventing a new one.
+- [x] Two-pass assembler (`asm/src/`, builds to `bin/z80asm`): lexer-free
+  line-oriented parser, symbol table with forward-reference resolution, a
+  recursive-descent expression evaluator (`+ - * / % & | ^ ~`, `$` for the
+  current address, `low()`/`high()`), and an instruction encoder covering
+  the full non-prefixed/`CB`/`ED`/`DD`/`FD` instruction set including the
+  undocumented `IXH`/`IXL`/`IYH`/`IYL` forms and the real-`H`/`L` hardware
+  quirk (mirroring the emulator's own decoder).
+- [x] Directives: `ORG`, `EQU`, `DB`/`DEFB`, `DW`/`DEFW`, `DS`/`DEFS`
+  (with optional fill value), `END`.
+- [x] Two example programs (`asm/examples/`) assembled and run through
+  `bin/z80_emulator` as an end-to-end correctness check: `hello.asm`
+  (labels, `DJNZ`, conditional jumps, CP/M BDOS calls) and `selftest.asm`
+  ((IX+d)/(IY+d) addressing, `PUSH`/`POP` IX/IY, `CB`-prefixed rotate/BIT,
+  16-bit `ADD HL,DE`) — both pass.
+- [ ] **Not yet exhaustively tested.** The encoder was written in one pass
+  from known-correct Z80 encodings (the same knowledge base the emulator's
+  decoder was built from) and validated against the two example programs
+  above, not against every addressing-mode combination. Treat freshly
+  encoded instruction forms with the same suspicion ZEXALL originally
+  surfaced in the emulator, until there's broader coverage.
+- [ ] Macros and `include` directives — required before this can assemble
+  `zexall.z80`/`zexdoc.z80` themselves (which lean on `tstr`/`tmsg` macros
+  and `local` labels).
+- [ ] A small library of example programs beyond the two above.
+- [ ] Decide whether to target compatibility with an existing CP/M
+  assembler's syntax/output format (e.g. ZSM4, as
+  `zexall/ZEXALL-main/README.md` mentions) once macros make that question
+  concrete, rather than inventing a new dialect.
 
 ## Phase 3: CP/M BDOS/BIOS
 

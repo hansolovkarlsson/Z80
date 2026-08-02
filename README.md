@@ -10,15 +10,22 @@ undocumented Z80 instruction set (table-driven opcode dispatch, all
 tests OK, 0 errors, 0 unimplemented opcodes, on both the documented-only
 (ZEXDOC) and documented+undocumented (ZEXALL) variants.
 
-See [`docs/ROADMAP.md`](docs/ROADMAP.md) for what's next (an assembler,
-then a full CP/M BDOS/BIOS) and known gaps (I/O ports, interrupts).
+A Z80 assembler (`asm/`) is in progress: a two-pass assembler covering the
+full non-prefixed/`CB`/`ED`/`DD`/`FD` instruction set (including the
+undocumented half-index-register forms), `ORG`/`EQU`/`DB`/`DW`/`DS`
+directives, and expression evaluation. Macros and `include` (needed to
+assemble `zexall.z80` itself) aren't there yet. See
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for the full picture: what's next,
+what's done, and known gaps (I/O ports, interrupts).
 
 ## Build & run
 
 ```
-make         # builds src/*.c into bin/z80_emulator
-make run     # build, then run it against zexall.com
-make clean   # remove build output
+make             # builds both bin/z80_emulator and bin/z80asm
+make emulator    # just the emulator
+make assembler   # just the assembler
+make run         # build the emulator, then run it against zexall.com
+make clean       # remove build output
 ```
 
 Correctness is verified by running the ZEXALL/ZEXDOC exerciser and reading
@@ -31,11 +38,21 @@ file as an argument to run something else:
 ./bin/z80_emulator zexall/ZEXALL-main/zexdoc.com
 ```
 
+The assembler takes a source file and writes a raw binary (an `ORG 100h`
+source produces a CP/M `.com`-ready image):
+
+```
+./bin/z80asm asm/examples/hello.asm -o hello.com
+./bin/z80_emulator hello.com
+```
+
 ## Project layout
 
 - `src/` — the emulator itself (`z80.c`/`z80.h` opcode dispatch, `alu.c`/
   `alu.h` flag/arithmetic logic, `cpm.c`/`cpm.h` minimal CP/M BDOS
   emulation, `main.c` the CP/M-style program loader/run loop).
+- `asm/src/` — the assembler (`symtab`, `expr`, `encode`, `assemble`,
+  `main`); `asm/examples/` has example `.asm` programs.
 - `zexall/ZEXALL-main/` — the ZEXALL/ZEXDOC instruction exerciser
   (third-party, GPLv2, by Frank D. Cringle via YAZE-AG — not this
   project's code, not meant to be edited).

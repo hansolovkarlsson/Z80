@@ -1,3 +1,4 @@
 bin/
 src/*.o
+asm/src/*.o
 .claude/

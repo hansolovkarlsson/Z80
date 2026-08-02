@@ -5,19 +5,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project
 
 A Z80 CPU emulator written in C, built to run CP/M-80 programs. Phase 1 (a
-complete Z80 core passing ZEXALL/ZEXDOC cleanly) is done; see `docs/ROADMAP.md`
-for what's next (an assembler, then a full CP/M BDOS/BIOS) and known gaps
-(I/O ports, interrupts). This directory is a git repository (initialized
-after the first working ZEXALL/ZEXDOC pass).
+complete Z80 core passing ZEXALL/ZEXDOC cleanly) is done; Phase 2 (a Z80
+assembler) is in progress — see `docs/ROADMAP.md` for exact status, what's
+next (macros/`include`, then a full CP/M BDOS/BIOS), and known gaps (I/O
+ports, interrupts). This directory is a git repository (initialized after
+the first working ZEXALL/ZEXDOC pass).
 
 ## Build & Run
 
-Source lives in `src/`; the Makefile builds it into `bin/z80_emulator`.
+The emulator lives in `src/`, the assembler in `asm/src/`; the Makefile
+builds both into `bin/`.
 
 ```
-make         # gcc -Wall -Wextra -O2, compiles src/*.c into bin/z80_emulator
-make run     # build, then ./bin/z80_emulator | less (runs zexall.com by default)
-make clean   # remove object files and the binary
+make             # builds bin/z80_emulator and bin/z80asm
+make emulator    # just the emulator
+make assembler   # just the assembler
+make run         # build the emulator, then ./bin/z80_emulator | less (runs zexall.com)
+make clean       # remove object files and both binaries
 ```
 
 There is no test framework — correctness is verified by running the ZEXALL
@@ -97,4 +101,50 @@ top of every `z80_step()` and, when `PC == 0x0005`, handles BDOS function 2
 then manually pops the return address off the stack into `PC` to simulate the
 `RET`. `main.c` preloads `RET` (`0xC9`) at addresses `0x0000` and `0x0005` so
 unhandled calls to either still return safely.
+
+## Assembler (`asm/src/`)
+
+A conventional two-pass design, no lexer/token-stream stage — each source
+line is parsed directly as a string:
+
+- `symtab.c`/`.h` — a simple linked-list symbol table. `symtab_define()`
+  tolerates being called twice with the *same* value (pass 1 defines a
+  label, pass 2 redefines it to the same address) but rejects a genuine
+  conflicting redefinition.
+- `expr.c`/`.h` — recursive-descent expression evaluator (`+ - * / % & |
+  ^ ~`, parens, `$` for the current address, `low()`/`high()`, `'c'` char
+  literals, `0FFh`/`0xFF` hex). On pass 1, an undefined symbol evaluates to
+  `0` and sets `env->unresolved` instead of erroring, since it may be
+  defined later in the source; pass 2 treats the same case as a real error.
+- `encode.c`/`.h` — the instruction encoder. `parse_operand()` classifies
+  each comma-separated operand purely syntactically (register name, `(...)`
+  memory form, or fall through to `OP_IMM` expression text) *without*
+  evaluating expressions, which is what lets the same `encode_instruction()`
+  path run unchanged on both passes: instruction length in Z80 depends only
+  on the addressing-mode syntax, never on an expression's value, so pass 1
+  doesn't need real values, only correct byte counts. Mirrors the emulator's
+  own decoder logic in reverse, including the `IXH`/`IXL`/`IYH`/`IYL`
+  half-index-register encodings and the real-`H`/`L`-when-memory-is-the-other-
+  operand quirk (`idx_rfield()` here is the encode-side counterpart of
+  `get_idx_reg8`/`set_idx_reg8` in `z80.c`).
+- `assemble.c`/`.h` — line-level driver: strips comments (quote-aware, so a
+  `'` or `"` containing `;` isn't mistaken for a comment), extracts an
+  optional `label:`, and either handles a directive (`ORG`, `EQU`, `DB`/
+  `DEFB`, `DW`/`DEFW`, `DS`/`DEFS`, `END`) or calls `encode_instruction()`.
+  Bytes are written straight into a 64KB `AsmCtx.image` buffer at the
+  current `pc` via `asm_emit()`, which only actually writes on pass 2 (pass
+  1 just advances `pc` and tracks the min/max address touched) — this is
+  also why `DB`/`DW`/`DS` have no line-length limit despite the small,
+  fixed-size `EncOut.bytes[8]` used for instructions (real Z80 instructions
+  never exceed a handful of bytes; `DB "long string"` can be arbitrary
+  length, so those directives write to the image directly instead of
+  routing through `EncOut`).
+- `main.c` — CLI entry point and the two-pass driver (`run_pass()`, called
+  once per pass). On success, writes `image[min_addr..max_addr)` to the
+  output file — i.e. the output covers only the address range something was
+  actually assembled into, trimmed to whatever `ORG` the source used.
+
+See `docs/ROADMAP.md` for what's implemented vs. not (macros/`include` are
+the explicit next step) and the caveat that the encoder is validated
+against two example programs (`asm/examples/`), not exhaustively.
 

@@ -1,16 +1,5 @@
 
-Phase 1
-    make a complete z80 emulator
-    clean run of ZEXALL/ZEXDOC
-    basic in/out to keyboard and screen emulation (CP/M compatible BDOS calls)
+Probably need disassembler as well
 
-Phase 2
-    make a compatible assembler that can assemble the ZEXDOC/ALL .z80 files
-    expand on assembler to have complete functionality (macros, include, etc)
-    Might have to be based on some existing assembler for compatibility (CP/M?)
-    Produce a library of example programs/code
-
-Phase 3
-    add an emulation of the BDOS/BIOS calls that CP/M would require for input/output to screen
-    also for disk drive, emulate disk by saving/loading to files under a sub directory
+Research CP/M BDOS/BIOS call specification
 
