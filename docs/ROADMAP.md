@@ -1,8 +1,8 @@
 # Roadmap
 
-This consolidates the planning notes in `notes.txt`, `ideas.txt`, and
-`todo.txt` into one up-to-date plan. Phase order is a dependency chain, not
-a rigid schedule — each phase needs the previous one working.
+The project plan, kept current as work progresses. Phase order is a
+dependency chain, not a rigid schedule — each phase needs the previous one
+working.
 
 ## Phase 1: Z80 core emulator — done
 
@@ -52,9 +52,9 @@ generally.
   assembler's syntax/output format (e.g. ZSM4, as
   `zexall/ZEXALL-main/README.md` mentions) once macros make that question
   concrete, rather than inventing a new dialect.
-- [ ] **Disassembler**, the assembler's natural sibling tool (per
-  `docs/todo.txt`): given a `.com`/binary, print mnemonic/operand text for
-  each instruction. Three concrete payoffs, not just symmetry: (1) it would
+- [ ] **Disassembler**, the assembler's natural sibling tool: given a
+  `.com`/binary, print mnemonic/operand text for each instruction. Three
+  concrete payoffs, not just symmetry: (1) it would
   have made the manual byte-by-byte disassembly done by hand during the
   original ZEXALL debugging session (see git history around the DD/FD
   prefix fixes) trivial instead of tedious; (2) it directly attacks the
@@ -71,8 +71,8 @@ generally.
 
 ## Phase 3: CP/M BDOS/BIOS
 
-- [ ] **Research the CP/M BDOS/BIOS call specification first** (per
-  `docs/todo.txt`) — before writing more of `cpm.c`, pin down function
+- [ ] **Research the CP/M BDOS/BIOS call specification first** — before
+  writing more of `cpm.c`, pin down function
   numbers, register-passing conventions, and return/error conventions from
   a primary source (e.g. the CP/M 2.2 Interface Guide/Programmer's Guide),
   rather than guessing at BDOS semantics the way the current two functions
@@ -90,13 +90,13 @@ generally.
 
 ## Phase 4: Beyond CP/M (exploratory)
 
-Captured from `ideas.txt` as aspirational, not yet scoped:
+Aspirational, not yet scoped:
 
 - A GTK-based UI so this becomes a full computer emulator, not just a CLI
   test harness.
-- A custom ROM/OS on top of it — open design questions noted in
-  `ideas.txt` include a stack VM and whether Logo-style prefix notation
-  could combine with a stack machine model.
+- A custom ROM/OS on top of it — open design questions include a stack VM
+  and whether Logo-style prefix notation could combine with a stack machine
+  model.
 
 ## Known gaps / near-term technical debt
 
