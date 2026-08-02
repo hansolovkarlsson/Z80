@@ -12,23 +12,29 @@ ZEXALL/ZEXDOC pass).
 
 ## Build & Run
 
-```
-./build.sh   # gcc -Wall -Wextra -O2 main.c z80.c cpm.c alu.c -o z80_emulator
-./run.sh     # ./z80_emulator | less  (runs zexall.com by default)
-```
-
-There is no Makefile and no test framework — correctness is verified by
-running the ZEXALL exerciser and reading its console output for per-opcode
-`ERROR` reports vs. `OK` lines. ZEXALL/ZEXDOC (`zexall/ZEXALL-main/`) are
-third-party, downloaded pre-built CP/M test binaries (by Frank D. Cringle, via
-YAZE-AG, GPLv2) — not code belonging to this project, and not meant to be
-edited. They're the correctness oracle: if the emulator is right, every
-opcode reports "OK"; a wrong flag or result shows up as an "ERROR" line
-naming the instruction. To run a specific CP/M `.com` file instead of the
-default `zexall.com`, pass it as argv[1]:
+Source lives in `src/`; the Makefile builds it into `bin/z80_emulator`.
 
 ```
-./z80_emulator zexdoc.com
+make         # gcc -Wall -Wextra -O2, compiles src/*.c into bin/z80_emulator
+make run     # build, then ./bin/z80_emulator | less (runs zexall.com by default)
+make clean   # remove object files and the binary
+```
+
+There is no test framework — correctness is verified by running the ZEXALL
+exerciser and reading its console output for per-opcode `ERROR` reports vs.
+`OK` lines. ZEXALL/ZEXDOC (`zexall/ZEXALL-main/`) are third-party,
+downloaded pre-built CP/M test binaries (by Frank D. Cringle, via YAZE-AG,
+GPLv2) — not code belonging to this project, and not meant to be edited.
+They're the correctness oracle: if the emulator is right, every opcode
+reports "OK"; a wrong flag or result shows up as an "ERROR" line naming the
+instruction. As of the last full run, both `zexall.com` and `zexdoc.com`
+pass cleanly (67/67 OK, 0 errors, 0 unimplemented opcodes). To run a
+specific CP/M `.com` file instead of the default `zexall.com`, pass it as
+argv[1] (paths are resolved relative to the working directory you invoke
+the binary from, typically the repo root):
+
+```
+./bin/z80_emulator zexdoc.com
 ```
 
 (`zexdoc.com`/`zexall.com` live in `zexall/ZEXALL-main/`; a copy of
@@ -54,16 +60,25 @@ opcode, decoding register indices out of the opcode byte itself:
 Both use `get_cb_reg`/`set_cb_reg` to map a 3-bit register index to
 B/C/D/E/H/L/(HL)/A.
 
-**Prefixed instructions** get their own sub-tables/dispatchers, all wired up
-in `z80_init_tables()` and invoked from `main_opcode_table`:
-- `0xCB` → `cb_opcode_table` (rotate/shift/BIT/SET/RES).
-- `0xED` → `ed_opcode_table` (extended ops: block transfer/search, NEG, 16-bit
-  ADC/SBC, `LD SP,(nn)`, etc.).
-- `0xDD`/`0xFD` → `z80_op_prefix_index`, which decodes IX/IY-specific opcodes
-  (indexed loads/ALU with an `(IX+d)`/`(IY+d)` displacement byte) and, for any
-  opcode it doesn't special-case, falls back to re-decoding as a plain
-  (non-indexed) opcode via `main_opcode_table`. A nested `0xDD/0xFD 0xCB d
-  opcode` double prefix is handled by `z80_op_index_cb`.
+**Prefixed instructions** get their own dispatcher functions, wired up as
+single entries in `main_opcode_table` (not separate 256-entry tables — despite
+some earlier/commented-out code suggesting otherwise, `0xCB` and `0xED`
+dispatch via an opcode `switch` inside `z80_op_prefix_cb`/`z80_op_prefix_ed`):
+- `0xCB` → `z80_op_prefix_cb` (rotate/shift/BIT/SET/RES via `get_cb_reg`/
+  `set_cb_reg`).
+- `0xED` → `z80_op_prefix_ed` (extended ops: block transfer/search, NEG,
+  16-bit ADC/SBC, `LD SP,(nn)`, `RLD`/`RRD`, etc.).
+- `0xDD`/`0xFD` → `z80_op_prefix_index`, which explicitly decodes the
+  IX/IY-specific opcodes (16-bit load/arith/inc/dec, push/pop, `EX (SP),IX`,
+  `JP (IX)`, `LD SP,IX`, `(IX+d)` displacement forms, and the undocumented
+  `IXH`/`IXL`/`IYH`/`IYL` 8-bit ops). For the `0x40`-`0x7F` and `0x80`-`0xBF`
+  ranges it delegates to `z80_op_index_ld_r_r`/`z80_op_index_alu_group`,
+  which substitute `IXH`/`IXL` for `H`/`L` *unless* the other operand is
+  `(IX+d)` memory — real Z80 hardware quirk: `LD H,(IX+d)` loads real `H`,
+  not `IXH`. Any opcode not covered by any of this (genuinely
+  prefix-independent, e.g. arithmetic/logic against `B`/`C`/`D`/`E`/`A`) falls
+  back to `main_opcode_table[opcode]`. A nested `0xDD/0xFD 0xCB d opcode`
+  double prefix is handled by `z80_op_index_cb`.
 
 **ALU logic lives in `alu.c`/`alu.h`**, separate from opcode dispatch: flag
 bit masks (`FLAG_C`, `FLAG_N`, `FLAG_PV`, `FLAG_X`, `FLAG_H`, `FLAG_Y`,
@@ -83,8 +98,3 @@ then manually pops the return address off the stack into `PC` to simulate the
 `RET`. `main.c` preloads `RET` (`0xC9`) at addresses `0x0000` and `0x0005` so
 unhandled calls to either still return safely.
 
-## Notable non-obvious file
-
-`z80_1.c` is a stray/earlier working copy of `z80.c` (not referenced by
-`build.sh`, contains dead commented-out code). Treat `z80.c` as the canonical
-source; don't edit `z80_1.c` expecting it to affect the build.
