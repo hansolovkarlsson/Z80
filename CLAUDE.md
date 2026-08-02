@@ -13,8 +13,8 @@ the first working ZEXALL/ZEXDOC pass).
 
 ## Build & Run
 
-The emulator lives in `src/`, the assembler in `asm/src/`; the Makefile
-builds both into `bin/`.
+The emulator lives in `emu/src/`, the assembler in `asm/src/`; the
+Makefile builds both into `bin/`.
 
 ```
 make             # builds bin/z80_emulator and bin/z80asm
@@ -26,7 +26,7 @@ make clean       # remove object files and both binaries
 
 There is no test framework — correctness is verified by running the ZEXALL
 exerciser and reading its console output for per-opcode `ERROR` reports vs.
-`OK` lines. ZEXALL/ZEXDOC (`zexall/ZEXALL-main/`) are third-party,
+`OK` lines. ZEXALL/ZEXDOC (`emu/zexall/ZEXALL-main/`) are third-party,
 downloaded pre-built CP/M test binaries (by Frank D. Cringle, via YAZE-AG,
 GPLv2) — not code belonging to this project, and not meant to be edited.
 They're the correctness oracle: if the emulator is right, every opcode
@@ -41,7 +41,7 @@ the binary from, typically the repo root):
 ./bin/z80_emulator zexdoc.com
 ```
 
-(`zexdoc.com`/`zexall.com` live in `zexall/ZEXALL-main/`, which is also
+(`zexdoc.com`/`zexall.com` live in `emu/zexall/ZEXALL-main/`, which is also
 `main.c`'s default load path when no argv[1] is given.) The zexdoc variant
 checks only documented flag behavior; zexall also checks the undocumented
 flags (bits 3 and 5, `FLAG_X`/`FLAG_Y`).
@@ -144,7 +144,12 @@ line is parsed directly as a string:
   output file — i.e. the output covers only the address range something was
   actually assembled into, trimmed to whatever `ORG` the source used.
 
-See `docs/ROADMAP.md` for what's implemented vs. not (macros/`include` are
-the explicit next step) and the caveat that the encoder is validated
-against two example programs (`asm/examples/`), not exhaustively.
+Preprocessing (`preprocess.c`/`.h`) runs once, before the two passes above,
+flattening `MACRO`/`ENDM`/`LOCAL`-expanded and `INCLUDE`-spliced source into
+a flat line list; conditional assembly (`IF`/`ELSE`/`ENDIF`) is integrated
+into `assemble.c` itself instead, since it needs live `$`/symbol state
+rather than pure text substitution. See `docs/ROADMAP.md` for exact status
+— as of the last update, `bin/z80asm` assembles the real, unmodified
+`zexall.z80`/`zexdoc.z80` with zero errors, and the result runs cleanly
+through `bin/z80_emulator`.
 

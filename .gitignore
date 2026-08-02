@@ -1,4 +1,4 @@
 bin/
-src/*.o
+emu/src/*.o
 asm/src/*.o
 .claude/

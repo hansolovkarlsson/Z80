@@ -23,7 +23,7 @@ Goal: an assembler capable of building `zexall.z80`/`zexdoc.z80` from
 source (a natural correctness target) and CP/M-style `.asm` sources
 generally.
 
-**Milestone reached**: `bin/z80asm zexall/ZEXALL-main/zexall.z80` now
+**Milestone reached**: `bin/z80asm emu/zexall/ZEXALL-main/zexall.z80` now
 assembles with zero errors, and running the result through
 `bin/z80_emulator` reports the same clean 67/67 OK / 0 errors / "Tests
 complete" as the original pre-built `zexall.com` — i.e. our own assembler,
@@ -119,7 +119,7 @@ there surfaced and fixed several real dialect gaps, documented below.
 - [ ] A small library of example programs beyond the ones above.
 - [ ] Decide whether to target compatibility with an existing CP/M
   assembler's syntax/output format (e.g. ZSM4, as
-  `zexall/ZEXALL-main/README.md` mentions) — largely answered in practice
+  `emu/zexall/ZEXALL-main/README.md` mentions) — largely answered in practice
   now (the dialect gaps above are exactly the ZSM4-isms needed), but worth
   an explicit decision on how far to lean into full ZSM4 fidelity vs. the
   more permissive/pragmatic choices made above (e.g. #4).

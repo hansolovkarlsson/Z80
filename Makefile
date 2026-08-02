@@ -3,7 +3,7 @@ CFLAGS := -Wall -Wextra -O2
 
 BIN_DIR := bin
 
-EMU_SRC_DIR := src
+EMU_SRC_DIR := emu/src
 EMU_SRCS := $(wildcard $(EMU_SRC_DIR)/*.c)
 EMU_OBJS := $(EMU_SRCS:.c=.o)
 EMU_TARGET := $(BIN_DIR)/z80_emulator
