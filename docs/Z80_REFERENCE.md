@@ -1,9 +1,12 @@
 # Z80 CPU Reference
 
 A reference for the Z80 instruction set as implemented by this project's
-emulator (`emu/src/`) and assembler (`asm/src/`), including the
-undocumented instructions and flag behavior that real Z80 hardware
-exhibits and that `zexall`/`zexdoc` specifically test for.
+emulator (`emu/src/`), assembler (`asm/src/`), and disassembler
+(`disasm/src/`), including the undocumented instructions and flag
+behavior that real Z80 hardware exhibits and that `zexall`/`zexdoc`
+specifically test for. `bin/z80dasm` is a hands-on way to explore this
+instruction set against real machine code — see `docs/ROADMAP.md`'s
+Phase 2 section for what it covers.
 
 Where this project's own implementation status matters (an instruction
 the assembler can encode but the emulator can't yet execute, for

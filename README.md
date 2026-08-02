@@ -18,17 +18,28 @@ directives, expression evaluation, conditional assembly
 against the real target: `bin/z80asm` assembles the actual, unmodified
 `zexall.z80`/`zexdoc.z80` source with zero errors, and running the result
 through `bin/z80_emulator` passes all 67 tests, same as the original
-pre-built binaries. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full
-picture: what's next, what's done, and known gaps (I/O ports, interrupts).
+pre-built binaries.
+
+A disassembler (`disasm/`) covers the same instruction set in reverse:
+given a `.com`/binary, it prints a listing with auto-generated labels for
+jump/call targets. It's a straightforward linear decoder (no code/data
+separation yet — pointed at a data region, it'll decode those bytes as
+instructions too), but the decoding itself is solid: verified against
+`asm/examples/hello.asm`/`selftest.asm` (assemble → disassemble → matches
+the source exactly) and spot-checked against the real `zexall.com`.
+
+See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full picture: what's
+next, what's done, and known gaps (I/O ports, interrupts).
 
 ## Build & run
 
 ```
-make             # builds both bin/z80_emulator and bin/z80asm
-make emulator    # just the emulator
-make assembler   # just the assembler
-make run         # build the emulator, then run it against zexall.com
-make clean       # remove build output
+make               # builds bin/z80_emulator, bin/z80asm, and bin/z80dasm
+make emulator      # just the emulator
+make assembler     # just the assembler
+make disassembler  # just the disassembler
+make run           # build the emulator, then run it against zexall.com
+make clean         # remove build output
 ```
 
 Correctness is verified by running the ZEXALL/ZEXDOC exerciser and reading
@@ -49,6 +60,14 @@ source produces a CP/M `.com`-ready image):
 ./bin/z80_emulator hello.com
 ```
 
+The disassembler takes a binary and prints a listing (default load
+address `0x100`, matching CP/M convention; `-o` overrides it, `-l` caps
+how many bytes to decode):
+
+```
+./bin/z80dasm hello.com -l 0x34
+```
+
 ## Project layout
 
 - `emu/src/` — the emulator itself (`z80.c`/`z80.h` opcode dispatch,
@@ -59,6 +78,8 @@ source produces a CP/M `.com`-ready image):
   project's code, not meant to be edited).
 - `asm/src/` — the assembler (`symtab`, `expr`, `encode`, `assemble`,
   `preprocess`, `main`); `asm/examples/` has example `.asm` programs.
+- `disasm/src/` — the disassembler (`decode`, `main`); `disasm/examples/`
+  has example output.
 - `docs/` — the project roadmap ([`ROADMAP.md`](docs/ROADMAP.md)), a Z80
   CPU reference including undocumented opcodes
   ([`Z80_REFERENCE.md`](docs/Z80_REFERENCE.md)), and the assembler syntax

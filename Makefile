@@ -13,19 +13,29 @@ ASM_SRCS := $(wildcard $(ASM_SRC_DIR)/*.c)
 ASM_OBJS := $(ASM_SRCS:.c=.o)
 ASM_TARGET := $(BIN_DIR)/z80asm
 
-.PHONY: all emulator assembler run clean
+DASM_SRC_DIR := disasm/src
+DASM_SRCS := $(wildcard $(DASM_SRC_DIR)/*.c)
+DASM_OBJS := $(DASM_SRCS:.c=.o)
+DASM_TARGET := $(BIN_DIR)/z80dasm
 
-all: emulator assembler
+.PHONY: all emulator assembler disassembler run clean
+
+all: emulator assembler disassembler
 
 emulator: $(EMU_TARGET)
 
 assembler: $(ASM_TARGET)
+
+disassembler: $(DASM_TARGET)
 
 $(EMU_TARGET): $(EMU_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(EMU_OBJS)
 
 $(ASM_TARGET): $(ASM_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(ASM_OBJS)
+
+$(DASM_TARGET): $(DASM_OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $(DASM_OBJS)
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
@@ -37,4 +47,4 @@ run: emulator
 	./$(EMU_TARGET) | less
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(EMU_TARGET) $(ASM_TARGET)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET)

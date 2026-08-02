@@ -6,10 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Z80 CPU emulator written in C, built to run CP/M-80 programs. Phase 1 (a
 complete Z80 core passing ZEXALL/ZEXDOC cleanly) is done; Phase 2 (a Z80
-assembler, including macros/`include`) is far along too — see
-`docs/ROADMAP.md` for exact status, what's next (a full CP/M BDOS/BIOS),
-and known gaps (I/O ports, interrupts). This directory is a git repository
-(initialized after the first working ZEXALL/ZEXDOC pass).
+assembler, including macros/`include`, plus a disassembler) is far along
+too — see `docs/ROADMAP.md` for exact status, what's next (a full CP/M
+BDOS/BIOS), and known gaps (I/O ports, interrupts). This directory is a
+git repository (initialized after the first working ZEXALL/ZEXDOC pass).
 
 Two reference docs live in `docs/` alongside the roadmap: `Z80_REFERENCE.md`
 (the Z80 instruction set, including undocumented opcodes/flag behavior,
@@ -20,15 +20,16 @@ dispatch/encoding is actually implemented, not the ISA or syntax itself.
 
 ## Build & Run
 
-The emulator lives in `emu/src/`, the assembler in `asm/src/`; the
-Makefile builds both into `bin/`.
+The emulator lives in `emu/src/`, the assembler in `asm/src/`, the
+disassembler in `disasm/src/`; the Makefile builds all three into `bin/`.
 
 ```
-make             # builds bin/z80_emulator and bin/z80asm
-make emulator    # just the emulator
-make assembler   # just the assembler
-make run         # build the emulator, then ./bin/z80_emulator | less (runs zexall.com)
-make clean       # remove object files and both binaries
+make               # builds bin/z80_emulator, bin/z80asm, and bin/z80dasm
+make emulator      # just the emulator
+make assembler     # just the assembler
+make disassembler  # just the disassembler
+make run           # build the emulator, then ./bin/z80_emulator | less (runs zexall.com)
+make clean         # remove object files and all three binaries
 ```
 
 There is no test framework — correctness is verified by running the ZEXALL
@@ -164,4 +165,49 @@ this all produces/consumes, and `docs/ROADMAP.md` for exact project
 status — as of the last update, `bin/z80asm` assembles the real,
 unmodified `zexall.z80`/`zexdoc.z80` with zero errors, and the result runs
 cleanly through `bin/z80_emulator`.
+
+## Disassembler (`disasm/src/`)
+
+The inverse of `asm/src/encode.c`, in a separate binary rather than a
+`z80asm` mode flag — reading is a different shape of problem than writing
+(no expression evaluator or symbol table, but does need to re-derive
+labels).
+
+- `decode.c`/`.h` — `decode_instruction(mem, addr)` decodes exactly one
+  instruction from a full 64KB memory image and returns its formatted
+  text, byte length, and (if the instruction references an absolute
+  address — a jump/call target or a `(nn)` memory operand) that address,
+  tagged as code or data. Structured like the emulator's own dispatch
+  (`decode_cb`/`decode_ed`/`decode_index`/`decode_index_cb` mirroring
+  `z80_op_prefix_cb`/`_ed`/`_index`/`z80_op_index_cb`), except every path
+  returns text instead of executing. The `DD`/`FD` "not one of my special
+  cases" fallback recurses into `decode_instruction_impl` one byte later
+  rather than falling back to a table lookup like the emulator does —
+  which, as a side effect, correctly handles repeated/stacked `DD`/`FD`
+  prefixes for free (each redundant prefix just adds 1 to the wrapping
+  `length`, and whichever prefix byte is actually adjacent to the real
+  opcode is the one whose special-case table gets consulted). Any byte
+  pattern with no real decode (most of `0xED`'s space) falls back to `DB
+  nnh` so the decoder never fails to make progress.
+- `main.c` — two-pass driver, mirroring the assembler's pass structure in
+  reverse: pass 1 linearly decodes the whole loaded image just to collect
+  every instruction's referenced address into a label table (`Lxxxx` for
+  code targets, `Dxxxx` for data); pass 2 decodes again and, per
+  instruction, substitutes a label name for the raw hex address in the
+  formatted text wherever pass 1 found one at that address (string search
+  for the hex literal `decode_instruction` already produced, not a
+  re-formatting step). A label definition line (`Lxxxx:`) is emitted
+  before any instruction whose address appears in the table.
+
+**Known limitation** (see `docs/ROADMAP.md` for the fuller writeup): this
+is purely linear decoding, address by address, with no code/data
+separation — fed a data region (e.g. embedded message strings), it
+decodes those bytes as instructions too, which is correct behavior for
+what linear disassembly *is*, not a bug, but does mean output quality
+depends on the input being (close to) all code, or on the caller using
+`-l` to bound the range. `docs/Z80_REFERENCE.md` documents which opcodes
+are covered, including several the *emulator* can't execute yet (`IN`/
+`OUT`, `IM`, `RETI`/`RETN`, `LD A,I` etc.) — this disassembler targets
+real Z80 machine code, not just this project's own emulator's current
+capability.
 
