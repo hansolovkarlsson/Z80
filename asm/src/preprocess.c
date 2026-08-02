@@ -305,6 +305,14 @@ static int process_file(const char *filename, PPBuilder *out, MacroTable *mt, in
 
     int in_macro_def = 0;
     Macro *cur_macro = NULL;
+    // Tracks REPT nesting *while capturing a macro body*, so an inner
+    // REPT...ENDM block's ENDM isn't mistaken for the end of the macro
+    // itself (both close with the literal keyword ENDM - see the `dss`
+    // macro in zexall.mac, which is MACRO...ENDM wrapping a REPT...ENDM).
+    // REPT/ENDM aren't otherwise interpreted here: they're captured
+    // verbatim as body text and only actually expanded later, during real
+    // assembly (asm/src/main.c), since a REPT count can depend on $.
+    int macro_rept_depth = 0;
 
     while (fgets(raw, sizeof(raw), f)) {
         line_no++;
@@ -320,10 +328,16 @@ static int process_file(const char *filename, PPBuilder *out, MacroTable *mt, in
         if (in_macro_def) {
             char word[64], rest[512];
             split_first_word(line, word, sizeof(word), rest, sizeof(rest));
-            if (strcasecmp(word, "ENDM") == 0) {
-                in_macro_def = 0;
-                cur_macro = NULL;
-                continue;
+            if (strcasecmp(word, "REPT") == 0) {
+                macro_rept_depth++;
+            } else if (strcasecmp(word, "ENDM") == 0) {
+                if (macro_rept_depth > 0) {
+                    macro_rept_depth--; // closes a nested REPT, not the macro - fall through and capture it
+                } else {
+                    in_macro_def = 0;
+                    cur_macro = NULL;
+                    continue;
+                }
             }
             if (line[0] == '\0') continue;
             if (cur_macro->nbody >= MAX_MACRO_LINES) {

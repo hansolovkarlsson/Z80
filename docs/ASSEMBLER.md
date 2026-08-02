@@ -90,6 +90,7 @@ since the symbol may be defined later in the source.
 | `ASEG` / `CSEG` / `DSEG` | No-ops — this is a single flat-image assembler; segment selection doesn't apply. Accepted so real-world sources that use them (as a habit from segmented/relocatable assemblers) don't need editing. |
 | `IF expr` / `ELSE` / `ENDIF` | Conditional assembly, up to 32 levels deep. Non-zero is true. Lines inside a false branch are fully skipped — no bytes emitted, no labels defined, no PC advance — but `IF`/`ELSE`/`ENDIF` themselves are still tracked so nesting stays correct. |
 | `ERROR 'message'` | Unconditionally fails assembly with `message` — typically used inside a macro's own self-check (`IF ... ERROR '...' ENDIF`, e.g. to catch a caller passing the wrong number of arguments). |
+| `REPT count` / `ENDM` | Repeats the enclosed lines `count` times. `count` can reference `$` (evaluated fresh for each pass, using that pass's real address at the `REPT` line) — the common use is padding to a target address, e.g. `REPT target-$` / `DB 'X'` / `ENDM` fills with `'X'` up to (not including) `target`. Works both at the top level and inside a `MACRO` body (the nesting is tracked correctly even though both `MACRO` and `REPT` close with the same `ENDM` keyword — see `asm/examples/rept_test.asm`). |
 
 ## Macros
 

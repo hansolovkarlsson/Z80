@@ -155,16 +155,32 @@ line is parsed directly as a string:
   once per pass). On success, writes `image[min_addr..max_addr)` to the
   output file — i.e. the output covers only the address range something was
   actually assembled into, trimmed to whatever `ORG` the source used.
+  `run_pass()` walks the preprocessed line array by index (not a plain
+  `for`) specifically so it can handle `REPT count`/`ENDM`: on hitting a
+  `REPT` line it finds the matching `ENDM` (nesting-aware, for `REPT`
+  inside `REPT`), evaluates `count` against that pass's live `$`/symbol
+  state, and reprocesses the enclosed line range that many times before
+  continuing — `assemble_line()` can't do this on its own since it only
+  ever sees one line at a time, and (like `IF`) `REPT`'s count can be
+  `$`-dependent, so it can't be resolved by `preprocess.c` before
+  addresses exist.
 
 Preprocessing (`preprocess.c`/`.h`) runs once, before the two passes above,
 flattening `MACRO`/`ENDM`/`LOCAL`-expanded and `INCLUDE`-spliced source into
-a flat line list; conditional assembly (`IF`/`ELSE`/`ENDIF`) is integrated
-into `assemble.c` itself instead, since it needs live `$`/symbol state
-rather than pure text substitution. See `docs/ASSEMBLER.md` for the syntax
+a flat line list; conditional assembly (`IF`/`ELSE`/`ENDIF`) and `REPT`/
+`ENDM` are integrated into the real two-pass loop instead (`assemble.c` and
+`main.c` respectively), since both need live `$`/symbol state rather than
+pure text substitution. One preprocessing-level wrinkle `REPT` introduces:
+`MACRO`/`ENDM` and `REPT`/`ENDM` both close with the literal keyword
+`ENDM`, so capturing a macro body that contains a nested `REPT` block (as
+`zexall.mac`'s own `dss` macro does) needs `preprocess.c` to track that
+nesting explicitly — otherwise the inner block's `ENDM` would be mistaken
+for the end of the macro itself. See `docs/ASSEMBLER.md` for the syntax
 this all produces/consumes, and `docs/ROADMAP.md` for exact project
 status — as of the last update, `bin/z80asm` assembles the real,
-unmodified `zexall.z80`/`zexdoc.z80` with zero errors, and the result runs
-cleanly through `bin/z80`.
+unmodified ZSM4 sources `zexall.mac`/`zexdoc.mac` (not just the
+Perl-generated `zexall.z80`/`zexdoc.z80`) with zero errors, and the result
+runs cleanly through `bin/z80`.
 
 ## Disassembler (`disasm/src/`)
 

@@ -2,7 +2,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include "assemble.h"
+#include "expr.h"
 #include "preprocess.h"
 #include "symtab.h"
 
@@ -18,23 +20,133 @@ static char *default_output_name(const char *input) {
     return out;
 }
 
+// Peeks the first whitespace-delimited word of `line` (word only, no
+// remainder - callers that need the rest use split_first_word below).
+static void peek_word(const char *line, char *word, size_t wordsz) {
+    const char *p = line;
+    while (*p == ' ' || *p == '\t') p++;
+    const char *start = p;
+    while (*p && *p != ' ' && *p != '\t') p++;
+    size_t len = (size_t)(p - start);
+    if (len >= wordsz) len = wordsz - 1;
+    memcpy(word, start, len);
+    word[len] = '\0';
+}
+
+// Like peek_word, but also returns a pointer (into `line`) at the start
+// of whatever follows the word.
+static void split_first_word(const char *line, char *word, size_t wordsz, const char **rest_out) {
+    const char *p = line;
+    while (*p == ' ' || *p == '\t') p++;
+    const char *start = p;
+    while (*p && *p != ' ' && *p != '\t') p++;
+    size_t len = (size_t)(p - start);
+    if (len >= wordsz) len = wordsz - 1;
+    memcpy(word, start, len);
+    word[len] = '\0';
+    while (*p == ' ' || *p == '\t') p++;
+    *rest_out = p;
+}
+
+// REPT's own body may itself contain a nested REPT, so this tracks
+// nesting depth to find the ENDM that actually closes the one at
+// `start_idx` (not an inner REPT's). Returns -1 if unmatched.
+static int find_matching_endm(PPResult *pp, int start_idx) {
+    int depth = 1;
+    for (int j = start_idx + 1; j < pp->count; j++) {
+        char word[16];
+        peek_word(pp->lines[j].text, word, sizeof(word));
+        if (strcasecmp(word, "REPT") == 0) depth++;
+        else if (strcasecmp(word, "ENDM") == 0) {
+            depth--;
+            if (depth == 0) return j;
+        }
+    }
+    return -1;
+}
+
+// Evaluates a REPT count expression using the current pass's live $/symbol
+// state - this is exactly why REPT is handled here rather than as a
+// text-preprocessing step: a count like "&lab+4-$" depends on the
+// location counter, which isn't known until real assembly is underway.
+static long eval_rept_count(AsmCtx *ctx, const char *expr_text, const char *origin, int *errors) {
+    ExprEnv env;
+    env.symtab = ctx->symtab;
+    env.pc = ctx->pc;
+    env.pass = ctx->pass;
+    env.unresolved = 0;
+    env.err = NULL;
+
+    const char *p = expr_text;
+    long v = expr_parse(&p, &env);
+
+    if (env.err) {
+        fprintf(stderr, "%s: error: %s in REPT count\n", origin, env.err);
+        (*errors)++;
+        return 0;
+    }
+    if (ctx->pass == 2 && env.unresolved) {
+        fprintf(stderr, "%s: error: undefined symbol in REPT count\n", origin);
+        (*errors)++;
+        return 0;
+    }
+    return v;
+}
+
+static int process_one_line(AsmCtx *ctx, PPResult *pp, int i) {
+    LineResult r;
+    if (assemble_line(ctx, pp->lines[i].text, &r) != 0) {
+        fprintf(stderr, "%s: error: %s\n", pp->lines[i].origin, r.err);
+        return 1;
+    }
+    if (r.kind == LINE_ORG) ctx->pc = r.org_addr;
+    return 0;
+}
+
 // Runs one full pass over the already-preprocessed (macro-expanded,
 // INCLUDE-spliced) line list. Returns the number of errors encountered
-// (each printed to stderr as it's found).
+// (each printed to stderr as it's found). REPT/ENDM blocks are expanded
+// here, structurally, by re-running the enclosed line range - this is a
+// driver-level concern (which line runs next), not something
+// assemble_line() can do on its own since it only ever sees one line at
+// a time.
 static int run_pass(PPResult *pp, AsmCtx *ctx, int pass) {
     ctx->pass = pass;
     ctx->pc = 0;
     ctx->cond_depth = 0;
     int errors = 0;
 
-    for (int i = 0; i < pp->count; i++) {
-        LineResult r;
-        if (assemble_line(ctx, pp->lines[i].text, &r) != 0) {
-            fprintf(stderr, "%s: error: %s\n", pp->lines[i].origin, r.err);
-            errors++;
+    int i = 0;
+    while (i < pp->count) {
+        char word[16];
+        peek_word(pp->lines[i].text, word, sizeof(word));
+
+        if (strcasecmp(word, "REPT") == 0) {
+            int end_idx = find_matching_endm(pp, i);
+            if (end_idx < 0) {
+                fprintf(stderr, "%s: error: REPT without matching ENDM\n", pp->lines[i].origin);
+                errors++;
+                break;
+            }
+
+            char w2[16];
+            const char *rest;
+            split_first_word(pp->lines[i].text, w2, sizeof(w2), &rest);
+            long count = eval_rept_count(ctx, rest, pp->lines[i].origin, &errors);
+            if (count < 0) count = 0;
+
+            for (long rep = 0; rep < count; rep++) {
+                for (int j = i + 1; j < end_idx; j++) {
+                    errors += process_one_line(ctx, pp, j);
+                }
+            }
+
+            i = end_idx + 1;
             continue;
         }
-        if (r.kind == LINE_ORG) ctx->pc = r.org_addr;
+
+        errors += process_one_line(ctx, pp, i);
+        i++;
     }
 
     if (ctx->cond_depth > 0) {
