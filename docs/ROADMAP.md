@@ -52,9 +52,31 @@ generally.
   assembler's syntax/output format (e.g. ZSM4, as
   `zexall/ZEXALL-main/README.md` mentions) once macros make that question
   concrete, rather than inventing a new dialect.
+- [ ] **Disassembler**, the assembler's natural sibling tool (per
+  `docs/todo.txt`): given a `.com`/binary, print mnemonic/operand text for
+  each instruction. Three concrete payoffs, not just symmetry: (1) it would
+  have made the manual byte-by-byte disassembly done by hand during the
+  original ZEXALL debugging session (see git history around the DD/FD
+  prefix fixes) trivial instead of tedious; (2) it directly attacks the
+  assembler's "not yet exhaustively tested" gap above — assemble a test
+  program, disassemble the output, and diff against the source, or
+  disassemble a real corpus like `zexall.com`/`zexdoc.com` and spot-check
+  against `zexall.z80`'s own source; (3) general tooling for inspecting
+  CP/M binaries in Phase 3. Shares opcode-table knowledge with `encode.c`
+  (same mnemonics, inverse direction) but is a separate binary, not a mode
+  flag on `z80asm` - reading is a different shape of problem than writing
+  (no expression evaluation or symbol table needed, but does need to
+  re-derive labels from jump/call targets to be useful instead of just a
+  raw mnemonic dump).
 
 ## Phase 3: CP/M BDOS/BIOS
 
+- [ ] **Research the CP/M BDOS/BIOS call specification first** (per
+  `docs/todo.txt`) — before writing more of `cpm.c`, pin down function
+  numbers, register-passing conventions, and return/error conventions from
+  a primary source (e.g. the CP/M 2.2 Interface Guide/Programmer's Guide),
+  rather than guessing at BDOS semantics the way the current two functions
+  (2, 9) were bootstrapped for ZEXALL's narrow needs.
 - Expand `cpm.c` past the two BDOS functions it has today (2: console char
   out, 9: print `$`-string) to the functions real CP/M-80 programs expect:
   console input (1, 6, 10), and file I/O (open/close/read/write/make/
