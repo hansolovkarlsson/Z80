@@ -5,6 +5,7 @@
 #include "symtab.h"
 
 #define IMAGE_SIZE 65536
+#define MAX_COND_DEPTH 32
 
 typedef struct {
     SymTab *symtab;
@@ -14,8 +15,17 @@ typedef struct {
     long min_addr;         // lowest address written so far
     long max_addr;          // highest address written so far, +1
     int had_output;
-    int line_no;
     const char *filename;
+
+    // IF/ELSE/ENDIF nesting. cond_active[d] is whether lines at that
+    // depth are actually processed (already ANDed with all enclosing
+    // levels); cond_taken[d] is whether the IF (not ELSE) branch was
+    // true, to decide what ELSE flips to; cond_parent_active[d] is
+    // whether the enclosing scope was active when this level was pushed.
+    int cond_depth;
+    int cond_active[MAX_COND_DEPTH];
+    int cond_taken[MAX_COND_DEPTH];
+    int cond_parent_active[MAX_COND_DEPTH];
 } AsmCtx;
 
 typedef enum { LINE_NORMAL, LINE_ORG } LineKind;

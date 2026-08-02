@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "assemble.h"
+#include "preprocess.h"
 #include "symtab.h"
 
 static char *default_output_name(const char *input) {
@@ -17,33 +18,30 @@ static char *default_output_name(const char *input) {
     return out;
 }
 
-// Runs one full pass over the source file. Returns the number of errors
-// encountered (each printed to stderr as it's found).
-static int run_pass(const char *input_path, AsmCtx *ctx, int pass) {
-    FILE *f = fopen(input_path, "r");
-    if (!f) {
-        fprintf(stderr, "z80asm: cannot open '%s': %s\n", input_path, strerror(errno));
-        return 1;
-    }
-
+// Runs one full pass over the already-preprocessed (macro-expanded,
+// INCLUDE-spliced) line list. Returns the number of errors encountered
+// (each printed to stderr as it's found).
+static int run_pass(PPResult *pp, AsmCtx *ctx, int pass) {
     ctx->pass = pass;
     ctx->pc = 0;
-    ctx->line_no = 0;
+    ctx->cond_depth = 0;
     int errors = 0;
 
-    char line[512];
-    while (fgets(line, sizeof(line), f)) {
-        ctx->line_no++;
+    for (int i = 0; i < pp->count; i++) {
         LineResult r;
-        if (assemble_line(ctx, line, &r) != 0) {
-            fprintf(stderr, "%s:%d: error: %s\n", ctx->filename, ctx->line_no, r.err);
+        if (assemble_line(ctx, pp->lines[i].text, &r) != 0) {
+            fprintf(stderr, "%s: error: %s\n", pp->lines[i].origin, r.err);
             errors++;
             continue;
         }
         if (r.kind == LINE_ORG) ctx->pc = r.org_addr;
     }
 
-    fclose(f);
+    if (ctx->cond_depth > 0) {
+        fprintf(stderr, "%s: error: %d unclosed IF block(s) at end of file\n", ctx->filename, ctx->cond_depth);
+        errors++;
+    }
+
     return errors;
 }
 
@@ -66,6 +64,13 @@ int main(int argc, char *argv[]) {
         output_path = default_output;
     }
 
+    PPResult pp = preprocess(input_path);
+    if (pp.count < 0) {
+        fprintf(stderr, "z80asm: preprocessing failed\n");
+        free(default_output);
+        return EXIT_FAILURE;
+    }
+
     SymTab symtab;
     symtab_init(&symtab);
 
@@ -79,12 +84,12 @@ int main(int argc, char *argv[]) {
     ctx.had_output = 0;
     ctx.filename = input_path;
 
-    int errors = run_pass(input_path, &ctx, 1);
+    int errors = run_pass(&pp, &ctx, 1);
     if (errors == 0) {
         ctx.had_output = 0;
         ctx.min_addr = 0;
         ctx.max_addr = 0;
-        errors = run_pass(input_path, &ctx, 2);
+        errors = run_pass(&pp, &ctx, 2);
     } else {
         fprintf(stderr, "z80asm: %d error(s) in pass 1, aborting\n", errors);
     }
@@ -96,6 +101,7 @@ int main(int argc, char *argv[]) {
         symtab_free(&symtab);
         free(image);
         free(default_output);
+        pp_free(&pp);
         return EXIT_FAILURE;
     }
 
@@ -104,6 +110,7 @@ int main(int argc, char *argv[]) {
         symtab_free(&symtab);
         free(image);
         free(default_output);
+        pp_free(&pp);
         return EXIT_SUCCESS;
     }
 
@@ -113,6 +120,7 @@ int main(int argc, char *argv[]) {
         symtab_free(&symtab);
         free(image);
         free(default_output);
+        pp_free(&pp);
         return EXIT_FAILURE;
     }
     long len = ctx.max_addr - ctx.min_addr;
@@ -124,5 +132,6 @@ int main(int argc, char *argv[]) {
     symtab_free(&symtab);
     free(image);
     free(default_output);
+    pp_free(&pp);
     return EXIT_SUCCESS;
 }

@@ -786,3 +786,23 @@ void encode_instruction(EncCtx *ctx, const char *mnemonic, const char *operand_t
 
     out->err = "unknown mnemonic";
 }
+
+int is_known_mnemonic(const char *mnemonic) {
+    static const char *names[] = {
+        "LD", "PUSH", "POP", "EX", "EXX",
+        "ADD", "ADC", "SUB", "SBC", "AND", "XOR", "OR", "CP",
+        "INC", "DEC",
+        "RLCA", "RRCA", "RLA", "RRA", "RLD", "RRD",
+        "RLC", "RRC", "RL", "RR", "SLA", "SRA", "SLL", "SL1", "SRL",
+        "BIT", "SET", "RES",
+        "JP", "JR", "DJNZ", "CALL", "RET", "RETI", "RETN", "RST",
+        "IN", "OUT",
+        "LDI", "LDD", "LDIR", "LDDR", "CPI", "CPD", "CPIR", "CPDR",
+        "INI", "IND", "INIR", "INDR", "OUTI", "OUTD", "OTIR", "OTDR",
+        "NOP", "HALT", "DI", "EI", "DAA", "CPL", "NEG", "CCF", "SCF", "IM",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (str_eq_ci(mnemonic, names[i])) return 1;
+    }
+    return 0;
+}

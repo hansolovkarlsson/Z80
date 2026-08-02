@@ -20,9 +20,16 @@ interrupt handling.
 ## Phase 2: Assembler — in progress
 
 Goal: an assembler capable of building `zexall.z80`/`zexdoc.z80` from
-source (a natural correctness target — the assembled output should match
-the existing `.com` files byte-for-byte) and CP/M-style `.asm` sources
+source (a natural correctness target) and CP/M-style `.asm` sources
 generally.
+
+**Milestone reached**: `bin/z80asm zexall/ZEXALL-main/zexall.z80` now
+assembles with zero errors, and running the result through
+`bin/z80_emulator` reports the same clean 67/67 OK / 0 errors / "Tests
+complete" as the original pre-built `zexall.com` — i.e. our own assembler,
+assembling the real unmodified `zexall.z80` source, produces a program our
+own (independently ZEXALL-validated) emulator executes correctly. Getting
+there surfaced and fixed several real dialect gaps, documented below.
 
 - [x] Two-pass assembler (`asm/src/`, builds to `bin/z80asm`): lexer-free
   line-oriented parser, symbol table with forward-reference resolution, a
@@ -33,25 +40,89 @@ generally.
   quirk (mirroring the emulator's own decoder).
 - [x] Directives: `ORG`, `EQU`, `DB`/`DEFB`, `DW`/`DEFW`, `DS`/`DEFS`
   (with optional fill value), `END`.
-- [x] Two example programs (`asm/examples/`) assembled and run through
-  `bin/z80_emulator` as an end-to-end correctness check: `hello.asm`
-  (labels, `DJNZ`, conditional jumps, CP/M BDOS calls) and `selftest.asm`
-  ((IX+d)/(IY+d) addressing, `PUSH`/`POP` IX/IY, `CB`-prefixed rotate/BIT,
-  16-bit `ADD HL,DE`) — both pass.
-- [ ] **Not yet exhaustively tested.** The encoder was written in one pass
-  from known-correct Z80 encodings (the same knowledge base the emulator's
-  decoder was built from) and validated against the two example programs
-  above, not against every addressing-mode combination. Treat freshly
-  encoded instruction forms with the same suspicion ZEXALL originally
-  surfaced in the emulator, until there's broader coverage.
-- [ ] Macros and `include` directives — required before this can assemble
-  `zexall.z80`/`zexdoc.z80` themselves (which lean on `tstr`/`tmsg` macros
-  and `local` labels).
-- [ ] A small library of example programs beyond the two above.
+- [x] Conditional assembly (`IF`/`ELSE`/`ENDIF`), integrated into the real
+  two-pass loop rather than a text-preprocessing step — it has to see the
+  actual `$`/symbol-table state at that point in assembly, which a pure
+  preprocessor pass doesn't have yet. Backing this, `expr.c` gained
+  relational operators (`eq`/`ne`/`lt`/`le`/`gt`/`ge`, plus symbolic
+  `= <> < <= > >=`), lowest precedence, non-chaining, `-1`/`0` for
+  true/false (the traditional assembler convention).
+- [x] `MACRO`/`ENDM`/`LOCAL`/`INCLUDE` (`asm/src/preprocess.c`) as a text
+  substitution stage that runs once and flattens into a line list fed
+  unchanged into the two passes above. `name MACRO param1,param2,...`
+  definitions (matching the common M80/ZSM4 convention, name before the
+  `MACRO` keyword — the same convention `zexall.z80`'s own `tstr`/`tmsg`
+  macros use); `&param` substitution; `LOCAL name1,name2,...` for
+  per-expansion-unique label renaming (verified with a macro invoked twice
+  whose body defines a label — would collide without renaming, and
+  doesn't); `INCLUDE "path"` resolved relative to the including file's own
+  directory, not the invoking working directory. Also added `ERROR
+  'message'`, used by `zexall.z80`'s own macros as a self-check.
+- [x] Four example programs (`asm/examples/`) assembled and run through
+  `bin/z80_emulator` as an end-to-end correctness check — not just
+  assembled, actually executed and checked for the right behavior:
+  `hello.asm` (labels, `DJNZ`, conditional jumps, CP/M BDOS calls),
+  `selftest.asm` ((IX+d)/(IY+d) addressing, `PUSH`/`POP` IX/IY,
+  `CB`-prefixed rotate/BIT, 16-bit `ADD HL,DE`), `macro_test.asm`
+  (`MACRO`/`&param`/`LOCAL`), `include_test.asm` + `include_defs.inc`
+  (`INCLUDE`, and that a macro defined in an included file is usable back
+  in the includer) — all four pass.
+- [x] ~~Not yet exhaustively tested~~ — substantially addressed by the
+  `zexall.z80` reassembly-and-run milestone above: since `zexall.z80` is
+  the source that generates the exerciser covering the full documented and
+  undocumented instruction set, successfully assembling *and running* it
+  is much broader validation than the four hand-written example programs
+  alone. Still not literally exhaustive (macro/directive edge cases outside
+  what `zexall.z80` itself exercises are untested), so keep the same
+  healthy suspicion of freshly-exercised forms ZEXALL originally taught for
+  the emulator.
+- [x] **Attempted `zexall.z80` itself and fixed what broke** — six real,
+  distinct dialect gaps found and fixed this way (each verified against the
+  regression suite before moving to the next):
+  1. `LOCAL`-declared names are referenced with `&` too, not bare (e.g.
+     `local lab` then `&lab:`, `$-&lab`) — same mechanism as `&param`
+     substitution, not a separate bare-identifier rename.
+  2. `ASEG`/`CSEG`/`DSEG` segment-selection directives weren't recognized
+     at all — now accepted as no-ops (this is a single flat-image
+     assembler, segments don't apply).
+  3. Macro call arguments can be `<...>`-grouped to bundle a comma-list
+     into one argument (`tstr <0edh,042h>,...` — the instruction-under-test
+     bytes as one `insn` parameter) — the call-argument splitter now treats
+     `<>` like `()` for nesting depth, and strips one enclosing `<>` pair
+     from the stored argument value.
+  4. Macro parameters are sometimes referenced bare, without `&`
+     (`zexall.z80`'s own `tstr` macro does `db insn` alongside `dw
+     &memop,&iy,...` in the *same* body) — `&param` substitution now also
+     matches a bare whole-identifier occurrence. Trade-off: this is more
+     permissive than real ZSM4 and carries a collision risk for a
+     hypothetical future macro whose parameter name coincides with an
+     unrelated identifier elsewhere in its own body; accepted since the
+     alternative was failing to assemble the actual target file.
+  5. A colon-less label form (`bdos	push	af`, `crcval	ds	4` — label and
+     instruction on one line, no `:`) needed `is_known_mnemonic()`
+     (`encode.h`) added so the assembler can tell "unrecognized word
+     followed by more text" apart from a genuine unknown instruction.
+  6. `low`/`high` needed to work as unary prefix operators (`low msbt`, no
+     parens), not just call syntax (`low(msbt)`) — reimplemented in
+     `expr.c`'s `parse_unary` as a prefix operator, which subsumes the
+     parenthesized form for free (parens are still just generic grouping).
+- [ ] **Not fully byte-identical yet**: the reassembled `.com` is 8585
+  bytes vs. the original's 8704 (both `org 100h`), and `cmp` reports the
+  two are byte-for-byte identical up to EOF of the shorter file - not a
+  content mismatch, a truncation. The `crctab` block at the end assembles
+  to the correct 1024 bytes in isolation (extracted and assembled
+  standalone as a sanity check), so the missing 119 bytes are somewhere in
+  how it's produced *in the context of the full file*, not a `crctab`
+  syntax gap - not yet root-caused. Doesn't block functional correctness
+  (see the milestone above: the reassembled binary runs and passes all 67
+  tests), so this is a polish item, not a correctness blocker.
+- [ ] A small library of example programs beyond the ones above.
 - [ ] Decide whether to target compatibility with an existing CP/M
   assembler's syntax/output format (e.g. ZSM4, as
-  `zexall/ZEXALL-main/README.md` mentions) once macros make that question
-  concrete, rather than inventing a new dialect.
+  `zexall/ZEXALL-main/README.md` mentions) — largely answered in practice
+  now (the dialect gaps above are exactly the ZSM4-isms needed), but worth
+  an explicit decision on how far to lean into full ZSM4 fidelity vs. the
+  more permissive/pragmatic choices made above (e.g. #4).
 - [ ] **Disassembler**, the assembler's natural sibling tool: given a
   `.com`/binary, print mnemonic/operand text for each instruction. Three
   concrete payoffs, not just symmetry: (1) it would

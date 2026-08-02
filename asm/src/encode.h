@@ -24,4 +24,10 @@ typedef struct {
 // emitted before the error (normally 0).
 void encode_instruction(EncCtx *ctx, const char *mnemonic, const char *operand_text, EncOut *out);
 
+// True if `mnemonic` is a real Z80 instruction mnemonic (any case).
+// Used to disambiguate a colon-less label from a genuine unknown
+// instruction: "name  push  af" only makes sense as a label if "name"
+// itself isn't a mnemonic.
+int is_known_mnemonic(const char *mnemonic);
+
 #endif

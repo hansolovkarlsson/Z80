@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 #include <strings.h>
 #include "assemble.h"
@@ -193,6 +194,75 @@ int assemble_line(AsmCtx *ctx, const char *line_in, LineResult *r) {
     }
     str_trim(rest);
 
+    // Colon-less label: "name  instruction  operands", where `name` isn't
+    // itself a directive or a real mnemonic (zexall.z80 uses this in a
+    // couple of spots, e.g. "bdos	push	af", "crcval	ds	4"). Reinterpret
+    // `mnem` as the label and re-derive mnem/rest from what follows it.
+    if (label[0] == '\0' && mnem[0] != '\0' && rest[0] != '\0' &&
+        !is_known_mnemonic(mnem) &&
+        strcasecmp(mnem, "EQU") != 0 && strcasecmp(mnem, "ORG") != 0 &&
+        strcasecmp(mnem, "END") != 0 && strcasecmp(mnem, "ASEG") != 0 &&
+        strcasecmp(mnem, "CSEG") != 0 && strcasecmp(mnem, "DSEG") != 0 &&
+        strcasecmp(mnem, "DB") != 0 && strcasecmp(mnem, "DEFB") != 0 &&
+        strcasecmp(mnem, "DW") != 0 && strcasecmp(mnem, "DEFW") != 0 &&
+        strcasecmp(mnem, "DS") != 0 && strcasecmp(mnem, "DEFS") != 0 &&
+        strcasecmp(mnem, "IF") != 0 && strcasecmp(mnem, "ELSE") != 0 &&
+        strcasecmp(mnem, "ENDIF") != 0 && strcasecmp(mnem, "ERROR") != 0) {
+        strncpy(label, mnem, sizeof(label) - 1);
+        label[sizeof(label) - 1] = '\0';
+
+        char *start = rest;
+        char *q = start;
+        while (isalnum((unsigned char)*q) || *q == '_') q++;
+        size_t len2 = (size_t)(q - start);
+        if (len2 >= sizeof(mnem)) len2 = sizeof(mnem) - 1;
+        memcpy(mnem, start, len2);
+        mnem[len2] = '\0';
+        rest = q;
+        str_trim(rest);
+    }
+
+    // IF/ELSE/ENDIF are handled unconditionally (even while skipping a
+    // false branch) so nesting stays tracked and a block can reactivate.
+    if (strcasecmp(mnem, "IF") == 0) {
+        if (ctx->cond_depth >= MAX_COND_DEPTH) { r->err = "IF nesting too deep"; return -1; }
+        int parent_active = (ctx->cond_depth == 0) || ctx->cond_active[ctx->cond_depth - 1];
+        int taken = 0;
+        if (parent_active) {
+            int unresolved = 0;
+            long v = eval_directive_expr(ctx, rest, &unresolved);
+            if (ctx->pass == 2 && unresolved) { r->err = "undefined symbol in IF"; return -1; }
+            taken = (v != 0);
+        }
+        ctx->cond_parent_active[ctx->cond_depth] = parent_active;
+        ctx->cond_taken[ctx->cond_depth] = taken;
+        ctx->cond_active[ctx->cond_depth] = parent_active && taken;
+        ctx->cond_depth++;
+        return 0;
+    }
+    if (strcasecmp(mnem, "ELSE") == 0) {
+        if (ctx->cond_depth == 0) { r->err = "ELSE without IF"; return -1; }
+        int d = ctx->cond_depth - 1;
+        int parent_active = ctx->cond_parent_active[d];
+        ctx->cond_active[d] = parent_active && !ctx->cond_taken[d];
+        ctx->cond_taken[d] = 1; // a stray second ELSE at this level stays inactive
+        return 0;
+    }
+    if (strcasecmp(mnem, "ENDIF") == 0) {
+        if (ctx->cond_depth == 0) { r->err = "ENDIF without IF"; return -1; }
+        ctx->cond_depth--;
+        return 0;
+    }
+
+    if (ctx->cond_depth > 0 && !ctx->cond_active[ctx->cond_depth - 1]) return 0; // inside a false branch
+
+    if (strcasecmp(mnem, "ERROR") == 0) {
+        static char errbuf[320];
+        snprintf(errbuf, sizeof(errbuf), "ERROR: %s", rest);
+        r->err = errbuf;
+        return -1;
+    }
+
     // Bare label line: define it at the current address and stop.
     if (label[0] && mnem[0] == '\0') {
         if (!symtab_define(ctx->symtab, label, ctx->pc)) {
@@ -235,6 +305,9 @@ int assemble_line(AsmCtx *ctx, const char *line_in, LineResult *r) {
     }
 
     if (strcasecmp(mnem, "END") == 0) return 0;
+    if (strcasecmp(mnem, "ASEG") == 0 || strcasecmp(mnem, "CSEG") == 0 || strcasecmp(mnem, "DSEG") == 0) {
+        return 0; // segment selection - irrelevant to this single flat-image assembler
+    }
 
     if (strcasecmp(mnem, "DB") == 0 || strcasecmp(mnem, "DEFB") == 0) return assemble_db(ctx, rest, r);
     if (strcasecmp(mnem, "DW") == 0 || strcasecmp(mnem, "DEFW") == 0) return assemble_dw(ctx, rest, r);

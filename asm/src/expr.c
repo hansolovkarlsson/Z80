@@ -94,21 +94,6 @@ static long parse_primary(const char **s, ExprEnv *env) {
         memcpy(name, start, len);
         name[len] = '\0';
 
-        if (strcasecmp(name, "low") == 0 || strcasecmp(name, "high") == 0) {
-            int want_high = (strcasecmp(name, "high") == 0);
-            const char *after = p;
-            skip_ws(&after);
-            if (*after == '(') {
-                after++;
-                long v = expr_or(&after, env);
-                skip_ws(&after);
-                if (*after == ')') after++;
-                else if (!env->err) env->err = "expected ')'";
-                *s = after;
-                return want_high ? ((v >> 8) & 0xFF) : (v & 0xFF);
-            }
-        }
-
         Symbol *sym = symtab_find(env->symtab, name);
         *s = p;
         if (sym && sym->defined) return sym->value;
@@ -124,12 +109,33 @@ static long parse_primary(const char **s, ExprEnv *env) {
     return 0;
 }
 
-// unary := ('-' | '+' | '~')* primary
+// unary := ('-' | '+' | '~' | 'low' | 'high')* primary
+//
+// low/high are unary prefix operators, not just function-call syntax -
+// "low msbt" (no parens) is the common assembler form and needs to work
+// alongside "low(msbt)"; treating them as a prefix operator here handles
+// both, since parse_primary's '(' case already does generic grouping.
 static long parse_unary(const char **s, ExprEnv *env) {
     skip_ws(s);
     if (**s == '-') { (*s)++; return -parse_unary(s, env); }
     if (**s == '+') { (*s)++; return parse_unary(s, env); }
     if (**s == '~') { (*s)++; return ~parse_unary(s, env); }
+
+    if (is_ident_start(**s)) {
+        const char *p = *s;
+        const char *start = p;
+        while (is_ident_char(*p)) p++;
+        size_t len = (size_t)(p - start);
+        if (len == 3 && strncasecmp(start, "low", 3) == 0) {
+            *s = p;
+            return parse_unary(s, env) & 0xFF;
+        }
+        if (len == 4 && strncasecmp(start, "high", 4) == 0) {
+            *s = p;
+            return (parse_unary(s, env) >> 8) & 0xFF;
+        }
+    }
+
     return parse_primary(s, env);
 }
 
@@ -179,6 +185,68 @@ static long expr_or(const char **s, ExprEnv *env) {
     return v;
 }
 
+typedef enum { RELOP_NONE = -1, RELOP_EQ, RELOP_NE, RELOP_LT, RELOP_LE, RELOP_GT, RELOP_GE } RelOp;
+
+// Peeks a relational operator at *s (symbolic: = <> < <= > >=, or word
+// form: eq ne lt le gt ge) and consumes it if found; leaves *s untouched
+// otherwise. Word forms only match a whole identifier, so a symbol named
+// e.g. "ne_flag" is never mistaken for the "ne" operator.
+static RelOp match_relop(const char **s) {
+    const char *p = *s;
+    skip_ws(&p);
+
+    if (p[0] == '=') { *s = p + 1; return RELOP_EQ; }
+    if (p[0] == '<' && p[1] == '>') { *s = p + 2; return RELOP_NE; }
+    if (p[0] == '<' && p[1] == '=') { *s = p + 2; return RELOP_LE; }
+    if (p[0] == '>' && p[1] == '=') { *s = p + 2; return RELOP_GE; }
+    if (p[0] == '<') { *s = p + 1; return RELOP_LT; }
+    if (p[0] == '>') { *s = p + 1; return RELOP_GT; }
+
+    if (is_ident_start(*p)) {
+        const char *start = p;
+        const char *q = p;
+        while (is_ident_char(*q)) q++;
+        size_t len = (size_t)(q - start);
+        if (len == 2) {
+            char word[3];
+            memcpy(word, start, 2);
+            word[2] = '\0';
+            RelOp op = RELOP_NONE;
+            if (strcasecmp(word, "eq") == 0) op = RELOP_EQ;
+            else if (strcasecmp(word, "ne") == 0) op = RELOP_NE;
+            else if (strcasecmp(word, "lt") == 0) op = RELOP_LT;
+            else if (strcasecmp(word, "le") == 0) op = RELOP_LE;
+            else if (strcasecmp(word, "gt") == 0) op = RELOP_GT;
+            else if (strcasecmp(word, "ge") == 0) op = RELOP_GE;
+            if (op != RELOP_NONE) { *s = q; return op; }
+        }
+    }
+    return RELOP_NONE;
+}
+
+// relational := bitwise [ relop bitwise ]  -- lowest precedence, and
+// non-chaining (Z80 assemblers don't chain comparisons). True is -1 (all
+// bits set, the traditional assembler convention seen elsewhere in this
+// codebase's target dialect, e.g. shift-vector "-1" fields), false is 0.
+static long parse_relational(const char **s, ExprEnv *env) {
+    long v = expr_or(s, env);
+    RelOp op = match_relop(s);
+    if (op == RELOP_NONE) return v;
+    long rhs = expr_or(s, env);
+
+    int result;
+    switch (op) {
+        case RELOP_EQ: result = (v == rhs); break;
+        case RELOP_NE: result = (v != rhs); break;
+        case RELOP_LT: result = (v < rhs); break;
+        case RELOP_LE: result = (v <= rhs); break;
+        case RELOP_GT: result = (v > rhs); break;
+        case RELOP_GE: result = (v >= rhs); break;
+        default: result = 0; break;
+    }
+    return result ? -1 : 0;
+}
+
 long expr_parse(const char **s, ExprEnv *env) {
-    return expr_or(s, env);
+    return parse_relational(s, env);
 }
