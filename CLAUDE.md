@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project
 
 A Z80 CPU emulator written in C, built to run CP/M-80 programs. Phase 1 (a
-complete Z80 core passing ZEXALL/ZEXDOC cleanly) is done; see `ROADMAP.md`
+complete Z80 core passing ZEXALL/ZEXDOC cleanly) is done; see `docs/ROADMAP.md`
 for what's next (an assembler, then a full CP/M BDOS/BIOS) and known gaps
 (I/O ports, interrupts). This directory is a git repository (initialized
 after the first working ZEXALL/ZEXDOC pass).
