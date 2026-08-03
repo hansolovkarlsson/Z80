@@ -68,6 +68,16 @@ int z80_op_jp_nn(Z80 *cpu, uint8_t *ram) {
     return 10;
 }
 
+// Opcode 0xE9: JP (HL) - despite the parens, this jumps to the address
+// *in* HL, not through it as a memory pointer (a well-known Z80 naming
+// quirk shared with JP (IX)/JP (IY), which the DD/FD-prefixed 0xE9
+// handler already gets right).
+int z80_op_jp_hl(Z80 *cpu, uint8_t *ram) {
+    (void)ram;
+    cpu->pc = cpu->hl;
+    return 4;
+}
+
 // Fallback for opcodes you haven't implemented yet
 int z80_op_unimplemented(Z80 *cpu, uint8_t *ram) {
     uint8_t opcode = ram[cpu->pc - 1]; // Current opcode byte
@@ -2031,6 +2041,7 @@ void z80_init_tables(void) {
 
     // === Control Flow ===
     main_opcode_table[0xC3] = z80_op_jp_nn;
+    main_opcode_table[0xE9] = z80_op_jp_hl;
     main_opcode_table[0xCD] = z80_op_call_nn;
     main_opcode_table[0xC2] = z80_op_jp_nz_nn;
     main_opcode_table[0xCA] = z80_op_jp_z_nn;

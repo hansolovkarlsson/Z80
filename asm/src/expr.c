@@ -169,15 +169,43 @@ static long parse_addsub(const char **s, ExprEnv *env) {
     return v;
 }
 
-// bitwise := addsub (('&' | '|' | '^') addsub)*
-static long expr_or(const char **s, ExprEnv *env) {
+// shift := addsub (('<<' | '>>') addsub)*
+// Binds tighter than bitwise but looser than +/- (matching C's precedence,
+// which real-world TASM-style sources like Tasty Basic's tastybasic.asm
+// rely on: its keyword-dispatch table is built entirely with a macro
+// expanding to "(addr >> 8) + 080h" / "addr & 0ffh"). Checking for a
+// doubled '<'/'>' here, before parse_relational ever sees the input,
+// keeps a lone '<'/'>'/'>=' unambiguous as a relational operator - only
+// two of the same char in a row is ever treated as a shift.
+static long parse_shift(const char **s, ExprEnv *env) {
     long v = parse_addsub(s, env);
+    for (;;) {
+        skip_ws(s);
+        const char *p = *s;
+        if (p[0] == '<' && p[1] == '<') {
+            *s = p + 2;
+            long rhs = parse_addsub(s, env);
+            v <<= rhs;
+        } else if (p[0] == '>' && p[1] == '>') {
+            *s = p + 2;
+            long rhs = parse_addsub(s, env);
+            v >>= rhs;
+        } else {
+            break;
+        }
+    }
+    return v;
+}
+
+// bitwise := shift (('&' | '|' | '^') shift)*
+static long expr_or(const char **s, ExprEnv *env) {
+    long v = parse_shift(s, env);
     for (;;) {
         skip_ws(s);
         char op = **s;
         if (op != '&' && op != '|' && op != '^') break;
         (*s)++;
-        long rhs = parse_addsub(s, env);
+        long rhs = parse_shift(s, env);
         if (op == '&') v &= rhs;
         else if (op == '|') v |= rhs;
         else v ^= rhs;

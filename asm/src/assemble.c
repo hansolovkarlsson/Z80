@@ -194,11 +194,17 @@ int assemble_line(AsmCtx *ctx, const char *line_in, LineResult *r) {
     }
     str_trim(rest);
 
-    // Colon-less label: "name  instruction  operands", where `name` isn't
-    // itself a directive or a real mnemonic (zexall.z80 uses this in a
-    // couple of spots, e.g. "bdos	push	af", "crcval	ds	4"). Reinterpret
-    // `mnem` as the label and re-derive mnem/rest from what follows it.
-    if (label[0] == '\0' && mnem[0] != '\0' && rest[0] != '\0' &&
+    // Colon-less label: "name  instruction  operands", or just "name"
+    // alone on its own line with the instruction/directive on a later
+    // line - where `name` isn't itself a directive or a real mnemonic
+    // (zexall.z80 uses the same-line form in a couple of spots, e.g.
+    // "bdos	push	af", "crcval	ds	4"; third-party sources like Tasty
+    // Basic's tastybasic.asm use the label-alone-on-a-line form, e.g. a
+    // bare "welcome" line followed by "DB ..." on the next line). Reinterpret
+    // `mnem` as the label and re-derive mnem/rest from what follows it -
+    // which may be nothing at all, leaving mnem empty (handled below as a
+    // bare label line, same as the colon form).
+    if (label[0] == '\0' && mnem[0] != '\0' &&
         !is_known_mnemonic(mnem) &&
         strcasecmp(mnem, "EQU") != 0 && strcasecmp(mnem, "ORG") != 0 &&
         strcasecmp(mnem, "END") != 0 && strcasecmp(mnem, "ASEG") != 0 &&

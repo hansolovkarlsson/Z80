@@ -28,14 +28,16 @@ unresolved.
 [label[:]] [mnemonic [operands]] [; comment]
 ```
 
-- **Labels**: `name:` (colon form — preferred) or a bare `name`
-  immediately followed by an instruction/directive on the same line
-  (colon-less form, e.g. `bdos  push  af`). The colon-less form is
+- **Labels**: `name:` (colon form — preferred) or a bare `name` with no
+  colon — either followed by an instruction/directive on the same line
+  (colon-less form, e.g. `bdos  push  af`), or alone on its own line with
+  the instruction/directive on a later line (e.g. a bare `welcome` line
+  followed by `DB "hello"` on the next). Either colon-less form is
   disambiguated from a genuine unknown instruction by checking whether
   the first word is a recognized mnemonic or directive — if not, it's
   treated as a label. Prefer the colon form for your own code; the
-  colon-less form exists for compatibility with sources like
-  `zexall.z80` that use it in a couple of spots.
+  colon-less forms exist for compatibility with sources like `zexall.z80`
+  and Tasty Basic's `tastybasic.asm` that use them.
 - **Comments**: `;` to end of line, except inside a `'...'` or `"..."`
   literal (so a comment character inside a quoted string isn't mistaken
   for a comment start).
@@ -59,11 +61,14 @@ Precedence, low to high:
 1. **Relational** (lowest, non-chaining — `a < b < c` is not meaningful):
    `= <> < <= > >=`, or word forms `eq ne lt le gt ge`. Result is `-1`
    (true) or `0` (false) — the traditional assembler convention (all bits
-   set for true), not `1`/`0`.
+   set for true), not `1`/`0`. A single `<`/`>` is always relational; only
+   a doubled `<<`/`>>` is ever read as a shift (see below), so `a>=b` and
+   `a>>b` don't compete for the same input.
 2. **Bitwise**: `& | ^`
-3. **Additive**: `+ -`
-4. **Multiplicative**: `* / %`
-5. **Unary** (highest): `-` `+` `~`, and `low`/`high` as prefix operators
+3. **Shift**: `<< >>` (arithmetic left/right shift)
+4. **Additive**: `+ -`
+5. **Multiplicative**: `* / %`
+6. **Unary** (highest): `-` `+` `~`, and `low`/`high` as prefix operators
 
 `low X` / `high X` extract the low/high byte of a 16-bit value. Both the
 prefix form (`low msbt`, no parens — the common assembler convention) and
