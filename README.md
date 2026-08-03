@@ -105,9 +105,10 @@ how many bytes to decode):
   ([`Z80_REFERENCE.md`](docs/Z80_REFERENCE.md)), the assembler syntax
   reference ([`ASSEMBLER.md`](docs/ASSEMBLER.md)), a CP/M 2.2 BDOS/BIOS
   reference ([`CPM_REFERENCE.md`](docs/CPM_REFERENCE.md)) for the Phase 3
-  work, and a language reference for Tasty Basic
-  ([`TASTYBASIC_REFERENCE.md`](docs/TASTYBASIC_REFERENCE.md)), the real
-  CP/M program this emulator's been validated against.
+  work, and language references for the two real CP/M programs this
+  emulator's been validated against: Tasty Basic
+  ([`TASTYBASIC_REFERENCE.md`](docs/TASTYBASIC_REFERENCE.md)) and MBASIC
+  ([`MBASIC_REFERENCE.md`](docs/MBASIC_REFERENCE.md)).
 - `resources/` — reference links/documents on the Z80, CP/M, etc. (not
   code, just reading material).
 
