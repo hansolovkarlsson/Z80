@@ -21,6 +21,16 @@ implemented as part of closing the Known-gaps list below. Actual interrupt
 interrupt) remains deferred to Phase 3, once there's a BIOS device that
 needs one.
 
+**A real gap survived "done" until real-world testing found it**: plain
+`JP (HL)` (`0xE9`, unprefixed) was never wired into `main_opcode_table` at
+all — only the `DD`/`FD`-prefixed `JP (IX)`/`JP (IY)` forms existed. A
+completely standard, documented instruction, missing since this phase was
+first marked done, because ZEXALL/ZEXDOC test flag-affecting behavior, not
+every control-flow opcode. Found (and fixed) when Tasty Basic's own
+keyword-dispatch mechanism used it — see Phase 3's "Real-world
+validation" milestone below for the full story of what else that testing
+turned up.
+
 ## Phase 2: Assembler — in progress
 
 Goal: an assembler capable of building `zexall.z80`/`zexdoc.z80` from
@@ -160,6 +170,28 @@ there surfaced and fixed several real dialect gaps, documented below.
     to the already-validated `zexall.z80`/`zexdoc.z80` path, and running
     that output through `bin/z80` gives the same clean 67/67 OK, 0 errors
     as every other validated path.
+- [x] **Two more real dialect gaps, found assembling Tasty Basic**
+  (`asm/tastybasic/`, a genuine third-party CP/M program — see Phase 3's
+  "Real-world validation" milestone below):
+  1. **No `>>`/`<<` shift operators** — worse, `addr >> 8` silently
+     mis-parsed as two relational `>` comparisons instead of erroring
+     (`1234h >> 8` evaluated to `0FFh`, not `12h`, with no diagnostic at
+     all). This broke Tasty Basic's entire command-dispatch table, built
+     with a `(addr >> 8) + 080h` / `addr & 0ffh` macro. Fixed by adding
+     real shift operators (`expr.c`) at their own precedence level between
+     bitwise and additive (matching C) — checking for a *doubled*
+     `<`/`>` before `parse_relational` ever sees the input keeps a lone
+     `<`/`>`/`>=` unambiguous, only two of the same character in a row is
+     ever read as a shift.
+  2. **A colon-less label sitting alone on its own line** (directive on a
+     *later* line, e.g. a bare `welcome` line followed by `DB "..."` on
+     the next) wasn't recognized — only the same-line colon-less form
+     (`bdos push af`) was. `assemble.c`'s reinterpret-as-label condition
+     required something to follow on the *same* line; relaxed to also
+     cover the label-alone case, falling through to the same bare-label-
+     line handling the colon form already used.
+  With both fixed, `asm/tastybasic/derive.sh`'s C-preprocessed,
+  directive-translated `tastybasic_cpm.asm` assembles and runs correctly.
 - [x] **Disassembler** (`disasm/src/`, builds to `bin/z80dasm`) — the
   assembler's sibling tool, in a separate binary rather than a mode flag
   on `z80asm` (reading is a different shape of problem: no expression
@@ -212,7 +244,21 @@ there surfaced and fixed several real dialect gaps, documented below.
   stdin just does a blocking `read()`, EOF mapped to `^Z`). Regression
   coverage: `asm/examples/console_test.asm`, driven with piped stdin by
   `tests/run_tests.sh` since it needs specific input bytes rather than
-  running standalone like the other example programs.
+  running standalone like the other example programs. Two host-terminal
+  translations only surfaced once a real program was actually typed at
+  *interactively* (piped-input testing can't catch either): `ICRNL`
+  silently rewrote the real `CR` a physical Enter key sends into `LF`
+  before `read()` ever saw it, making Enter look dead to software written
+  against a genuine raw serial line; and a modern keyboard's Backspace/
+  Delete key sends `DEL` (0x7F), but CP/M-era software expects the classic
+  `BS` (0x08) erase byte. Both fixed in `cpm_console_init()`/
+  `console_read_char()` — see `docs/CPM_REFERENCE.md`'s Implementation
+  status section.
+- [x] **BDOS function 0** (`P_TERMCPM`, "quit to CP/M") — implemented,
+  needing a two-part fix (`cpm.c` *and* `z80_step()`) since a naive
+  `cpu->pc = 0` alone let the injected `RET` stub at address 0 pop the
+  real stack and undo the termination — see `docs/CPM_REFERENCE.md`'s
+  Implementation status section for the full mechanism.
 - [x] **File I/O** (BDOS functions 15–23, 26, 33–35, 40, plus the drive/
   user stubs 13, 14, 25, 32) — implemented in `cpm.c`. Design decision:
   every drive/user number collapses onto a **single mapped host
@@ -224,6 +270,30 @@ there surfaced and fixed several real dialect gaps, documented below.
   deliberately skips) — revisit only if something concrete needs it.
   Regression coverage: `asm/examples/file_test.asm` (create, rename, read
   back, wildcard search, delete, confirm gone).
+- [x] **Real-world validation: Tasty Basic** (`asm/tastybasic/`) — the
+  best return on effort of anything tried this phase. Rather than only
+  hand-written regression tests, got a real, unmodified third-party CP/M
+  program (a genuine [Tasty
+  Basic](https://github.com/dimitrit/tastybasic) port of Palo Alto Tiny
+  BASIC, GPLv3) actually running and interacted with it — banner,
+  `PRINT`/arithmetic, `GOSUB`/`RETURN` nesting (3 levels deep, confirmed
+  correct unwind order), `FOR`/`NEXT`, `USR` (poking a 2-byte machine-code
+  routine and calling it from BASIC — arg/result round-tripped through
+  `DE` correctly), and `SAVE`/`LOAD` (real file I/O). Getting there needed
+  the `JP (HL)` fix (Phase 1) and the two assembler dialect fixes (Phase
+  2) above — none of which ZEXALL, the hand-written example programs, or
+  the `zexall.z80`/`.mac` reassembly work had ever exercised. Also ran the
+  bundled `resources/tastybasic-main/examples/` programs (`TICTAC.BAS`,
+  `REVERSE.BAS`, `DUMP.BAS`, `BATNUM.BAS`) to completion, including a
+  byte-perfect `PEEK`-based hex dump of Tasty Basic's own running code
+  matching independently-known disassembly exactly. See
+  `docs/TASTYBASIC_REFERENCE.md` for the language reference this testing
+  produced, including a "known upstream quirks" section documenting real
+  bugs found in Tasty Basic *itself* (not this project) along the way —
+  an 8-character `SAVE`/`LOAD` filename off-by-one, and a `LOAD`
+  truncation bug for any program containing a line number whose low byte
+  is `0x1A` (line 1050 among others), which is exactly what broke the
+  bundled `tictac.tba` example.
 - Implement the I/O port instructions and interrupt delivery this phase
   will actually need for a BIOS layer (see Known gaps) — I/O ports are
   already done (see Known gaps above); interrupt delivery is the one

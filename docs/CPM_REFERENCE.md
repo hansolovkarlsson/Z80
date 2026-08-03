@@ -190,8 +190,8 @@ safely instead of running off into uninitialized memory.
 
 ## Implementation status
 
-`emu/src/cpm.c`'s `check_cpm_bdos()` currently implements six BDOS
-functions — console output (**2** `C_WRITE`, **9** `C_WRITESTR`) and
+`emu/src/cpm.c`'s `check_cpm_bdos()` currently implements **0**
+`P_TERMCPM`, console output (**2** `C_WRITE`, **9** `C_WRITESTR`), and
 console input (**1** `C_READ`, **6** `C_RAWIO`, **10** `C_READSTR`, **11**
 `C_STAT`) — intercepted directly at `PC == 0x0005` rather than by placing
 real BDOS code in memory and executing a real `CALL`/jump to it (there is
@@ -220,6 +220,17 @@ was written against terminals using the classic `BS` (0x08) erase
 convention and often only recognizes that byte — `console_read_char()`
 translates `DEL` to `BS` so backspace works without reconfiguring the
 host terminal's erase key.
+
+Function 0 (`P_TERMCPM`, "quit to CP/M") needed a two-part fix, not just
+setting `cpu->pc = 0x0000`: real CP/M's warm boot never returns to the
+caller, but `z80_step()` would still fetch and execute the `RET` stub
+`main.c` preloads at address `0x0000` right after `check_cpm_bdos()`
+returned, popping the real return address off the stack and undoing the
+termination before `main.c`'s own "`PC==0` means done" check at the top of
+its *next* loop iteration ever ran. `z80_step()` now checks for `PC==0`
+immediately after `check_cpm_bdos()` and returns without fetching/
+executing anything in that case — found and fixed while testing Tasty
+Basic's `BYE` command, which uses this function to exit.
 
 The file functions are now implemented too: **15** `F_OPEN`, **16**
 `F_CLOSE`, **17**/**18** `F_SFIRST`/`F_SNEXT`, **19** `F_DELETE`, **20**/
