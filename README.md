@@ -103,9 +103,11 @@ how many bytes to decode):
 - `docs/` — the project roadmap ([`ROADMAP.md`](docs/ROADMAP.md)), a Z80
   CPU reference including undocumented opcodes
   ([`Z80_REFERENCE.md`](docs/Z80_REFERENCE.md)), the assembler syntax
-  reference ([`ASSEMBLER.md`](docs/ASSEMBLER.md)), and a CP/M 2.2
-  BDOS/BIOS reference ([`CPM_REFERENCE.md`](docs/CPM_REFERENCE.md)) for the
-  Phase 3 work.
+  reference ([`ASSEMBLER.md`](docs/ASSEMBLER.md)), a CP/M 2.2 BDOS/BIOS
+  reference ([`CPM_REFERENCE.md`](docs/CPM_REFERENCE.md)) for the Phase 3
+  work, and a language reference for Tasty Basic
+  ([`TASTYBASIC_REFERENCE.md`](docs/TASTYBASIC_REFERENCE.md)), the real
+  CP/M program this emulator's been validated against.
 - `resources/` — reference links/documents on the Z80, CP/M, etc. (not
   code, just reading material).
 
