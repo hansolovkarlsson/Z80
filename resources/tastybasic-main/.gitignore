@@ -1,0 +1,10 @@
+bin
+diskdefs
+*.rom
+*.com
+*.bin
+*.lst
+*.img
+*.obj
+.idea
+.DS_Store

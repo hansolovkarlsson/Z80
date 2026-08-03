@@ -34,6 +34,13 @@ void cpm_console_init(void) {
 
     struct termios raw = orig_termios;
     raw.c_lflag &= ~(ICANON | ECHO); // no line buffering, no local echo
+    // Without this, ICRNL (on by default) silently rewrites the real CR
+    // (0x0D) the Enter key sends into LF (0x0A) before read() ever sees
+    // it. CP/M software (e.g. Tasty Basic's own line-input routine, which
+    // explicitly discards LF as noise while waiting for a *real* CR) is
+    // written against a genuine raw serial line where no such host-side
+    // translation happens - so leaving ICRNL on makes Enter look dead.
+    raw.c_iflag &= ~(ICRNL | INLCR | IGNCR);
     raw.c_cc[VMIN] = 1;              // block for at least 1 byte
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSANOW, &raw);
@@ -55,6 +62,13 @@ static int console_read_char(void) {
     uint8_t c;
     ssize_t n = read(STDIN_FILENO, &c, 1);
     if (n <= 0) return 26;
+    // Modern keyboards' Backspace/Delete key sends DEL (0x7F) in raw
+    // terminal mode, but CP/M-era software (e.g. Tasty Basic's own
+    // line-input routine) was written against real serial terminals that
+    // used the classic BS (0x08) convention and only recognizes that
+    // byte as "erase last character" - translate so backspace works
+    // without needing to reconfigure the host terminal's erase key.
+    if (c == 0x7F) c = 0x08;
     return c;
 }
 

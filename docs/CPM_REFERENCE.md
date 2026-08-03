@@ -207,6 +207,20 @@ poll-and-read (`E`=0FFh) does *not* echo, matching real "raw" I/O; function
 minimal — no `^R`/`^X`/`^C` line-editing repertoire like real CP/M's CCP
 has, just enough for a program to read a line.
 
+Two host-terminal translations turned out to matter once a real program
+(Tasty Basic) was actually typed at interactively: `ICRNL` (on by
+default) silently rewrites the real `CR` (0x0D) a physical Enter key
+sends into `LF` (0x0A) before `read()` ever sees it — CP/M software
+written against a genuine raw serial line (where no such translation
+happens) can end up ignoring `LF` as noise while waiting for a real `CR`
+that never arrives, making Enter look dead; `cpm_console_init()` now
+clears `ICRNL`/`INLCR`/`IGNCR` too. Separately, a modern keyboard's
+Backspace/Delete key sends `DEL` (0x7F) in raw mode, but CP/M-era software
+was written against terminals using the classic `BS` (0x08) erase
+convention and often only recognizes that byte — `console_read_char()`
+translates `DEL` to `BS` so backspace works without reconfiguring the
+host terminal's erase key.
+
 The file functions are now implemented too: **15** `F_OPEN`, **16**
 `F_CLOSE`, **17**/**18** `F_SFIRST`/`F_SNEXT`, **19** `F_DELETE`, **20**/
 **21** `F_READ`/`F_WRITE` (sequential), **22** `F_MAKE`, **23**
