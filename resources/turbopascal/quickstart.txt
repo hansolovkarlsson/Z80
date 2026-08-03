@@ -1,0 +1,41 @@
+The exact source code for the Turbo Pascal 3.01 compiler itself was never officially open-sourced by Borland, but reverse-engineered and leaked assembly source codes for Version 3.01A exist. Historically, the CP/M-80 version was distributed purely as a compiled executable binary (). [1, 2, 3, 4]  
+If you are looking for source code written in Turbo Pascal 3.01 for CP/M, or trying to find/compile the leaked compiler source code, the primary resources and steps are outlined below. 
+1. Where to Find the Turbo Pascal 3.01A Compiler Source Code 
+Leaked source code written in assembly language (which compiles byte-for-byte to the official binary executable) can be found in vintage computing archives: 
+
+• Download Repository: You can download the leaked assembly codebase from the Vetusware Turbo Pascal 3.01A Source Page. 
+• Instructions for compiling: To compile the source code, type  to open the assembler, press  then  to assemble into , and press  then  to exit. [4]  
+
+2. Open-Source Repositories of CP/M Programs (Written in TP 3.01) 
+If you want to view or test  source code files built specifically to run under Turbo Pascal 3.01A on CP/M systems, you can explore the following open-source GitHub repositories: 
+
+• Eight Queens Puzzle: Includes portable CP/M source files using KayPro/ADM-3A escape sequences. View the source on the sblendorio/queens-cpm GitHub Repository. 
+• Towers of Hanoi: A portable CP/M-80 application written natively in Turbo Pascal 3.01A. Examine it on the sblendorio/hanoi-cpm GitHub Repository. 
+• Classic Snake Game: Source code variations modified natively for Turbo Pascal CP/M environments are available via Z80.no Pascal Projects. [8]  
+
+3. Basic Hello World Source Code for CP/M-80 
+If you are running Turbo Pascal 3.01 within a CP/M emulator or on actual Z80 hardware, you can compile this standard, platform-compliant source code: [1, 9]  
+4. Running and Compiling on CP/M 
+To execute code within the Turbo Pascal 3.01 environment on CP/M, make sure your workspace contains the core files (, , and  for terminal configurations): 
+
+1. Launch the compiler by typing  at the CP/M command prompt. 
+2. Press  when asked to include error messages. 
+3. Press  to open compiler Options. 
+4. Press  to switch the output from Memory to Com-file (this ensures it compiles into a standalone CP/M executable). 
+5. Press  to return to the main menu. 
+6. Press  to Edit your code, insert your Pascal source, and exit the editor using WordStar shortcuts ( then ). 
+7. Press  to Compile your source code directly into a running  binary file. [9]  
+
+AI responses may include mistakes.
+
+[1] https://www.youtube.com/watch?v=TrxE0ziCPnY
+[2] https://forum.vcfed.org/index.php?threads/turbo-pascal-3.1239534/
+[3] https://www.pcjs.org/software/pcx86/lang/borland/pascal/3.01a/
+[4] https://vetusware.com/download/Turbo%20Pascal%203.01A%20Source%20Code%203.01A/?id=9736
+[5] https://en.wikipedia.org/wiki/Turbo_Pascal
+[6] https://github.com/sblendorio/queens-cpm
+[7] https://github.com/sblendorio/hanoi-cpm
+[8] https://www.z80.no/projects/Pascal.html
+[9] https://github.com/skx/z80-playground-cpm-fat/blob/main/TURBO.md
+
+
