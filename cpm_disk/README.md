@@ -16,6 +16,7 @@ bin/z80 cpm_disk/tastybas.com
 bin/z80 cpm_disk/sargon.com
 bin/z80 cpm_disk/mbasic.com
 bin/z80 cpm_disk/adventur.com
+bin/z80 cpm_disk/turbo.com
 ```
 
 Or boot a real CP/M shell instead of a single program — a genuine `A>`
@@ -65,6 +66,13 @@ tracked.
   `resources/ccp/ccp_cpm.asm`, run with `--ccp` rather than as a plain
   program (see above). See `docs/CCP_REFERENCE.md` for its built-in
   commands (`DIR`/`ERA`/`TYPE`/`SAVE`/`REN`/`USER`).
+- `turbo.com` + `turbo.msg` + `turbo.ovr` — Borland's Turbo Pascal 3.01A,
+  a prebuilt binary (no source available), reconfigured for a real ANSI
+  terminal via `resources/turbopascal/derive.sh` (it ships defaulting to
+  a "Microbee VDU" terminal profile otherwise). A genuine integrated
+  environment — full-screen editor, compiler, and compile-and-run, all
+  in one program, not just a compiler. See
+  `resources/turbopascal/upstream/README.md`.
 
 Regenerate the assembled ones (after any assembler/source change) with:
 
@@ -81,3 +89,9 @@ bin/z80asm resources/tastybasic/tastybasic_cpm.asm -o cpm_disk/tastybas.com
 bin/z80asm resources/sargon/sargon_cpm.asm -o cpm_disk/sargon.com
 bin/z80asm resources/ccp/ccp_cpm.asm -o cpm_disk/ccp.com
 ```
+
+`turbo.com`/`turbo.msg`/`turbo.ovr` aren't assembled from source (no
+source available) — regenerate them by re-running
+`resources/turbopascal/derive.sh` (which patches
+`resources/turbopascal/upstream/TURBO.COM` for an ANSI terminal) and
+copying its output into `cpm_disk/`.

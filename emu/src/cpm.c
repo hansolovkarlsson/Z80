@@ -483,7 +483,13 @@ void check_cpm_bios(Z80 *cpu, uint8_t *ram) {
 }
 
 void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
-    if (cpu->pc == 0x0005) { // Intercept call to BDOS entry
+    // Almost all real software calls the BDOS via "CALL 0005h", but the
+    // standard convention (see BDOS_ENTRY's own comment in cpm.h) is that
+    // 0x0005 itself just holds "JP BDOS_ENTRY" - some software calls that
+    // address directly instead, having read it out of 0x0006-0x0007, so
+    // both need to be intercepted identically (same reasoning as the
+    // self-referencing BIOS vectors in check_cpm_bios()).
+    if (cpu->pc == 0x0005 || cpu->pc == BDOS_ENTRY) { // Intercept call to BDOS entry
         if (cpu->c == 0) {
             // Function 0: System Reset (P_TERMCPM) - warm boot, i.e. quit
             // back to the OS. Real CP/M restarts the CCP; there's no CCP

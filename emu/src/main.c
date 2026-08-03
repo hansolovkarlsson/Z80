@@ -87,8 +87,14 @@ int main(int argc, char *argv[]) {
     // comment for why real software needs this, not just a bare RET.
     cpm_bios_init(ram);
 
-    // CP/M injects a RET (0xC9) instruction at 0x0005 to return from BDOS calls
-    ram[0x0005] = 0xC9;
+    // Standard CP/M "JP <bdos>" at 0x0005-0x0007 (see cpm.h's BDOS_ENTRY
+    // comment for why the address itself matters, not just the JP
+    // opcode) - check_cpm_bdos() intercepts calls to 0x0005 itself before
+    // ever fetching this, so it's only ever actually reached if execution
+    // somehow lands on it without going through a proper BDOS call.
+    ram[0x0005] = 0xC3; // JP
+    ram[0x0006] = (uint8_t)(BDOS_ENTRY & 0xFF);
+    ram[0x0007] = (uint8_t)(BDOS_ENTRY >> 8);
 
     printf("Starting Z80 Execution Loop...\n\n");
 

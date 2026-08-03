@@ -12,6 +12,16 @@ void check_cpm_bios(Z80 *cpu, uint8_t *ram);
 // main.c needs this to know where to load the CCP image and set the
 // initial PC.
 #define CCP_BASE 0xE400
+// Nominal BDOS entry address written into the standard "JP <bdos>" at
+// 0x0005-0x0007 (see docs/CPM_REFERENCE.md's zero-page map) - no real
+// resident BDOS code lives here (BDOS calls are intercepted at 0x0005
+// directly, before fetch), but the address itself matters: real CP/M
+// software commonly reads it back (LHLD 6/LD HL,(6)) as a proxy for "top
+// of available TPA" to gauge free memory, e.g. Turbo Pascal's TINST.COM
+// terminal-setup utility refuses to run at all if this looks too low.
+// Comfortably between CCP_BASE and BIOS_BASE, giving a plausible ~61KB
+// of apparent free memory.
+#define BDOS_ENTRY 0xF200
 // Enables/disables CCP-boot mode: with it on, a warm boot (BIOS WBOOT,
 // including BDOS function 0/P_TERMCPM) re-enters the CCP at CCP_BASE
 // instead of halting the emulator - see check_cpm_bios()'s WBOOT case.

@@ -573,11 +573,59 @@ there surfaced and fixed several real dialect gaps, documented below.
      SARGON) can surface a genuine gap nothing else had ever exercised;
      none of the other real-world programs use binary literals, so this
      was CCP-only.
-- Further real-world validation candidates queued up next, same "run a
-  real unmodified program, fix whatever breaks" strategy:
-  - [ ] **Turbo Pascal 3.0** — a real compiler; substantially bigger
-    scope than the others tried so far, likely a project of its own
-    rather than a quick validation pass.
+- [x] **Real-world validation: Turbo Pascal 3.01A** (`resources/turbopascal/`)
+  — Borland's real 1985 CP/M-80 integrated environment (full-screen
+  WordStar-key editor, single-pass compiler, and compile-and-run, all in
+  one program — genuinely bigger in scope than anything tried so far,
+  and initially deferred for exactly that reason). Deliberately held off
+  on until the SARGON VT100/CP437 investigation above was resolved, since
+  Turbo Pascal's editor leans on the same kind of terminal/character
+  handling for its screen and window borders. Real, unmodified binaries
+  from [retroarchive.org](http://www.retroarchive.org/cpm/lang/TP_301A.ZIP)
+  (confirmed genuine via the literal `Copyright (C) 1983,84,85 BORLAND
+  Inc.` bytes at the start of both `.COM` files) — no source available,
+  like `resources/adventure/`/`resources/Mbasic.com`.
+  Two real things surfaced getting it running:
+  1. **The bundled `TURBO.COM` ships pre-configured for a "Microbee
+     VDU"** (an Australian CP/M computer), not anything a modern ANSI
+     terminal understands — confirmed by its own startup banner
+     (`Terminal: Microbee VDU`) and `READ.ME`'s own note about being
+     "pre-installed... for Microbee disk systems." Real Turbo Pascal
+     ships with `TINST.COM` specifically to rewrite `TURBO.COM`'s own
+     terminal-control byte tables in place for a different terminal —
+     option 6 of its own built-in list of 32 is a genuine "ANSI"
+     profile. `resources/turbopascal/derive.sh` reproduces this as a
+     real build step: running `TINST.COM` through this project's own
+     emulator with that selection, the same role `clang`/`sed` play in
+     the other `derive.sh` scripts, just patching a binary instead of
+     translating source. Confirmed by `TURBO.COM`'s own banner changing
+     from `Terminal: Microbee VDU` to `Terminal: ANSI`, and real ANSI
+     escape codes appearing in its output afterward.
+  2. **A real emulator bug**: `TINST.COM` refused to even start,
+     printing `Not enough memory` / `Program aborted` immediately.
+     Real CP/M's zero-page convention (`docs/CPM_REFERENCE.md`) has a
+     genuine `JP` to the BDOS entry point at `0x0005`-`0x0007`, but this
+     project previously only preloaded a bare `RET` at `0x0005` itself,
+     leaving `0x0006`-`0x0007` at zero — harmless for the overwhelming
+     majority of software (which just does `CALL 5` and never looks at
+     what's stored there), but `TINST.COM` reads that address back
+     (`LHLD 6`) as a proxy for "how much TPA is free," and zero read as
+     "none." Fixed by preloading a real `JP <BDOS_ENTRY>` instead (a
+     new `BDOS_ENTRY` constant in `cpm.h`, comfortably between `CCP_BASE`
+     and `BIOS_BASE`, giving a plausible ~61KB of apparent free memory)
+     — safe to do since `check_cpm_bdos()` always handles the return
+     itself via direct stack manipulation regardless of what instruction
+     bytes are actually stored at the call address, confirmed by reading
+     its own code before making the change. `check_cpm_bdos()` also now
+     intercepts `BDOS_ENTRY` directly, identically to `0x0005`, in case
+     software calls that address having read it back rather than always
+     using `CALL 5` (the same self-referencing-target reasoning as the
+     BIOS vectors).
+  Verified interactively: real `TURBO Pascal system Version 3.01A`
+  banner, the main menu (`E)dit C)ompile R)un S)ave e(X)ecute D)ir
+  Q)uit`, memory stats), all genuine. The full-screen editor itself
+  (the main reason this was deferred until VT100/CP437 was sorted out)
+  is the natural next thing to try interactively.
 
 ## Phase 4: Beyond CP/M (exploratory)
 

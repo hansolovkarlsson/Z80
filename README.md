@@ -93,10 +93,11 @@ how many bytes to decode):
   console-I/O test that needs a real keyboard) meant to be run and
   eyeballed by hand, not part of the automated suite.
 - `resources/tastybasic/`, `resources/sargon/`, `resources/adventure/`,
-  `resources/ccp/` — real, third-party CP/M programs (Tasty Basic, SARGON
-  chess, Colossal Cave Adventure, and Digital Research's own CCP shell)
-  tried against the emulator by hand for real-world validation (not part
-  of `make test`, same spirit as `asm/test/`) — see `docs/ROADMAP.md`'s
+  `resources/ccp/`, `resources/turbopascal/` — real, third-party CP/M
+  programs (Tasty Basic, SARGON chess, Colossal Cave Adventure, Digital
+  Research's own CCP shell, and Borland's Turbo Pascal 3.01A) tried
+  against the emulator by hand for real-world validation (not part of
+  `make test`, same spirit as `asm/test/`) — see `docs/ROADMAP.md`'s
   "Real-world validation"/CCP entries for what that's found and fixed.
   Where source is available (`tastybasic/`, `sargon/`, `ccp/`),
   `upstream/` holds it unmodified and `derive.sh` documents/reproduces
@@ -105,9 +106,14 @@ how many bytes to decode):
   translation for `ccp/`, since CP/M predates the Z80 — see
   `scripts/8080_to_z80.py`, general-purpose enough to reuse for other
   8080-mnemonic CP/M-era source); `adventure/` and `resources/Mbasic.com`
-  are prebuilt binaries with no available source.
-- `cpm_disk/` — every program above (and `asm/examples/`), pre-assembled
-  and ready to run: `bin/z80 cpm_disk/<name>.com` from the repo root, or
+  are prebuilt binaries with no available source. `turbopascal/` is also
+  a prebuilt binary, but still has its own `derive.sh` — not translating
+  source, but reproducibly *patching* `TURBO.COM`'s own terminal-control
+  tables (via its own `TINST.COM` utility, run through this project's
+  emulator) from the "Microbee VDU" profile it ships with to a real ANSI
+  one.
+- `cpm_disk/` — every program above (and `asm/examples/`), pre-built and
+  ready to run: `bin/z80 cpm_disk/<name>.com` from the repo root, or
   `bin/z80 --ccp cpm_disk/ccp.com` to boot a real CP/M shell (`A>` prompt,
   `DIR`/`TYPE`/etc., run any program above by name) instead of a single
   program. See `cpm_disk/README.md`.

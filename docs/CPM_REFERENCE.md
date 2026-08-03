@@ -184,12 +184,22 @@ so this region is available below it:
 | `0081h`–`00FFh` | 127 | Command-line tail text (space-separated, unparsed) / default DMA buffer contents. |
 
 This confirms the choices this project's `main.c` already made independent
-of this research: `.com` programs load at `0100h`. `0005h` gets a bare
-`RET` preloaded so an unhandled `CALL` still returns safely instead of
-running off into uninitialized memory; `0000h` gets a real `JP` into the
-minimal BIOS jump table `cpm_bios_init()` installs (see the BIOS section
-below) rather than just a bare `RET`, since some real software reads this
-jump's target to locate the BIOS.
+of this research: `.com` programs load at `0100h`. `0000h` gets a real
+`JP` into the minimal BIOS jump table `cpm_bios_init()` installs (see the
+BIOS section below) rather than just a bare `RET`, since some real
+software reads this jump's target to locate the BIOS. `0005h`-`0007h`
+similarly gets a real `JP <BDOS_ENTRY>` (`BDOS_ENTRY` in `emu/src/cpm.h`,
+not just a bare `RET` at `0005h` like an earlier version of this project
+had) — `check_cpm_bdos()` intercepts calls to `0005h` before ever
+fetching this, so the instruction itself is never actually executed, but
+the *address* stored at `0006h`-`0007h` still matters: real software
+sometimes reads it back (`LHLD 6`/`LD HL,(6)`) as a proxy for "how much
+TPA is free," and a plausible-looking address there is enough to satisfy
+that check even with no real resident BDOS code behind it. Turbo Pascal's
+`TINST.COM` terminal-configuration utility is what surfaced this — with
+only a bare `RET` at `0005h` (leaving `0006h`-`0007h` at zero), it read
+back "no memory available" and immediately printed `Not enough memory` /
+`Program aborted`, refusing to start at all.
 
 ## Implementation status
 

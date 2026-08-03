@@ -126,13 +126,24 @@ with their own `z80_io_in`/`z80_io_out` bus functions — no real devices are
 attached, so a port read just returns whatever was last written there.
 
 **CP/M BDOS emulation (`cpm.c`)**: `check_cpm_bdos()` runs at the top of
-every `z80_step()` and, when `PC == 0x0005`, handles the BDOS functions
-`docs/CPM_REFERENCE.md` documents — `P_TERMCPM` (0), console output (2, 9),
-console input (1, 6, 10, 11), `S_BDOSVER` (12), file I/O (15–23, 26,
-33–35, 40), and drive/user bookkeeping stubs (13, 14, 25, 32) — then
-manually pops the return address off the stack into `PC` to simulate the
-`RET`. `main.c` preloads `RET` (`0xC9`) at address `0x0005` so an unhandled
-call still returns safely.
+every `z80_step()` and, when `PC == 0x0005` (or `PC == BDOS_ENTRY`, see
+below), handles the BDOS functions `docs/CPM_REFERENCE.md` documents —
+`P_TERMCPM` (0), console output (2, 9), console input (1, 6, 10, 11),
+`S_BDOSVER` (12), file I/O (15–23, 26, 33–35, 40), and drive/user
+bookkeeping stubs (13, 14, 25, 32) — then manually pops the return
+address off the stack into `PC` to simulate the `RET`, unconditionally,
+regardless of which function matched (or none did) — so the actual
+instruction bytes at `0x0005` never matter for BDOS calls to execute
+correctly. `main.c` preloads a real `JP <BDOS_ENTRY>` there (`BDOS_ENTRY`
+in `cpm.h`, a plausible-looking but otherwise-inert high address, not
+real resident BDOS code) rather than just a bare `RET` — some real
+software reads the address out of `0x0006`-`0x0007` as a proxy for "how
+much TPA is free" (Turbo Pascal's `TINST.COM` is a concrete example: with
+only a bare `RET` there, it read back essentially zero free memory and
+refused to start at all). `check_cpm_bdos()` intercepts `BDOS_ENTRY`
+itself identically to `0x0005`, the same self-referencing-target
+reasoning as the BIOS vectors below, in case software calls that address
+directly having read it back rather than always using `CALL 5`.
 
 **BIOS emulation (`cpm.c`)**: `check_cpm_bios()` runs alongside
 `check_cpm_bdos()` and handles direct BIOS calls — some real software
