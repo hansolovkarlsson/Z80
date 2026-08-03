@@ -1,0 +1,47 @@
+To prompt a user for input in CP/M and read their response, you write an 8080/Z80 assembly language program that calls the CP/M BDOS (Basic Disk Operating System) via memory address 0005h.The most efficient way to achieve this is by using BDOS Function 9 to display the prompt string, and BDOS Function 10 to safely read a buffered line of text from the keyboard.Below is the complete, standard 8080 assembly language program structure to accomplish a user prompt in CP/M.
+
+        ORG     100H            ; Standard starting address for CP/M transient programs
+
+BDOS    EQU     0005H           ; CP/M entry point address
+PSTRING EQU     9               ; BDOS function: Print string
+RBUFFER EQU     10              ; BDOS function: Read console buffer
+
+START:
+        ; Step 1: Print the prompt string to the console
+        MVI     C, PSTRING      ; Load BDOS function 9 into C register
+        LXI     D, PROMPT       ; Load pointer to prompt text into DE register
+        CALL    BDOS            ; Call CP/M to print the prompt
+
+        ; Step 2: Read the user's input into the buffer
+        MVI     C, RBUFFER      ; Load BDOS function 10 into C register
+        LXI     D, INBUF        ; Load pointer to input buffer into DE register
+        CALL    BDOS            ; Call CP/M to wait for and read user input
+
+        ; Step 3: Print a newline sequence for formatting
+        MVI     C, PSTRING
+        LXI     D, NL           ; Print Carriage Return / Line Feed
+        CALL    BDOS
+
+        ; Step 4: Terminate program and return to the CCP prompt
+        RET                     ; Return to Console Command Processor (CCP)
+
+; -------------------------------------------------------------------------
+; Data Segment
+; -------------------------------------------------------------------------
+
+; CP/M string output (Function 9) requires strings to terminate with '$'
+PROMPT: DB      'Enter your name: $'
+NL:     DB      0DH, 0AH, '$'   ; Carriage Return (0Dh) and Line Feed (0Ah)
+
+; CP/M buffered input (Function 10) data structure:
+; Byte 1: Maximum number of characters allowed to be read (User defined)
+; Byte 2: Actual number of characters typed by user (Filled by CP/M)
+; Byte 3+: The actual character bytes typed by the user
+INBUF:  DB      50              ; Allocate max 50 characters for input
+        DB      0               ; CP/M returns the length here
+        DS      50              ; Define storage space for the 50 characters
+
+
+
+
+1. Set Up the ConstantsThe program maps out standard parameters using the EQU (equate) directive. It sets the execution framework at 100H (standard CP/M Transient Program Area), registers 0005H as the entry vector for standard system calls, and maps functions 9 and 10.2. Print the PromptBDOS Function 9 expects the address of the target string to be loaded into the DE register pair. The text must end explicitly with a dollar sign ($) delimiter. Once C is given the function code, executing CALL 0005H prints the text to the terminal screen.3. Capture Buffered InputBDOS Function 10 is the safest user input mechanism because it inherently handles terminal backspaces and caps input to a designated threshold, preventing memory overflows.Before making the CALL, the first byte of your storage buffer (INBUF) must contain the maximum allowed string size. When the user hits Return, CP/M automatically writes the number of characters typed into the second byte, followed directly by the raw characters.
