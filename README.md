@@ -91,13 +91,19 @@ how many bytes to decode):
   checks. `asm/test/` is different: manual/interactive programs (e.g. a
   console-I/O test that needs a real keyboard) meant to be run and
   eyeballed by hand, not part of the automated suite.
-- `resources/tastybasic/` — [Tasty Basic](https://github.com/dimitrit/tastybasic)
-  (GPLv3), a real, third-party CP/M TinyBASIC tried against the emulator
-  by hand (not part of `make test`, same spirit as `asm/test/`).
-  `upstream/` holds the unmodified source, `derive.sh` documents and
-  reproduces the one-time C-preprocessing step needed to get it into a
-  form `z80asm` can build (see the script's own comments for why), and
-  `tastybasic_cpm.asm` is that derived, buildable result.
+- `resources/tastybasic/`, `resources/sargon/`, `resources/adventure/` —
+  real, third-party CP/M programs (Tasty Basic, SARGON chess, Colossal
+  Cave Adventure) tried against the emulator by hand for real-world
+  validation (not part of `make test`, same spirit as `asm/test/`) — see
+  `docs/ROADMAP.md`'s "Real-world validation" entries for what that's
+  found and fixed. Where source is available (`tastybasic/`, `sargon/`),
+  `upstream/` holds it unmodified and `derive.sh` documents/reproduces
+  the small translation needed to get it building with `z80asm`;
+  `adventure/` and `resources/Mbasic.com` are prebuilt binaries with no
+  available source.
+- `cpm_disk/` — every program above (and `asm/examples/`), pre-assembled
+  and ready to run: `bin/z80 cpm_disk/<name>.com` from the repo root. See
+  `cpm_disk/README.md`.
 - `disasm/src/` — the disassembler (`decode`, `main`); `disasm/examples/`
   has example output.
 - `docs/` — the project roadmap ([`ROADMAP.md`](docs/ROADMAP.md)), a Z80
