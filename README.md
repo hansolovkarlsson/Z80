@@ -44,18 +44,19 @@ make test          # build, then run the regression check (tests/run_tests.sh)
 make clean         # remove build output
 ```
 
-`source config.sh` puts `bin/` on `PATH` (and sets `$BASEDIR` to the repo
-root), so the three tools below can be run as `z80`/`z80asm`/`z80dasm`
-instead of `./bin/z80`/etc. Optional — the `./bin/...` form always works
-too.
+`source scripts/config.sh` (from the repo root) puts `bin/` on `PATH`
+(and sets `$BASEDIR` to the repo root), so the three tools below can be
+run as `z80`/`z80asm`/`z80dasm` instead of `./bin/z80`/etc. Optional —
+the `./bin/...` form always works too.
 
 Correctness is verified by running the ZEXALL/ZEXDOC exerciser and reading
 its console output: every opcode should report `OK`; a wrong flag or result
 shows up as an `ERROR` line naming the instruction. `make test` automates
 this (plus running every `asm/examples/*.asm` program) into a pass/fail
-exit code. `bin/z80`
-defaults to running `emu/zexall/ZEXALL-main/zexall.com`; pass a different
-`.com` file as an argument to run something else:
+exit code. `bin/z80` takes the `.com` file to run as an argument
+(`bin/z80 -h`/`--help`, or no arguments at all, prints usage instead of
+running anything); `bin/z80 --ccp [ccp.com]` boots a CP/M shell instead
+of a single program (see `cpm_disk/README.md`):
 
 ```
 ./bin/z80 emu/zexall/ZEXALL-main/zexdoc.com
@@ -102,7 +103,7 @@ how many bytes to decode):
   the translation needed to get it building with `z80asm` (a straight
   syntax patch for `tastybasic/`/`sargon/`; a full 8080→Z80 mnemonic
   translation for `ccp/`, since CP/M predates the Z80 — see
-  `resources/ccp/derive.py`, general-purpose enough to reuse for other
+  `scripts/8080_to_z80.py`, general-purpose enough to reuse for other
   8080-mnemonic CP/M-era source); `adventure/` and `resources/Mbasic.com`
   are prebuilt binaries with no available source.
 - `cpm_disk/` — every program above (and `asm/examples/`), pre-assembled
@@ -121,6 +122,10 @@ how many bytes to decode):
   emulator's been validated against: Tasty Basic
   ([`TASTYBASIC_REFERENCE.md`](docs/TASTYBASIC_REFERENCE.md)) and MBASIC
   ([`MBASIC_REFERENCE.md`](docs/MBASIC_REFERENCE.md)).
+- `scripts/` — standalone reusable tooling that isn't part of the
+  emulator/assembler/disassembler build itself: `config.sh` (`PATH`
+  setup, see above) and `8080_to_z80.py` (the general 8080→Z80 mnemonic
+  translator, see above). See `scripts/README.md`.
 - `resources/` — reference links/documents on the Z80, CP/M, etc. (not
   code, just reading material).
 

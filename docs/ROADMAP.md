@@ -435,15 +435,17 @@ there surfaced and fixed several real dialect gaps, documented below.
   the CCP only ever talks to the rest of the system through BDOS calls
   and a handful of BIOS conventions this project already implements.
   Two real pieces of work:
-  1. **A general 8080→Z80 mnemonic translator** (`resources/ccp/derive.py`)
-     — CP/M predates the Z80, so DRI's own CCP source is written entirely
-     in 8080 mnemonics, unlike SARGON (real Z80) or Tasty Basic. Unlike
-     SARGON's 3 stray lines, this meant translating the whole ~1300-line
-     file — worth building properly (register-pair renaming, `M`→`(HL)`,
-     `PSW`→`AF`, condition-code jump/call/return forms, ALU ops needing
-     an explicit `A,` operand vs. not) rather than hand-translating, and
-     it's now reusable for any other 8080-mnemonic CP/M-era source, not
-     CCP-specific. `resources/ccp/preprocess.py` handles the parts that
+  1. **A general 8080→Z80 mnemonic translator** (`scripts/8080_to_z80.py`
+     — see `scripts/README.md`) — CP/M predates the Z80, so DRI's own CCP
+     source is written entirely in 8080 mnemonics, unlike SARGON (real
+     Z80) or Tasty Basic. Unlike SARGON's 3 stray lines, this meant
+     translating the whole ~1300-line file — worth building properly
+     (register-pair renaming, `M`→`(HL)`, `PSW`→`AF`, condition-code
+     jump/call/return forms, ALU ops needing an explicit `A,` operand vs.
+     not) rather than hand-translating, and it's now reusable for any
+     other 8080-mnemonic CP/M-era source, not CCP-specific — kept under
+     `scripts/` rather than `resources/ccp/` for exactly that reason.
+     `resources/ccp/preprocess.py` handles the parts that
      *are* CCP-specific: resolving the `IFDEF`/`IFNDEF` conditionals
      `z80asm` doesn't support (fixing the load address at `0E400h`, and
      — deliberately — taking the reformatted source's own `noserial`/

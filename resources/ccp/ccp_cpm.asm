@@ -1,7 +1,7 @@
 ; Derived from upstream/ccp.asm (see upstream/README.md for provenance/
-; license) via derive.sh (preprocess.py + derive.py) in this directory -
-; NOT hand-edited. Regenerate with ./derive.sh rather than editing this
-; file directly.
+; license) via derive.sh (preprocess.py + scripts/8080_to_z80.py) in this
+; directory - NOT hand-edited. Regenerate with ./derive.sh rather than
+; editing this file directly.
 ;
 ; Reformatted and converted for cross-assembly by Macro Assembler AS
 ; Eric Smith <spacewar@gmail.com> 2018-01-24

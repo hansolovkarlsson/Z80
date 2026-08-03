@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """CCP-specific preprocessing, run before the general 8080->Z80 pass
-(derive.py): resolves the conditionals z80asm can't handle (it only
+(scripts/8080_to_z80.py): resolves the conditionals z80asm can't handle (it only
 understands IF/ELSE/ENDIF with a real expression, not IFDEF/IFNDEF) and
 drops two directives (.cpu, title) it doesn't understand at all.
 

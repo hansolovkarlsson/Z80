@@ -32,17 +32,34 @@ bool load_file(const char *filename, uint16_t load_address) {
     return true;
 }
 
+static void print_usage(const char *prog) {
+    printf("Usage:\n");
+    printf("  %s <program.com>   Run a CP/M .com file (loaded at 0x0100)\n", prog);
+    printf("  %s --ccp [ccp.com] Boot a CP/M CCP shell (default: cpm_disk/ccp.com)\n", prog);
+    printf("  %s -h | --help     Show this message\n", prog);
+    printf("\n");
+    printf("Examples:\n");
+    printf("  %s cpm_disk/hello.com\n", prog);
+    printf("  %s emu/zexall/ZEXALL-main/zexall.com\n", prog);
+    printf("  %s --ccp\n", prog);
+}
+
 int main(int argc, char *argv[]) {
+    if (argc < 2 || strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
+        print_usage(argv[0]);
+        return EXIT_SUCCESS;
+    }
+
     // --ccp <path> boots a CCP (a "shell": DIR/TYPE/ERA/etc. plus running
     // other .com files by name) instead of running a single program - see
     // cpm.h's CCP_BASE/cpm_set_ccp_mode comments for how a warm boot then
     // re-enters the CCP instead of halting the emulator.
-    bool ccp_boot = argc > 1 && strcmp(argv[1], "--ccp") == 0;
+    bool ccp_boot = strcmp(argv[1], "--ccp") == 0;
     const char *test_file;
     if (ccp_boot) {
         test_file = (argc > 2) ? argv[2] : "cpm_disk/ccp.com";
     } else {
-        test_file = (argc > 1) ? argv[1] : "emu/zexall/ZEXALL-main/zexall.com";
+        test_file = argv[1];
     }
     uint16_t load_address = ccp_boot ? CCP_BASE : 0x0100;
 

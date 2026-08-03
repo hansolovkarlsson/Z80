@@ -44,7 +44,7 @@ $(BIN_DIR):
 	$(CC) $(CFLAGS) -c $< -o $@
 
 run: emulator
-	./$(EMU_TARGET) | less
+	./$(EMU_TARGET) emu/zexall/ZEXALL-main/zexall.com | less
 
 test: emulator assembler
 	./tests/run_tests.sh

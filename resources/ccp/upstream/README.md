@@ -12,11 +12,11 @@ unmodified DRI source, not a rewrite.
 
 **Written entirely in 8080 mnemonics** (CP/M predates the Z80 - it
 originally targeted Intel's 8080), unlike SARGON or Tasty Basic which are
-real Z80 source. `../derive.py` in this directory is a general-purpose
+real Z80 source. `scripts/8080_to_z80.py` (repo root) is a general-purpose
 8080→Z80 mnemonic translator (register-pair renaming, `M`→`(HL)`,
 `PSW`→`AF`, condition-code call/jump/return forms, etc.) written to get
 this file building, but reusable for any other 8080-mnemoric CP/M-era
-source.
+source - see `scripts/README.md`.
 
 **License note**: same situation as `resources/sargon/` - GitHub shows
 no declared license for `brouhaha/cpm22` (`NOASSERTION`), and DRI's

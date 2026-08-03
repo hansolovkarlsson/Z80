@@ -30,7 +30,7 @@ make               # builds bin/z80, bin/z80asm, and bin/z80dasm
 make emulator      # just the emulator
 make assembler     # just the assembler
 make disassembler  # just the disassembler
-make run           # build the emulator, then ./bin/z80 | less (runs zexall.com)
+make run           # build the emulator, then run zexall.com through it | less
 make test          # build, then run tests/run_tests.sh (see below)
 make clean         # remove object files and all three binaries
 ```
@@ -53,18 +53,21 @@ don't exercise I/O ports, `IM`, `RETI`/`RETN`, or `LD A,I`/`LD A,R`/`LD
 I,A`/`LD R,A` — `asm/examples/gaps_test.asm` is the only regression
 coverage for those.
 
-To run a specific CP/M `.com` file instead of the default `zexall.com`,
-pass it as argv[1] (paths are resolved relative to the working directory
-you invoke the binary from, typically the repo root):
+`bin/z80` takes the `.com` file to run as argv[1] (paths are resolved
+relative to the working directory you invoke the binary from, typically
+the repo root) — there's no default program; running it with no
+arguments (or `-h`/`--help`) just prints usage instead:
 
 ```
-./bin/z80 zexdoc.com
+./bin/z80 emu/zexall/ZEXALL-main/zexdoc.com
 ```
 
-(`zexdoc.com`/`zexall.com` live in `emu/zexall/ZEXALL-main/`, which is also
-`main.c`'s default load path when no argv[1] is given.) The zexdoc variant
-checks only documented flag behavior; zexall also checks the undocumented
-flags (bits 3 and 5, `FLAG_X`/`FLAG_Y`).
+The zexdoc variant checks only documented flag behavior; zexall also
+checks the undocumented flags (bits 3 and 5, `FLAG_X`/`FLAG_Y`). Passing
+`--ccp [ccp.com]` instead of a plain `.com` path boots a CP/M CCP shell
+(default `cpm_disk/ccp.com`) rather than running a single program — see
+this file's own BIOS section below and `docs/CPM_REFERENCE.md`'s CCP
+section for how that works.
 
 ## Architecture
 
