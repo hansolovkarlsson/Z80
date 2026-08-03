@@ -44,6 +44,11 @@ make test          # build, then run the regression check (tests/run_tests.sh)
 make clean         # remove build output
 ```
 
+`source config.sh` puts `bin/` on `PATH` (and sets `$BASEDIR` to the repo
+root), so the three tools below can be run as `z80`/`z80asm`/`z80dasm`
+instead of `./bin/z80`/etc. Optional — the `./bin/...` form always works
+too.
+
 Correctness is verified by running the ZEXALL/ZEXDOC exerciser and reading
 its console output: every opcode should report `OK`; a wrong flag or result
 shows up as an `ERROR` line naming the instruction. `make test` automates
