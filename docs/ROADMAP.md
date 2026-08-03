@@ -120,16 +120,32 @@ there surfaced and fixed several real dialect gaps, documented below.
      parens), not just call syntax (`low(msbt)`) — reimplemented in
      `expr.c`'s `parse_unary` as a prefix operator, which subsumes the
      parenthesized form for free (parens are still just generic grouping).
-- [ ] **Not fully byte-identical yet**: the reassembled `.com` is 8585
-  bytes vs. the original's 8704 (both `org 100h`), and `cmp` reports the
-  two are byte-for-byte identical up to EOF of the shorter file - not a
-  content mismatch, a truncation. The `crctab` block at the end assembles
-  to the correct 1024 bytes in isolation (extracted and assembled
-  standalone as a sanity check), so the missing 119 bytes are somewhere in
-  how it's produced *in the context of the full file*, not a `crctab`
-  syntax gap - not yet root-caused. Doesn't block functional correctness
-  (see the milestone above: the reassembled binary runs and passes all 67
-  tests), so this is a polish item, not a correctness blocker.
+- [x] **Byte-count discrepancy root-caused: it's a bundled-file version
+  mismatch, not a bug in `z80asm`.** The reassembled `.com` is 8585 bytes
+  vs. the original `zexall.com`'s 8704 (both `org 100h`), `cmp` reporting
+  the two byte-for-byte identical up to EOF of the shorter file. Traced
+  precisely (temporary instrumentation logging `pc`/`max_addr` through
+  the assembly): `z80asm` correctly processes the *entire* source file in
+  both cases — the trace ends exactly at the real final `crctab` line
+  (`db 02dh,002h,0efh,08dh`) immediately followed by `end`, with
+  `max_addr` landing at exactly `0x2289` (8585 bytes from `0x100`). That's
+  not a premature stop; it's the source file's genuine, complete content.
+  Confirming this wasn't specific to one file: **both** `zexall.z80` (the
+  Perl-generated variant) *and* `zexall.mac` (the real ZSM4 source) —
+  independently written/generated, 1546 vs. 1552 lines — reassemble to
+  the identical 8585 bytes, ending at the identical last `crctab` entry.
+  Disassembling the original `zexall.com`'s trailing 119 bytes
+  (`bin/z80dasm`, extracted to a standalone file first) shows coherent,
+  meaningful Z80 code — a string-copy routine checking for `CR`/`'`
+  characters — not padding or noise. So the original pre-built
+  `zexall.com` genuinely contains ~119 bytes of real code that has **no
+  corresponding source** in either `.z80` or `.mac` file bundled in
+  `emu/zexall/ZEXALL-main/`: the pre-built binary and the bundled source
+  text are from two different revisions of the real ZEXALL project,
+  independent of anything this project's own tools do. Doesn't block
+  functional correctness (the reassembled binary runs and passes all 67
+  tests) and isn't fixable on the assembler side — there's nothing in the
+  available source to assemble that would produce those bytes.
 - [ ] A small library of example programs beyond the ones above.
 - [x] **Real ZSM4 compatibility target reached: `zexall.mac`/`zexdoc.mac`
   (not just `zexall.z80`/`zexdoc.z80`) now assemble and run cleanly.**
