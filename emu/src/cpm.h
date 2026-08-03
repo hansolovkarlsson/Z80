@@ -3,6 +3,7 @@
 
 #include "z80.h"
 
+void cpm_console_init(void);
 void check_cpm_bdos(Z80 *cpu, uint8_t *ram);
 
 #endif

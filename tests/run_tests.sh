@@ -25,7 +25,7 @@ overall_status=0
 check_exerciser() {
     local name="$1" path="$2"
     local out
-    out=$("$Z80" "$path" 2>&1)
+    out=$("$Z80" "$path" < /dev/null 2>&1)
     local status=0
 
     if echo "$out" | grep -q "ERROR"; then
@@ -50,7 +50,7 @@ check_exerciser() {
 }
 
 check_asm_example() {
-    local src="$1"
+    local src="$1" stdin_data="${2:-}"
     local name
     name="$(basename "$src")"
     local com="$WORKDIR/$name.com"
@@ -64,7 +64,11 @@ check_asm_example() {
     fi
 
     local out
-    out=$("$Z80" "$com" 2>&1)
+    if [ -n "$stdin_data" ]; then
+        out=$(printf '%s' "$stdin_data" | "$Z80" "$com" 2>&1)
+    else
+        out=$("$Z80" "$com" < /dev/null 2>&1)
+    fi
     local status=0
 
     if echo "$out" | grep -qi "FAIL"; then
@@ -93,7 +97,13 @@ check_exerciser "ZEXALL" emu/zexall/ZEXALL-main/zexall.com
 check_exerciser "ZEXDOC" emu/zexall/ZEXALL-main/zexdoc.com
 
 for src in asm/examples/*.asm; do
-    check_asm_example "$src"
+    case "$(basename "$src")" in
+        # Needs specific piped stdin to drive its BDOS console-input
+        # checks (C_READ/C_RAWIO/C_READSTR) - see the .asm file's header
+        # comment for exactly what each byte is for.
+        console_test.asm) check_asm_example "$src" $'ABOK\r' ;;
+        *) check_asm_example "$src" ;;
+    esac
 done
 
 exit "$overall_status"

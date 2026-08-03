@@ -190,16 +190,27 @@ safely instead of running off into uninitialized memory.
 
 ## Implementation status
 
-`emu/src/cpm.c`'s `check_cpm_bdos()` currently implements exactly two BDOS
-functions — **2** (`C_WRITE`) and **9** (`C_WRITESTR`) — intercepted
-directly at `PC == 0x0005` rather than by placing real BDOS code in memory
-and executing a real `CALL`/jump to it (there is no BIOS jump table or DPH/
-DPB in this emulator's memory image at all yet). This was enough for
-ZEXALL/ZEXDOC, which only need console output. Extending this to the rest
-of the table above — particularly console input (1, 6, 10, 11) and the
-file functions (15–23, 33–40) — is the next concrete Phase 3 step; console
-input is the smaller, more self-contained piece (no filesystem-mapping
-design questions), so it's the more natural place to start.
+`emu/src/cpm.c`'s `check_cpm_bdos()` currently implements six BDOS
+functions — console output (**2** `C_WRITE`, **9** `C_WRITESTR`) and
+console input (**1** `C_READ`, **6** `C_RAWIO`, **10** `C_READSTR`, **11**
+`C_STAT`) — intercepted directly at `PC == 0x0005` rather than by placing
+real BDOS code in memory and executing a real `CALL`/jump to it (there is
+no BIOS jump table or DPH/DPB in this emulator's memory image at all yet).
+Console input needs the host terminal in raw mode (character-at-a-time, no
+local echo) to behave like real CP/M hardware; `cpm_console_init()`
+handles this via `termios`, only when stdin is a real TTY (a piped/
+redirected stdin — e.g. `tests/run_tests.sh`'s `console_test.asm` check —
+is left alone and just reads via a blocking `read()`, with EOF mapped to
+`^Z`/26 so a non-interactive run can't hang forever). Function 6's
+poll-and-read (`E`=0FFh) does *not* echo, matching real "raw" I/O; function
+10's line editing (echo, backspace/DEL, stop at CR) is deliberately
+minimal — no `^R`/`^X`/`^C` line-editing repertoire like real CP/M's CCP
+has, just enough for a program to read a line.
+
+The file functions (15–23, 33–40) are the remaining item — that's the
+next concrete Phase 3 step, and the one with an open design question (how
+FCB-addressed files map onto the host filesystem) rather than a
+self-contained implementation like console I/O was.
 
 Nothing in this document is implemented as literal BIOS code (no jump
 table exists at any fixed address in this emulator yet) — real CP/M

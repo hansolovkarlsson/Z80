@@ -38,6 +38,7 @@ int main(int argc, char *argv[]) {
     Z80 cpu = {0};
     cpu.memory = ram;
     z80_init_tables();
+    cpm_console_init();
 
     // 2. Load zexall.com at 0x0100 (Standard CP/M transient program area)
     if (!load_file(test_file, 0x0100)) {

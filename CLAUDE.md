@@ -122,12 +122,21 @@ switching/MMU). **I/O ports** are a separate 256-entry `cpu->io_ports` array
 with their own `z80_io_in`/`z80_io_out` bus functions — no real devices are
 attached, so a port read just returns whatever was last written there.
 
-**CP/M BDOS emulation (`cpm.c`)** is minimal: `check_cpm_bdos()` runs at the
-top of every `z80_step()` and, when `PC == 0x0005`, handles BDOS function 2
-(console char out, `E`) and function 9 (print `$`-terminated string at `DE`),
-then manually pops the return address off the stack into `PC` to simulate the
-`RET`. `main.c` preloads `RET` (`0xC9`) at addresses `0x0000` and `0x0005` so
-unhandled calls to either still return safely.
+**CP/M BDOS emulation (`cpm.c`)**: `check_cpm_bdos()` runs at the top of
+every `z80_step()` and, when `PC == 0x0005`, handles the BDOS functions
+`docs/CPM_REFERENCE.md` documents — currently console output (2, 9) and
+console input (1, 6, 10, 11) — then manually pops the return address off
+the stack into `PC` to simulate the `RET`. `main.c` preloads `RET`
+(`0xC9`) at addresses `0x0000` and `0x0005` so unhandled calls to either
+still return safely. Console *input* needs the host terminal in raw mode
+(no line buffering, no local echo) so character-at-a-time BDOS calls see
+input the way real CP/M hardware would rather than waiting for a host
+Enter keypress; `cpm_console_init()` (called once from `main.c`, `termios`-
+based) only touches terminal mode when stdin is actually a TTY (`isatty`),
+leaving a piped/redirected stdin untouched, and restores the original
+mode via `atexit()`. Function 10 (`C_READSTR`, buffered line input) does
+its own minimal line editing (echo, backspace/DEL) since raw mode disables
+the terminal's own.
 
 ## Assembler (`asm/src/`)
 

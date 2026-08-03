@@ -206,13 +206,18 @@ there surfaced and fixed several real dialect gaps, documented below.
   Seasip CP/M archive. Confirms `cpm.c`'s current two functions (2, 9) are
   correct as far as they go, and gives the register/error conventions
   needed to extend it without guessing.
-- Expand `cpm.c` past the two BDOS functions it has today (2: console char
-  out, 9: print `$`-string) to the functions real CP/M-80 programs expect:
-  console input (1, 6, 10, 11) is the natural next step (self-contained,
-  no filesystem-mapping design questions), then file I/O (open/close/
-  read/write/make/delete, search — functions 15–23, 33–40), which will
-  need a design decision on how FCB-addressed files map onto the host
-  filesystem (see `docs/CPM_REFERENCE.md`'s Implementation status section).
+- [x] **Console input** (BDOS functions 1 `C_READ`, 6 `C_RAWIO`, 10
+  `C_READSTR`, 11 `C_STAT`) — implemented in `cpm.c`, backed by a
+  `termios`-raw host terminal (only when stdin is a real TTY; a piped
+  stdin just does a blocking `read()`, EOF mapped to `^Z`). Regression
+  coverage: `asm/examples/console_test.asm`, driven with piped stdin by
+  `tests/run_tests.sh` since it needs specific input bytes rather than
+  running standalone like the other example programs.
+- File I/O (open/close/read/write/make/delete, search — BDOS functions
+  15–23, 33–40) is the remaining `cpm.c` gap, and unlike console I/O has
+  an open design question: how FCB-addressed files map onto the host
+  filesystem (see `docs/CPM_REFERENCE.md`'s Implementation status
+  section).
 - Emulate disk I/O against the host filesystem (a CP/M disk image or a
   mapped subdirectory).
 - Implement the I/O port instructions and interrupt delivery this phase
