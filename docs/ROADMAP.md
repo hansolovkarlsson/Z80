@@ -338,12 +338,71 @@ there surfaced and fixed several real dialect gaps, documented below.
   completely: real banner (`BASIC-80 Rev. 5.21`, copyright, free-memory
   count), program entry, `RUN`, `FOR`/`NEXT` with arithmetic, and `SYSTEM`
   (MBASIC's own exit command) all work correctly.
+- [x] **Real-world validation: SARGON** (`resources/sargon/`) — Dan and
+  Kathe Spracklen's 1978 Z80 chess program, a genuinely different profile
+  than the two BASIC interpreters above: heavy register-level arithmetic
+  and board-array logic rather than an interpreter loop, minimal file
+  I/O, mostly console-driven. Real source from
+  [billforsternz/cpm-sargon](https://github.com/billforsternz/cpm-sargon)
+  (a CP/M assembly of
+  [retro-sargon](https://github.com/billforsternz/retro-sargon)'s
+  restoration of the original book listing); a second port with VT100/
+  ANSI graphics ([z80playground/sargon-cpm](https://github.com/z80playground/sargon-cpm))
+  gave a prebuilt `.com` for an initial smoke test before assembling the
+  real source ourselves. Note: unlike Tasty Basic (GPLv3), this source's
+  1978 copyright notice is "all rights reserved" with no open license
+  from any host repo — included here as a widely-mirrored historical
+  artifact, a deliberate call (see `resources/sargon/upstream/README.md`).
+  Getting the real source to assemble surfaced three real gaps, none of
+  which any prior real-program testing had exercised:
+  1. A macro invocation combined with a same-line label
+     (`DRIV04: PRTBLK MVENUM,3`) wasn't recognized as a macro call at all
+     — `preprocess.c`'s macro-call detection only ever checked the first
+     token on a line, so a label prefix made it fall through to
+     `assemble.c` as a plain "unknown mnemonic". Fixed by splitting such
+     a line into a standalone label line plus the macro's expansion, the
+     same way a bare label on its own line already works.
+  2. `EX AF,AF'` (completely standard, documented Z80) failed to
+     assemble because the comment-stripping quote-tracker (`assemble.c`'s
+     `strip_comment`/`preprocess.c`'s `pp_strip_comment`, both added
+     earlier to keep a `'` or `"` containing `;` from being mistaken for
+     a comment) treated the bare trailing `'` in `AF'` as *opening* an
+     unterminated character literal, silently swallowing the rest of the
+     line — including the real trailing `; comment`. Fixed by only
+     treating a `'` as opening a quote when it's not immediately preceded
+     by an identifier character (a real char literal like `'A'` is always
+     preceded by whitespace/comma/paren, never a letter or digit).
+  3. A forward-referenced `EQU` expression (`WACT EQU ATKLST`, where
+     `ATKLST` is a label defined a few lines later) evaluates against a
+     placeholder on pass 1 (the referenced symbol isn't known yet) and
+     the real value on pass 2 once every symbol is - legitimately
+     different values across passes, not a genuine conflicting
+     redefinition the way two real labels colliding would be. `EQU`'s
+     handler was running both through the same duplicate-value check.
+     Fixed by leaving the symbol undefined for the rest of pass 1 in
+     that case (same as any other as-yet-unknown symbol) instead of
+     recording a placeholder pass 2 would then see as a conflict.
+  With all three fixed, `resources/sargon/derive.sh`'s translation of the
+  source's only 3 stray 8080-style mnemonics (`JMP`/`CMP` where the other
+  70+ jump/compare instructions in this otherwise-real-Z80 file correctly
+  use `JP`/`CP` — an inconsistency in the original file, not systematic
+  8080 dialect, confirmed by grepping the whole source before touching
+  it) assembles cleanly with `bin/z80asm` and runs correctly through
+  `bin/z80`: banner, color/difficulty prompts, and board setup all
+  verified interactively.
 - Implement the I/O port instructions and interrupt delivery this phase
   will actually need for a BIOS layer (see Known gaps) — I/O ports are
   already done, and there's now a real (if minimal) BIOS layer too (see
   above); interrupt delivery is the one piece still deferred.
 - Get a real CP/M 2.2 (or similar) system image loaded and booting under
   the emulator.
+- Further real-world validation candidates queued up next, same "run a
+  real unmodified program, fix whatever breaks" strategy:
+  - [ ] **Colossal Cave Adventure** (a CP/M port) — the opposite profile
+    from SARGON: heavy string/text parsing, minimal computation.
+  - [ ] **Turbo Pascal 3.0** — a real compiler; substantially bigger
+    scope than the others, likely a project of its own rather than a
+    quick validation pass.
 
 ## Phase 4: Beyond CP/M (exploratory)
 

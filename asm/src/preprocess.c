@@ -42,10 +42,20 @@ static void pp_trim(char *s) {
     }
 }
 
+// See strip_comment() in assemble.c for why a '\'' only opens a quoted
+// literal when it's not immediately preceded by an identifier character
+// (distinguishing a real char literal from the Z80 "AF'" register suffix).
 static void pp_strip_comment(char *line) {
     int in_squote = 0, in_dquote = 0;
     for (char *p = line; *p; p++) {
-        if (*p == '\'' && !in_dquote) in_squote = !in_squote;
+        if (*p == '\'' && !in_dquote) {
+            if (in_squote) {
+                in_squote = 0;
+            } else {
+                char prev = (p > line) ? p[-1] : '\0';
+                if (!(isalnum((unsigned char)prev) || prev == '_')) in_squote = 1;
+            }
+        }
         else if (*p == '"' && !in_squote) in_dquote = !in_dquote;
         else if (*p == ';' && !in_squote && !in_dquote) { *p = '\0'; return; }
     }
@@ -409,6 +419,22 @@ static int process_file(const char *filename, PPBuilder *out, MacroTable *mt, in
         if (m) {
             if (expand_macro(m, rest, out, mt, local_counter, depth, origin, my_dir) != 0) errors++;
             continue;
+        }
+
+        // A label followed by a macro invocation on the same line
+        // ("DRIV04: PRTBLK MVENUM,3") - real M80/ZSM4-style source does
+        // this routinely (Sargon's CP/M port is what surfaced the gap).
+        // Split into a standalone label line (defining the label at the
+        // current address) plus the macro's expansion, the same way a
+        // label alone on its own line already works in assemble.c.
+        size_t wlen = strlen(word);
+        if (wlen > 0 && word[wlen - 1] == ':') {
+            Macro *m2 = find_macro(mt, word2);
+            if (m2) {
+                pp_push(out, word, origin);
+                if (expand_macro(m2, params_text, out, mt, local_counter, depth, origin, my_dir) != 0) errors++;
+                continue;
+            }
         }
 
         pp_push(out, line, origin);

@@ -19,11 +19,22 @@ static void str_trim(char *s) {
 
 // Cuts off a trailing ';' comment, but not one that appears inside a
 // single- or double-quoted literal (so "it's" or a string containing ';'
-// isn't mistaken for a comment start).
+// isn't mistaken for a comment start). A '\'' is only treated as *opening*
+// a quoted literal if it's not immediately preceded by an identifier
+// character - otherwise the Z80 alternate-register suffix ("EX AF,AF'")
+// would be misread as an unterminated char literal, swallowing the rest
+// of the line (including any real comment) since it has no closing quote.
 static void strip_comment(char *line) {
     int in_squote = 0, in_dquote = 0;
     for (char *p = line; *p; p++) {
-        if (*p == '\'' && !in_dquote) in_squote = !in_squote;
+        if (*p == '\'' && !in_dquote) {
+            if (in_squote) {
+                in_squote = 0;
+            } else {
+                char prev = (p > line) ? p[-1] : '\0';
+                if (!(isalnum((unsigned char)prev) || prev == '_')) in_squote = 1;
+            }
+        }
         else if (*p == '"' && !in_squote) in_dquote = !in_dquote;
         else if (*p == ';' && !in_squote && !in_dquote) { *p = '\0'; return; }
     }
@@ -285,6 +296,15 @@ int assemble_line(AsmCtx *ctx, const char *line_in, LineResult *r) {
         int unresolved = 0;
         long v = eval_directive_expr(ctx, rest, &unresolved);
         if (ctx->pass == 2 && unresolved) { r->err = "undefined symbol in EQU"; return -1; }
+        // On pass 1, a forward-referenced EQU expression (e.g. "WACT EQU
+        // ATKLST" where ATKLST is a label defined a few lines later)
+        // evaluates against a placeholder (0, per expr.c's
+        // undefined-symbol convention), not the real value - so leave it
+        // undefined for the rest of pass 1, same as any other
+        // as-yet-unknown symbol, rather than recording a value pass 2
+        // would then see as a conflicting redefinition once every symbol
+        // is known.
+        if (ctx->pass == 1 && unresolved) return 0;
         if (!symtab_define(ctx->symtab, label, v)) {
             r->err = "label redefined with a different value";
             return -1;

@@ -1,7 +1,11 @@
 # Resources
 
 Reference material for this project: links and documents relating to the
-Z80 CPU, CP/M, and related topics (assemblers, BDOS/BIOS specs, etc.).
-Unlike `emu/zexall/ZEXALL-main/`, nothing here is meant to be run or built
-— it's reading material to inform the work in `emu/`, `asm/`, and future
-phases (see `docs/ROADMAP.md`).
+Z80 CPU, CP/M, and related topics (assemblers, BDOS/BIOS specs, etc.) —
+reading material to inform the work in `emu/`, `asm/`, and future phases
+(see `docs/ROADMAP.md`). A few subdirectories are an exception: `tastybasic/`
+and `sargon/` hold real, unmodified third-party CP/M programs (plus a
+derived, buildable copy) used for real-world validation testing against
+the emulator/assembler — see each directory's own files and
+`docs/ROADMAP.md`'s "Real-world validation" entries for what that's
+found and fixed.
