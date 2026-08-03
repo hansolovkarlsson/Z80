@@ -310,10 +310,38 @@ there surfaced and fixed several real dialect gaps, documented below.
   truncation bug for any program containing a line number whose low byte
   is `0x1A` (line 1050 among others), which is exactly what broke the
   bundled `tictac.tba` example.
+- [x] **Real-world validation: MBASIC, and a real BIOS layer to make it
+  work** (`resources/Mbasic.com`) — Microsoft's own BASIC-80 (Rev 5.21,
+  CP/M version), a genuinely different, more demanding real program than
+  Tasty Basic. It made exactly one BDOS call (function 12, `S_BDOSVER`)
+  and then silently quit before ever printing its banner — not
+  unimplemented-opcode territory, just a program checking a version
+  number this emulator had never bothered to return, added as a small
+  fix. That got it *past* the version check, but it then hit a deeper
+  issue: its low-level console-output routine calls directly into the
+  BIOS rather than BDOS (a standard, portable CP/M optimization for
+  performance-sensitive code), locating the BIOS the standard way (read
+  the `JP` target embedded at address `0x0000`) - and this emulator had
+  never had a real BIOS, just a bare `RET` at address 0, so that lookup
+  always returned zero and MBASIC ended up calling address 0 for its very
+  first character output. Traced precisely with targeted memory read/
+  write instrumentation (not guesswork): MBASIC goes a level further
+  still, reading each vector's *own jump target* once at startup and
+  self-patching that address directly into its own code to bypass the
+  jump table for speed thereafter - a second standard technique, and the
+  reason every vector needed to be a genuine `JP <self>`, not just a bare
+  `RET` (a self-referencing jump means "call the vector" and "read its
+  target, then call that" land on the identical address either way).
+  Implemented a full minimal 17-vector BIOS (`cpm_bios_init()`/
+  `check_cpm_bios()` in `cpm.c` — see `docs/CPM_REFERENCE.md`'s BIOS
+  section for the vector-by-vector behavior), and MBASIC now boots
+  completely: real banner (`BASIC-80 Rev. 5.21`, copyright, free-memory
+  count), program entry, `RUN`, `FOR`/`NEXT` with arithmetic, and `SYSTEM`
+  (MBASIC's own exit command) all work correctly.
 - Implement the I/O port instructions and interrupt delivery this phase
   will actually need for a BIOS layer (see Known gaps) — I/O ports are
-  already done (see Known gaps above); interrupt delivery is the one
-  piece still deferred.
+  already done, and there's now a real (if minimal) BIOS layer too (see
+  above); interrupt delivery is the one piece still deferred.
 - Get a real CP/M 2.2 (or similar) system image loaded and booting under
   the emulator.
 

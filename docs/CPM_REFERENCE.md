@@ -184,18 +184,23 @@ so this region is available below it:
 | `0081h`–`00FFh` | 127 | Command-line tail text (space-separated, unparsed) / default DMA buffer contents. |
 
 This confirms the choices this project's `main.c` already made independent
-of this research: `.com` programs load at `0100h`, and `RET` is preloaded
-at `0000h`/`0005h` so an unhandled `JP`/`CALL` to either still returns
-safely instead of running off into uninitialized memory.
+of this research: `.com` programs load at `0100h`. `0005h` gets a bare
+`RET` preloaded so an unhandled `CALL` still returns safely instead of
+running off into uninitialized memory; `0000h` gets a real `JP` into the
+minimal BIOS jump table `cpm_bios_init()` installs (see the BIOS section
+below) rather than just a bare `RET`, since some real software reads this
+jump's target to locate the BIOS.
 
 ## Implementation status
 
 `emu/src/cpm.c`'s `check_cpm_bdos()` currently implements **0**
-`P_TERMCPM`, console output (**2** `C_WRITE`, **9** `C_WRITESTR`), and
-console input (**1** `C_READ`, **6** `C_RAWIO`, **10** `C_READSTR`, **11**
-`C_STAT`) — intercepted directly at `PC == 0x0005` rather than by placing
-real BDOS code in memory and executing a real `CALL`/jump to it (there is
-no BIOS jump table or DPH/DPB in this emulator's memory image at all yet).
+`P_TERMCPM`, console output (**2** `C_WRITE`, **9** `C_WRITESTR`), console
+input (**1** `C_READ`, **6** `C_RAWIO`, **10** `C_READSTR`, **11**
+`C_STAT`), and **12** `S_BDOSVER` — intercepted directly at `PC == 0x0005`
+rather than by placing real BDOS code in memory and executing a real
+`CALL`/jump to it. There *is* now a minimal, real BIOS jump table (see
+below) — just no DPH/DPB, so no real disk geometry.
+
 Console input needs the host terminal in raw mode (character-at-a-time, no
 local echo) to behave like real CP/M hardware; `cpm_console_init()`
 handles this via `termios`, only when stdin is a real TTY (a piped/
@@ -280,10 +285,45 @@ machinery this document describes but `cpm.c` doesn't implement). Revisit
 only if something concrete actually needs one of those — most CP/M-80
 transient programs don't.
 
-Nothing in this document is implemented as literal BIOS code (no jump
-table exists at any fixed address in this emulator yet) — real CP/M
-programs that jump into the BIOS directly (uncommon, but not unheard of)
-won't work correctly until that gap closes too. Un-stubbed drive/
-allocation-vector functions (24, 27, 28, 29, 31, 37, 38, 39) are the
-remaining BDOS gap, all of which need the DPH/DPB this design deliberately
-skipped.
+### BIOS
+
+There's now a real, minimal 17-vector BIOS jump table (`cpm_bios_init()`
+in `cpm.c`, called once from `main.c`), at a fixed `BIOS_BASE` (`0xFC00`)
+near the top of the 64KB address space, plus a genuine `JP <wboot>` at
+address `0x0000` — not just a bare `RET` like before. This exists because
+some real CP/M software calls directly into the BIOS instead of going
+through BDOS, bypassing its function-number dispatch overhead for
+performance; MBASIC (Microsoft's BASIC-80) is a concrete example that
+does exactly this for console I/O, and needed this to run at all — before
+this existed, its first attempted character output silently ended the
+program (see below).
+
+Every one of the 17 vectors is written as a genuine 3-byte `JP <self>` -
+not a bare `RET` - specifically because some software (MBASIC again)
+doesn't just call the vector directly; it reads the vector's *own jump
+target* once at startup (the 2 bytes right after its `JP` opcode) and
+self-patches that address into its own code, bypassing the jump table
+entirely afterward for speed - a second well-known, standard CP/M
+optimization technique. A bare `RET` would give that technique nothing
+useful to find; a self-referencing `JP` means it doesn't matter whether a
+caller reaches a vector by calling it directly or by reading-then-calling
+its target - both land on the identical address, and `check_cpm_bios()`
+intercepts either path identically before any fetch/execute happens.
+
+`check_cpm_bios()` gives real behavior to `WBOOT` (warm boot - never
+returns to its caller, same as `P_TERMCPM`), `CONST`/`CONIN`/`CONOUT`
+(reusing the same host-terminal plumbing as the BDOS console functions -
+note `CONOUT` takes its character in `C`, not `E` like BDOS `C_WRITE`),
+and sensible fixed responses for `READER` (`^Z`, no reader attached),
+`SELDSK` (`HL`=0, no DPH), `READ`/`WRITE` (error, no BIOS-level disk I/O -
+see the File I/O section above for the BDOS-level equivalent that *does*
+work), `LISTST` (never ready, no printer), and `SECTRAN` (identity, no
+sector skewing). Every other vector (`BOOT`, `LIST`, `PUNCH`, `HOME`,
+`SETTRK`, `SETSEC`, `SETDMA`) is a harmless no-op. Real CP/M programs that
+jump directly into the BIOS for genuine disk I/O still won't work
+correctly (no DPH/DPB backs any of this), but console-only BIOS use -
+the common case - now does.
+
+Un-stubbed BDOS drive/allocation-vector functions (24, 27, 28, 29, 31, 37,
+38, 39) are the remaining BDOS gap, all of which need the DPH/DPB this
+design deliberately skipped.

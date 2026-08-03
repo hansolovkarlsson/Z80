@@ -29,7 +29,6 @@ uint8_t z80_read_byte(Z80 *cpu, uint16_t address) {
 }
 
 void z80_write_byte(Z80 *cpu, uint16_t address, uint8_t value) {
-    (void)cpu; // Unused in basic flat-memory model
     cpu->memory[address] = value;
 }
 
@@ -2217,15 +2216,16 @@ void z80_init_tables(void) {
 // z80.c
 
 int z80_step(Z80 *cpu, uint8_t *ram) {
-    // 1. Intercept CP/M BDOS call for zexall output before fetching
+    // 1. Intercept CP/M BDOS/BIOS calls before fetching
     check_cpm_bdos(cpu, ram);
+    check_cpm_bios(cpu, ram);
 
-    // BDOS function 0 (P_TERMCPM) sets PC to 0x0000 directly rather than
-    // returning to the caller - main.c's run loop checks for PC==0x0000
-    // at the top of its *next* iteration, but without this check here,
-    // this function would immediately fetch and execute the RET stub
-    // main.c preloads at address 0, popping the real return address off
-    // the stack and undoing the termination before that check ever runs.
+    // BDOS function 0 (P_TERMCPM) and the BIOS WBOOT vector both set PC to
+    // 0x0000 directly rather than returning to the caller - main.c's run
+    // loop checks for PC==0x0000 at the top of its *next* iteration, but
+    // without this check here, this function would immediately fetch and
+    // execute the JP-to-WBOOT main.c preloads at address 0, undoing the
+    // termination before that check ever runs.
     if (cpu->pc == 0x0000) return 0;
 
     // 2. Fetch opcode byte

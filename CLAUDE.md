@@ -124,12 +124,34 @@ attached, so a port read just returns whatever was last written there.
 
 **CP/M BDOS emulation (`cpm.c`)**: `check_cpm_bdos()` runs at the top of
 every `z80_step()` and, when `PC == 0x0005`, handles the BDOS functions
-`docs/CPM_REFERENCE.md` documents — console output (2, 9), console input
-(1, 6, 10, 11), file I/O (15–23, 26, 33–35, 40), and drive/user
-bookkeeping stubs (13, 14, 25, 32) — then manually pops the return address
-off the stack into `PC` to simulate the `RET`. `main.c` preloads `RET`
-(`0xC9`) at addresses `0x0000` and `0x0005` so unhandled calls to either
-still return safely. Console *input* needs the host terminal in raw mode
+`docs/CPM_REFERENCE.md` documents — `P_TERMCPM` (0), console output (2, 9),
+console input (1, 6, 10, 11), `S_BDOSVER` (12), file I/O (15–23, 26,
+33–35, 40), and drive/user bookkeeping stubs (13, 14, 25, 32) — then
+manually pops the return address off the stack into `PC` to simulate the
+`RET`. `main.c` preloads `RET` (`0xC9`) at address `0x0005` so an unhandled
+call still returns safely.
+
+**BIOS emulation (`cpm.c`)**: `check_cpm_bios()` runs alongside
+`check_cpm_bdos()` and handles direct BIOS calls — some real software
+(MBASIC's own console-output routine, for one) calls straight into the
+BIOS instead of BDOS, bypassing the function-dispatch overhead, and
+that's exactly why a full BIOS layer matters here rather than just
+`check_cpm_bdos()`. `cpm_bios_init()` (called once from `main.c`) installs
+a real `JP <wboot>` at address `0x0000` (not a bare `RET` — some software,
+MBASIC included, reads this jump's target to locate the BIOS) and a
+17-vector jump table at a fixed `BIOS_BASE`. Every vector is a genuine
+`JP <self>`, not a bare `RET`, because MBASIC goes one step further: it
+reads a vector's *own jump target* once at startup and self-patches that
+address directly into its own code, permanently bypassing the jump table
+for speed — a self-referencing `JP` means that trick and a direct call
+both land on the identical address, so `check_cpm_bios()` intercepts
+either path identically. It gives real behavior to `WBOOT`/`CONST`/
+`CONIN`/`CONOUT` (reusing the same console plumbing as the BDOS
+functions) and fixed, sensible responses for the rest; see
+`docs/CPM_REFERENCE.md`'s BIOS section for the full vector-by-vector
+rundown.
+
+Console *input* needs the host terminal in raw mode
 (no line buffering, no local echo) so character-at-a-time BDOS calls see
 input the way real CP/M hardware would rather than waiting for a host
 Enter keypress; `cpm_console_init()` (called once from `main.c`, `termios`-

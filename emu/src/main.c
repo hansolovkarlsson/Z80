@@ -50,11 +50,13 @@ int main(int argc, char *argv[]) {
     cpu.pc = 0x0100; // Programs start at 0x0100
     cpu.sp = 0xF000; // Set stack pointer near the top of memory
 
-    // CP/M injects a RET (0xC9) instruction at 0x0000 so calls to 0x0000 exit back
-    ram[0x0000] = 0xC9; 
+    // Installs the minimal BIOS jump table (JP <wboot> at 0x0000, plus
+    // CONST/CONIN/CONOUT and no-op stubs for the rest) - see cpm.c's BIOS
+    // comment for why real software needs this, not just a bare RET.
+    cpm_bios_init(ram);
 
     // CP/M injects a RET (0xC9) instruction at 0x0005 to return from BDOS calls
-    ram[0x0005] = 0xC9; 
+    ram[0x0005] = 0xC9;
 
     printf("Starting Z80 Execution Loop...\n\n");
 

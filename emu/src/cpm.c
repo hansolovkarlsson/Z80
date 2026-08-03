@@ -266,6 +266,126 @@ static int search_advance(Z80 *cpu) {
 static uint8_t current_drive = 0;
 static uint8_t current_user = 0;
 
+/*
+ * BIOS
+ *
+ * Real CP/M programs are supposed to go through BDOS (CALL 0005h) for
+ * everything, but it's a well-established, portable technique for
+ * performance-sensitive code to call directly into the BIOS instead,
+ * bypassing BDOS's function-number dispatch overhead. Locating the BIOS
+ * is itself a standard trick: address 0x0000 always holds a 3-byte
+ * `JP <wboot>` instruction (see docs/CPM_REFERENCE.md's zero-page map),
+ * so a program reads that jump's target to find WBOOT, then reaches any
+ * other vector via its known fixed offset from BIOS_BASE (WBOOT itself is
+ * always at BIOS_BASE+3 - see the 17-vector table also in
+ * docs/CPM_REFERENCE.md).
+ *
+ * MBASIC's own low-level character-output routine goes one step further,
+ * and it's *also* a well-known, standard CP/M technique: rather than
+ * calling through the CONOUT vector every time (paying for its `JP`
+ * indirection on every character), it reads CONOUT's *own jump target*
+ * once at startup - the 2 bytes right after that vector's `JP` opcode -
+ * and self-patches that address directly into its own code, bypassing
+ * the jump table entirely afterward. This means every vector needs to be
+ * a genuine 3-byte `JP <target>`, not just a bare RET: something reading
+ * "the real CONOUT address" needs a real address to find there. Each
+ * vector's own target is simply itself - since check_cpm_bios() below
+ * intercepts a matching PC *before* any fetch/execute happens, it doesn't
+ * matter whether a caller reaches a given address by calling the vector
+ * directly or by reading-then-calling its self-referencing target; both
+ * land on the exact same PC value and get the exact same handling.
+ *
+ * Before this existed, main.c only wrote a single RET byte at 0x0000: no
+ * real jump, so a program reading "the BIOS address" out of it got zero,
+ * and any vector computed relative to that zero was zero too - which is
+ * exactly why MBASIC's first attempted character output silently ended
+ * the program (calling address 0, which main.c's run loop already treats
+ * as "terminated", before ever printing its banner).
+ */
+#define BIOS_BASE 0xFC00
+#define BIOS_V_BOOT    0x00
+#define BIOS_V_WBOOT   0x03
+#define BIOS_V_CONST   0x06
+#define BIOS_V_CONIN   0x09
+#define BIOS_V_CONOUT  0x0C
+#define BIOS_V_LIST    0x0F
+#define BIOS_V_PUNCH   0x12
+#define BIOS_V_READER  0x15
+#define BIOS_V_HOME    0x18
+#define BIOS_V_SELDSK  0x1B
+#define BIOS_V_SETTRK  0x1E
+#define BIOS_V_SETSEC  0x21
+#define BIOS_V_SETDMA  0x24
+#define BIOS_V_READ    0x27
+#define BIOS_V_WRITE   0x2A
+#define BIOS_V_LISTST  0x2D
+#define BIOS_V_SECTRAN 0x30
+
+void cpm_bios_init(uint8_t *ram) {
+    // JP to WBOOT at address 0 - this is what a program actually reads to
+    // locate the BIOS (see the comment above).
+    ram[0x0000] = 0xC3; // JP
+    ram[0x0001] = (uint8_t)((BIOS_BASE + BIOS_V_WBOOT) & 0xFF);
+    ram[0x0002] = (uint8_t)((BIOS_BASE + BIOS_V_WBOOT) >> 8);
+
+    // Every vector is a real "JP <self>" - see the comment above for why
+    // a bare RET isn't enough. check_cpm_bios() intercepts all 17
+    // addresses before the CPU ever fetches/executes this JP.
+    static const int vectors[] = {
+        BIOS_V_BOOT, BIOS_V_WBOOT, BIOS_V_CONST, BIOS_V_CONIN, BIOS_V_CONOUT,
+        BIOS_V_LIST, BIOS_V_PUNCH, BIOS_V_READER, BIOS_V_HOME, BIOS_V_SELDSK,
+        BIOS_V_SETTRK, BIOS_V_SETSEC, BIOS_V_SETDMA, BIOS_V_READ,
+        BIOS_V_WRITE, BIOS_V_LISTST, BIOS_V_SECTRAN,
+    };
+    for (size_t i = 0; i < sizeof(vectors) / sizeof(vectors[0]); i++) {
+        uint16_t addr = BIOS_BASE + vectors[i];
+        ram[addr] = 0xC3; // JP
+        ram[addr + 1] = (uint8_t)(addr & 0xFF);
+        ram[addr + 2] = (uint8_t)(addr >> 8);
+    }
+}
+
+void check_cpm_bios(Z80 *cpu, uint8_t *ram) {
+    if (cpu->pc == BIOS_BASE + BIOS_V_WBOOT) {
+        // Warm boot never returns to its caller - terminate directly,
+        // same reasoning as P_TERMCPM below. Must be caught here (not
+        // left to execute the JP-to-self at this address) since
+        // z80_step() checks for PC==0 right after this call and would
+        // otherwise fetch/execute the JP-to-WBOOT at address 0 forever.
+        cpu->pc = 0x0000;
+        return;
+    }
+
+    if (cpu->pc == BIOS_BASE + BIOS_V_CONST) {
+        cpu->a = console_char_ready() ? 0xFF : 0x00;
+    } else if (cpu->pc == BIOS_BASE + BIOS_V_CONIN) {
+        cpu->a = console_read_char(); // raw BIOS input - no echo
+    } else if (cpu->pc == BIOS_BASE + BIOS_V_CONOUT) {
+        putchar(cpu->c); // BIOS CONOUT takes the character in C, not E
+        fflush(stdout);
+    } else if (cpu->pc == BIOS_BASE + BIOS_V_READER) {
+        cpu->a = 26; // ^Z: no reader device attached
+    } else if (cpu->pc == BIOS_BASE + BIOS_V_SELDSK) {
+        cpu->hl = 0; // no DPH: invalid/unsupported drive
+    } else if (cpu->pc == BIOS_BASE + BIOS_V_READ || cpu->pc == BIOS_BASE + BIOS_V_WRITE) {
+        cpu->a = 1; // no disk I/O at the BIOS level here - see the File I/O comment
+    } else if (cpu->pc == BIOS_BASE + BIOS_V_LISTST) {
+        cpu->a = 0; // printer never ready - no printer device
+    } else if (cpu->pc == BIOS_BASE + BIOS_V_SECTRAN) {
+        cpu->hl = cpu->bc; // identity translation - no sector skewing
+    } else if (cpu->pc >= BIOS_BASE && cpu->pc < BIOS_BASE + 0x33) {
+        // BOOT, LIST, PUNCH, HOME, SETTRK, SETSEC, SETDMA: harmless no-ops
+        // (no printer/punch/disk-geometry device backs any of these here).
+    } else {
+        return; // not a BIOS vector at all
+    }
+
+    // Simulate RET: Pop return address off the stack into PC
+    uint8_t low = ram[cpu->sp++];
+    uint8_t high = ram[cpu->sp++];
+    cpu->pc = (high << 8) | low;
+}
+
 void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
     if (cpu->pc == 0x0005) { // Intercept call to BDOS entry
         if (cpu->c == 0) {
@@ -348,6 +468,18 @@ void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
             // Function 11: Console Status (0 = no input waiting, 0FFh = ready)
             cpu->a = console_char_ready() ? 0xFF : 0x00;
             cpu->l = cpu->a;
+        }
+        else if (cpu->c == 12) {
+            // Function 12: Return CP/M version. B/H = system type (0 =
+            // 8-bit CP/M), A/L = version in BCD-ish form (0x22 = 2.2).
+            // Real software (e.g. MBASIC) checks this and refuses to run
+            // if it reads back 0 - leaving this unimplemented isn't a
+            // silent no-op like most unhandled functions, it looks like
+            // "version 0.0" and the program just quits immediately.
+            cpu->b = 0;
+            cpu->h = 0;
+            cpu->a = 0x22;
+            cpu->l = 0x22;
         }
         else if (cpu->c == 13) {
             // Function 13: Reset disk system - log out all drives, close
