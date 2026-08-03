@@ -173,7 +173,12 @@ based) only touches terminal mode when stdin is actually a TTY (`isatty`),
 leaving a piped/redirected stdin untouched, and restores the original
 mode via `atexit()`. Function 10 (`C_READSTR`, buffered line input) does
 its own minimal line editing (echo, backspace/DEL) since raw mode disables
-the terminal's own.
+the terminal's own. Beyond `ICANON`/`ECHO` and the `ICRNL`/`INLCR`/`IGNCR`
+CR-vs-LF fix, `IXON` (classic Unix software flow control) is disabled too
+— left on, the host tty driver intercepts `Ctrl-S`/`Ctrl-Q` as XOFF/XON
+and never delivers the byte at all, silently breaking any real program
+that uses them for something else (Turbo Pascal's editor binds `Ctrl-S`
+to cursor-left, which is what surfaced this).
 
 Console *output* (BDOS functions 1's echo, 2, 6, 9, and BIOS `CONOUT`)
 routes every program-supplied byte through `console_emit()` rather than

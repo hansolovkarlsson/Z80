@@ -296,13 +296,43 @@ Including Files).
   emulator: "IBM PC systems come with arrows and dedicated function keys
   already installed" (i.e., only the IBM PC version does). Use the
   WordStar diamond above.
-- **`Ctrl-H` (delete-left) didn't reliably erase characters in initial
-  testing** — the cursor moved and the internal buffer didn't update
-  either (confirmed by typing over the "deleted" position and observing
-  an insert rather than a replace). Documented here as an open question
-  rather than a confirmed root cause; try `Ctrl-G` (delete character
-  under cursor) as a workaround, and see `docs/ROADMAP.md` if this gets
-  properly root-caused later.
+- **`Ctrl-H`/Backspace/Delete moves the cursor left without erasing —
+  root-caused, and it's working as designed, not a bug.** By default,
+  Turbo Pascal binds byte `0x08` (`Ctrl-H`, and whatever a `Backspace`-
+  labeled key sends on many real terminals) to the *same* function as
+  `Ctrl-S` — non-destructive character-left — reserving true delete for
+  the distinct `<DEL>`/`<RUBOUT>` byte (`0x7F`), confirmed straight from
+  the manual's own wording ("The `<BACKSPACE>` key which normally
+  backspaces non-destructively like `Ctrl-S` may be installed to have
+  the same effect [delete] if... your keyboard lacks a `<DELETE>` key").
+  This project's own `console_read_char()` (`cpm.c`) always translates a
+  modern keyboard's Delete/Backspace key (`0x7F`) into `0x08` before any
+  program sees it — a real fix for Tasty Basic, which only recognizes
+  `0x08` and ignores `0x7F` entirely (confirmed from its own source,
+  `cpmio.asm`) — but that means Turbo Pascal, which wants the two bytes
+  to mean two genuinely different things, never gets the raw `0x7F` it
+  needs for delete; `0x08` always lands on its non-destructive-left
+  binding instead. A real per-program conflict, not something a single
+  shared host-level translation can resolve both ways at once.
+  **Practical workaround** (uses only already-working commands):
+  `Ctrl-S` then `Ctrl-G` — move left, then delete the character under
+  the cursor — has exactly the same net effect as a working backspace.
+  A real single-key fix exists too: Turbo Pascal's own `TINST.COM`
+  supports fully re-binding every editor command (`[C]ommand
+  installation` on its main menu) — rebinding "Delete left character"
+  (or its "Alternative" slot) onto `0x08` would give backspace a single
+  key again, at the cost of walking through all 45 commands from
+  scratch (not just the one binding) since Command installation doesn't
+  offer a "keep everything else as-is" shortcut. Not done in this
+  project's own `resources/turbopascal/derive.sh` yet — a candidate for
+  later if the two-key workaround proves annoying enough in practice.
+- **`Ctrl-S`/`Ctrl-Q` appearing to do nothing was a real, separate bug,
+  now fixed** — classic Unix software flow control (`IXON`): the host
+  terminal driver intercepts these as XOFF/XON (pause/resume output)
+  and never delivers the byte to the emulator at all. `cpm_console_init()`
+  (`cpm.c`) now disables `IXON` in its raw-mode setup, alongside the
+  existing `ICRNL`/`INLCR`/`IGNCR` fix for the same reason (a genuine
+  raw serial line has no such host-side interception either).
 - **Ships configured for a "Microbee VDU" terminal**, not ANSI — this
   project's `resources/turbopascal/derive.sh` reconfigures it via
   `TINST.COM`'s real "ANSI" profile before use. See

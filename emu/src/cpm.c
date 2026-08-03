@@ -42,6 +42,14 @@ void cpm_console_init(void) {
     // written against a genuine raw serial line where no such host-side
     // translation happens - so leaving ICRNL on makes Enter look dead.
     raw.c_iflag &= ~(ICRNL | INLCR | IGNCR);
+    // IXON (on by default) is classic Unix software flow control: the
+    // kernel tty driver intercepts Ctrl-S/Ctrl-Q as XOFF/XON (pause/
+    // resume output) and never delivers the byte to read() at all. Real
+    // CP/M-era software written against a genuine raw serial line
+    // expects Ctrl-S to arrive as a normal byte - Turbo Pascal's editor
+    // uses it for "character left", which is exactly what surfaced this
+    // (Ctrl-S appeared to do nothing, since the byte never got here).
+    raw.c_iflag &= ~IXON;
     raw.c_cc[VMIN] = 1;              // block for at least 1 byte
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSANOW, &raw);

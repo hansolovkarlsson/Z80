@@ -627,12 +627,42 @@ there surfaced and fixed several real dialect gaps, documented below.
   echo, status-line tracking. See `docs/TURBOPASCAL_REFERENCE.md`
   (sourced from Borland's real 1985 manual) for the editor's WordStar-
   style keyboard commands and what the language adds beyond standard
-  Wirth Pascal. One open finding from that first interactive session:
-  `Ctrl-H` (delete-left) moved the cursor but didn't reliably erase the
-  character from either the screen or Turbo's own text buffer — not yet
-  root-caused; `docs/TURBOPASCAL_REFERENCE.md`'s Known limitations notes
-  it as an open question with `Ctrl-G` (delete-under-cursor) as a
-  workaround.
+  Wirth Pascal.
+  Two more real things surfaced from that first interactive session,
+  both now root-caused:
+  - **`Ctrl-S`/`Ctrl-Q` appeared to do nothing — a real, separate bug,
+    now fixed.** `IXON` (classic Unix software flow control) was never
+    disabled in `cpm_console_init()`'s raw-mode setup, so the host tty
+    driver intercepted `Ctrl-S`/`Ctrl-Q` as XOFF/XON and never delivered
+    the byte to the emulator at all — the same category of gap as the
+    `ICRNL` fix earlier real programs surfaced, just for a different
+    termios flag. Turbo Pascal's editor binding `Ctrl-S` to cursor-left
+    is what actually surfaced it (a `?`/error-message program wouldn't
+    have shown the difference between "byte never arrived" and "byte
+    arrived but was ignored").
+  - **`Ctrl-H`/Backspace/Delete moving the cursor left without erasing —
+    root-caused, and it's Turbo Pascal working as designed, not a bug.**
+    By default it binds `0x08` (`Ctrl-H`, and what many real terminals'
+    `Backspace` key sends) to the *same* function as `Ctrl-S` —
+    non-destructive left — reserving true delete for the distinct
+    `<DEL>` byte (`0x7F`), confirmed directly from the manual's own
+    wording about `<BACKSPACE>` normally backspacing "non-destructively
+    like `Ctrl-S`" unless separately installed to delete. This project's
+    `console_read_char()` always translates a modern Delete key's
+    `0x7F` into `0x08` — a real, necessary fix for Tasty Basic, which
+    only recognizes `0x08` and ignores `0x7F` entirely (confirmed from
+    its own source) — so Turbo Pascal never gets the raw byte it wants
+    for delete; a genuine per-program conflict a single shared
+    host-level translation can't resolve both ways at once. Workaround
+    needing no reconfiguration: `Ctrl-S` then `Ctrl-G` (move left, then
+    delete-under-cursor) has the exact same effect as a working
+    backspace. A real single-key fix exists too — Turbo Pascal's own
+    `TINST.COM` supports fully re-binding every editor command — but
+    Command installation redefines all 45 from scratch with no "keep
+    everything else" shortcut, so it's left as a candidate for later
+    rather than done in `resources/turbopascal/derive.sh` now. See
+    `docs/TURBOPASCAL_REFERENCE.md`'s Known limitations for the full
+    writeup of both.
 
 ## Phase 4: Beyond CP/M (exploratory)
 
