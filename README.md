@@ -91,6 +91,17 @@ how many bytes to decode):
   checks. `asm/test/` is different: manual/interactive programs (e.g. a
   console-I/O test that needs a real keyboard) meant to be run and
   eyeballed by hand, not part of the automated suite.
+- `asm/tinybasic/` — real, third-party TinyBASIC variants tried against
+  the emulator by hand (not part of `make test`, same spirit as
+  `asm/test/`). `tinybasic2dms.asm` is bare-metal CPUville-kit firmware
+  (raw UART ports, loads at `0x0000`) that doesn't fit this emulator's
+  CP/M-hosted design at all. `tastybasic/` is
+  [Tasty Basic](https://github.com/dimitrit/tastybasic) (GPLv3), a real
+  CP/M port that *does* run here — `tastybasic/upstream/` holds the
+  unmodified source, `tastybasic/derive.sh` documents and reproduces the
+  one-time C-preprocessing step needed to get it into a form `z80asm` can
+  build (see the script's own comments for why), and
+  `tastybasic_cpm.asm` is that derived, buildable result.
 - `disasm/src/` — the disassembler (`decode`, `main`); `disasm/examples/`
   has example output.
 - `docs/` — the project roadmap ([`ROADMAP.md`](docs/ROADMAP.md)), a Z80
