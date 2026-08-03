@@ -51,6 +51,7 @@ unresolved.
 | Decimal | `123` | |
 | Hex (suffix) | `0FFh` | must start with a digit, so `FFh` alone is invalid — use `0FFh` |
 | Hex (prefix) | `0xFF` | |
+| Hex (`$`-prefix) | `$FF` | only when a hex digit immediately follows the `$` — `$` alone (or followed by anything else, e.g. `$-TBASE`) is the current address, below |
 | Binary (suffix) | `1100000b` | every digit before the `b` must be `0`/`1` |
 | Character | `'A'` | ASCII value of the character |
 | Current address | `$` | the location counter at the start of the current line |

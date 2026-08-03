@@ -389,11 +389,60 @@ there surfaced and fixed several real dialect gaps, documented below.
   8080 dialect, confirmed by grepping the whole source before touching
   it) assembles cleanly with `bin/z80asm` and runs correctly through
   `bin/z80`: banner, color/difficulty prompts, and board setup all
-  verified interactively. Note: the board itself doesn't render properly
-  in a plain piped/captured console — the program emits real VT100/ANSI
-  cursor-positioning and color escape codes to draw it, which the current
-  bare stdout passthrough doesn't interpret; see the Phase 4 terminal
-  emulation entry below.
+  verified interactively.
+- [x] **Corrected a wrong assumption about SARGON's board display, and
+  fixed two real bugs it led to** — the note above originally claimed the
+  board needed VT100/ANSI terminal emulation this project didn't have,
+  based on testing exclusively through piped/backgrounded output
+  captures (which can only ever show raw escape bytes as literal text,
+  never how a live terminal would actually render them). Asking the user
+  to run it live in a real terminal instead disproved that entirely: the
+  checkered board grid, colors, and rank/file labels — all genuine
+  VT100 cursor-positioning (`ESC[row;colH`) and color (`SGR`) escape
+  codes — rendered *perfectly*, since `console_emit()`'s raw byte
+  passthrough already lets any modern terminal interpret those on its
+  own. The real, much narrower remaining gap, found by fetching and
+  smoke-testing a second Sargon port
+  ([z80playground/sargon-cpm](https://github.com/z80playground/sargon-cpm)'s
+  ANSI-enhanced `sargon78.com`, now also in `resources/sargon/` — its own
+  README literally tells PuTTY users to set "Code Page 437"): the actual
+  chess-piece glyphs are CP437 (IBM PC/DOS code page 437 — box-drawing/
+  shading bytes) rather than plain ASCII, and a modern UTF-8 terminal has
+  no idea what to do with a lone `0xDB` or `0xB1` byte. Fixed with a
+  small CP437→Unicode translation table in `console_emit()` (`cpm.c`,
+  see `CLAUDE.md`'s Console output section) — a few dozen lines, not a
+  VT100 escape-sequence parser or a GTK terminal widget (see the removed
+  Phase 4 entry this replaces).
+  Verifying the fix against `resources/sargon/sargon_cpm.asm` (the
+  billforsternz plain-console port this project actually builds from
+  source, not the ANSI one) surfaced a second, unrelated, more serious
+  bug along the way: its piece-graphics data tables use `$83`-style
+  dollar-prefixed hex literals extensively (a common vintage-assembler
+  convention this project's `expr.c` never supported) — `$` alone was
+  already a valid primitive (the current address, e.g. `$-TBASE`), so
+  `$83` silently parsed as just `$`, with the `83` entirely discarded
+  and no error raised, quietly replacing every affected byte with
+  whatever the current address happened to be at that point instead
+  of the intended literal value. Confirmed directly: `DB $83,$83,$83,$83`
+  (four identical literals) assembled to `00 01 02 03`, not `83 83 83
+  83`. Fixed by disambiguating on whether a hex digit immediately
+  follows the `$` (two adjacent primaries with no operator between them,
+  as in `$` immediately followed by more digits, would never be
+  meaningful otherwise) — see `docs/ASSEMBLER.md`'s Numbers and literals
+  table. Confirmed no other real source in this project uses `$`
+  followed immediately by a hex digit for anything else, so this was a
+  SARGON-only silent-corruption bug, invisible until actually looking at
+  what the assembled bytes were rather than just "did it assemble
+  without an error."
+  One remaining, unfixable-here quirk specific to the plain-console
+  port: its `DSPBRD` board-drawing routine writes piece bytes into a
+  memory-mapped video buffer at a fixed address (`0xC000`, explicitly
+  commented `"System Dependent - First video address"` in the original
+  source) for whatever specific original 8-bit machine it targeted —
+  nothing in the file ever reads that buffer back to turn it into
+  console text, so the board itself never visibly renders for this port
+  regardless of any encoding fix, a limitation of the original port
+  rather than something to chase further here.
 - [x] **Real-world validation: Colossal Cave Adventure** (`resources/adventure/`)
   — Willie Crowther and Don Woods' *Colossal Cave Adventure*, a CP/M port
   (350 points, from the [Interactive Fiction Archive](https://www.ifarchive.org/if-archive/games/cpm/Advent_CPM.zip)).
@@ -535,12 +584,15 @@ there surfaced and fixed several real dialect gaps, documented below.
 Aspirational, not yet scoped:
 
 - A GTK-based UI so this becomes a full computer emulator, not just a CLI
-  test harness, with its own virtual terminal widget that actually
-  emulates a VT100 (cursor positioning, ANSI color/attribute escape
-  codes) instead of the current bare stdout passthrough — surfaced as a
-  real gap by SARGON (see above), which draws its chessboard entirely
-  with VT100 cursor/color sequences that a plain terminal capture doesn't
-  interpret.
+  test harness — a real terminal widget of its own would mean not
+  depending on the host terminal at all (useful for a standalone GUI
+  app, or capturing/replaying screen state programmatically), though
+  note this is no longer motivated by a VT100 gap the way an earlier
+  version of this entry claimed: the current bare stdout passthrough
+  already lets any real host terminal correctly interpret standard
+  cursor-positioning/color escape codes on its own (see the corrected
+  SARGON entry above) — what that investigation actually needed was a
+  much smaller CP437-to-Unicode translation, already done.
 - A custom ROM/OS on top of it — open design questions include a stack VM
   and whether Logo-style prefix notation could combine with a stack machine
   model.

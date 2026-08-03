@@ -73,6 +73,62 @@ static int console_read_char(void) {
     return c;
 }
 
+// Real CP/M-era software targeting a graphical/color terminal (e.g. the
+// ANSI-enhanced SARGON port in resources/sargon/sargon78.com) commonly
+// emits high-bit bytes (0x80-0xFF) meaning IBM PC/DOS "code page 437" -
+// box-drawing, block-shading, and a handful of accented/Greek/math
+// glyphs, not raw byte values a modern UTF-8 terminal understands (its
+// own README even tells PuTTY users to explicitly set "Code Page 437").
+// VT100/ANSI cursor-positioning and color (SGR) escape codes already
+// pass through untouched and render correctly in any modern terminal -
+// this table is the one remaining piece: translate CP437's upper half to
+// the equivalent Unicode codepoint, indexed by byte-0x80. Values below
+// 0x80 (plain ASCII plus C0 control codes like CR/LF/ESC) are identical
+// in both encodings and need no translation.
+static const uint16_t cp437_high[128] = {
+    0x00C7, 0x00FC, 0x00E9, 0x00E2, 0x00E4, 0x00E0, 0x00E5, 0x00E7, // 80-87
+    0x00EA, 0x00EB, 0x00E8, 0x00EF, 0x00EE, 0x00EC, 0x00C4, 0x00C5, // 88-8F
+    0x00C9, 0x00E6, 0x00C6, 0x00F4, 0x00F6, 0x00F2, 0x00FB, 0x00F9, // 90-97
+    0x00FF, 0x00D6, 0x00DC, 0x00A2, 0x00A3, 0x00A5, 0x20A7, 0x0192, // 98-9F
+    0x00E1, 0x00ED, 0x00F3, 0x00FA, 0x00F1, 0x00D1, 0x00AA, 0x00BA, // A0-A7
+    0x00BF, 0x2310, 0x00AC, 0x00BD, 0x00BC, 0x00A1, 0x00AB, 0x00BB, // A8-AF
+    0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556, // B0-B7
+    0x2555, 0x2563, 0x2551, 0x2557, 0x255D, 0x255C, 0x255B, 0x2510, // B8-BF
+    0x2514, 0x2534, 0x252C, 0x251C, 0x2500, 0x253C, 0x255E, 0x255F, // C0-C7
+    0x255A, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256C, 0x2567, // C8-CF
+    0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256B, // D0-D7
+    0x256A, 0x2518, 0x250C, 0x2588, 0x2584, 0x258C, 0x2590, 0x2580, // D8-DF
+    0x03B1, 0x00DF, 0x0393, 0x03C0, 0x03A3, 0x03C3, 0x00B5, 0x03C4, // E0-E7
+    0x03A6, 0x0398, 0x03A9, 0x03B4, 0x221E, 0x03C6, 0x03B5, 0x2229, // E8-EF
+    0x2261, 0x00B1, 0x2265, 0x2264, 0x2320, 0x2321, 0x00F7, 0x2248, // F0-F7
+    0x00B0, 0x2219, 0x00B7, 0x221A, 0x207F, 0x00B2, 0x25A0, 0x00A0, // F8-FF
+};
+
+static void putchar_utf8(uint16_t cp) {
+    if (cp < 0x80) {
+        putchar((int)cp);
+    } else if (cp < 0x800) {
+        putchar(0xC0 | (cp >> 6));
+        putchar(0x80 | (cp & 0x3F));
+    } else {
+        putchar(0xE0 | (cp >> 12));
+        putchar(0x80 | ((cp >> 6) & 0x3F));
+        putchar(0x80 | (cp & 0x3F));
+    }
+}
+
+// Every console-output BDOS/BIOS function should emit a program-supplied
+// byte through this instead of calling putchar() directly - console
+// *input* echo (typed keystrokes) skips it, since that's always plain
+// ASCII from the keyboard.
+static void console_emit(uint8_t c) {
+    if (c < 0x80) {
+        putchar(c);
+    } else {
+        putchar_utf8(cp437_high[c - 0x80]);
+    }
+}
+
 /*
  * File I/O
  *
@@ -401,7 +457,7 @@ void check_cpm_bios(Z80 *cpu, uint8_t *ram) {
     } else if (cpu->pc == BIOS_BASE + BIOS_V_CONIN) {
         cpu->a = console_read_char(); // raw BIOS input - no echo
     } else if (cpu->pc == BIOS_BASE + BIOS_V_CONOUT) {
-        putchar(cpu->c); // BIOS CONOUT takes the character in C, not E
+        console_emit(cpu->c); // BIOS CONOUT takes the character in C, not E
         fflush(stdout);
     } else if (cpu->pc == BIOS_BASE + BIOS_V_READER) {
         cpu->a = 26; // ^Z: no reader device attached
@@ -449,7 +505,7 @@ void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
         }
         else if (cpu->c == 2) {
             // Function 2: Console Output (Char in E)
-            putchar(cpu->e);
+            console_emit(cpu->e);
             fflush(stdout); // Flush buffer immediately so test prints show instantly
         }
         else if (cpu->c == 6) {
@@ -465,7 +521,7 @@ void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
                     cpu->l = 0;
                 }
             } else {
-                putchar(cpu->e);
+                console_emit(cpu->e);
                 fflush(stdout);
             }
         }
@@ -473,7 +529,7 @@ void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
             // Function 9: Print String (Address in DE, terminated by '$')
             uint16_t addr = cpu->de;
             while (ram[addr] != '$') {
-                putchar(ram[addr++]);
+                console_emit(ram[addr++]);
             }
             fflush(stdout);
         }

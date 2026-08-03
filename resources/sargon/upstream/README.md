@@ -11,7 +11,14 @@ CP/M port with enhanced VT100/ANSI graphics —
 [z80playground/sargon-cpm](https://github.com/z80playground/sargon-cpm),
 by John Squires, "Sargon78" — was used as a quick prebuilt-binary smoke
 test before assembling this source ourselves; its README credits the same
-`retro-sargon` restoration as its own starting point.
+`retro-sargon` restoration as its own starting point. Its binary is kept
+at `resources/sargon/sargon78.com` (no source available, like
+`resources/adventure/` or `resources/Mbasic.com`) since it ended up
+mattering beyond that first smoke test: it's what confirmed this
+project's VT100/ANSI cursor-positioning and color escape codes already
+render correctly through a real host terminal, and what surfaced the
+CP437-vs-Unicode character-encoding gap that actually needed fixing —
+see `docs/ROADMAP.md`'s corrected SARGON entry.
 
 **License note**: the source carries its original 1978 copyright notice
 verbatim ("All rights reserved. No part of this publication may be

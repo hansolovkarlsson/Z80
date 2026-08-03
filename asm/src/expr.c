@@ -82,6 +82,26 @@ static long parse_primary(const char **s, ExprEnv *env) {
     const char *p = *s;
 
     if (*p == '$') {
+        // "$FF"-style dollar-prefixed hex (a common vintage-assembler
+        // convention - SARGON's source uses it extensively for its
+        // piece-graphics data) vs. plain "$" for the current address
+        // (used elsewhere, e.g. "$-TBASE" or CCP's "$+800h") -
+        // disambiguated by whether a hex digit immediately follows: two
+        // adjacent primaries with no operator between them (a bare "$"
+        // followed directly by more digits) would never be meaningful
+        // otherwise, so it's safe to treat this as one dollar-hex token.
+        // Without this, "$83" silently parsed as just "$" (the digits
+        // discarded entirely, no error) - quietly scrambling every
+        // piece-graphics byte using this syntax into a sequential
+        // current-address pattern instead of the intended literal value.
+        if (isxdigit((unsigned char)p[1])) {
+            p++;
+            const char *digits = p;
+            while (isxdigit((unsigned char)*p)) p++;
+            long val = strtol(digits, NULL, 16);
+            *s = p;
+            return val;
+        }
         *s = p + 1;
         return env->pc;
     }

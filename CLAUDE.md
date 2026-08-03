@@ -164,6 +164,23 @@ mode via `atexit()`. Function 10 (`C_READSTR`, buffered line input) does
 its own minimal line editing (echo, backspace/DEL) since raw mode disables
 the terminal's own.
 
+Console *output* (BDOS functions 1's echo, 2, 6, 9, and BIOS `CONOUT`)
+routes every program-supplied byte through `console_emit()` rather than
+calling `putchar()` directly. Plain ASCII (`< 0x80`) passes through
+unchanged; high-bit bytes (`0x80`-`0xFF`) are translated from CP437 (IBM
+PC/DOS "code page 437" — box-drawing, block-shading, and a handful of
+accented/Greek/math glyphs) to the equivalent Unicode codepoint and
+emitted as UTF-8, via `cp437_high[]` + `putchar_utf8()`. Real CP/M-era
+software targeting a graphical terminal commonly emits CP437 bytes for
+exactly this kind of output (SARGON's ANSI-enhanced port,
+`resources/sargon/sargon78.com`, is a concrete example — its own README
+tells PuTTY users to explicitly set "Code Page 437"). VT100/ANSI cursor-
+positioning and color (`SGR`) escape codes need no translation at all —
+they're plain ASCII bytes the host terminal already interprets correctly
+on its own, so `console_emit()` only ever touches the CP437 byte range,
+not control sequences. Console *input* echo (typed keystrokes) skips
+this entirely, since that's always plain ASCII from the keyboard.
+
 **File I/O** maps every drive/user number onto one host directory
 (`CPM_DISK_DIR`/`cpm_disk/`, created by `cpm_fileio_init()` relative to
 wherever `bin/z80` is invoked from) rather than emulating real disk
