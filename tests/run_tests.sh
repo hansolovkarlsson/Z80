@@ -15,8 +15,8 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-Z80="bin/z80"
-Z80ASM="bin/z80asm"
+Z80="$ROOT/bin/z80"
+Z80ASM="$ROOT/bin/z80asm"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
@@ -63,11 +63,14 @@ check_asm_example() {
         return
     fi
 
+    # Run from WORKDIR, not the repo root, so any file-I/O example (see
+    # cpm.c's File I/O comment) creates its cpm_disk/ directory in a
+    # throwaway location instead of the checkout itself.
     local out
     if [ -n "$stdin_data" ]; then
-        out=$(printf '%s' "$stdin_data" | "$Z80" "$com" 2>&1)
+        out=$(cd "$WORKDIR" && printf '%s' "$stdin_data" | "$Z80" "$com" 2>&1)
     else
-        out=$("$Z80" "$com" < /dev/null 2>&1)
+        out=$(cd "$WORKDIR" && "$Z80" "$com" < /dev/null 2>&1)
     fi
     local status=0
 

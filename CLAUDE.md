@@ -124,9 +124,10 @@ attached, so a port read just returns whatever was last written there.
 
 **CP/M BDOS emulation (`cpm.c`)**: `check_cpm_bdos()` runs at the top of
 every `z80_step()` and, when `PC == 0x0005`, handles the BDOS functions
-`docs/CPM_REFERENCE.md` documents — currently console output (2, 9) and
-console input (1, 6, 10, 11) — then manually pops the return address off
-the stack into `PC` to simulate the `RET`. `main.c` preloads `RET`
+`docs/CPM_REFERENCE.md` documents — console output (2, 9), console input
+(1, 6, 10, 11), file I/O (15–23, 26, 33–35, 40), and drive/user
+bookkeeping stubs (13, 14, 25, 32) — then manually pops the return address
+off the stack into `PC` to simulate the `RET`. `main.c` preloads `RET`
 (`0xC9`) at addresses `0x0000` and `0x0005` so unhandled calls to either
 still return safely. Console *input* needs the host terminal in raw mode
 (no line buffering, no local echo) so character-at-a-time BDOS calls see
@@ -137,6 +138,24 @@ leaving a piped/redirected stdin untouched, and restores the original
 mode via `atexit()`. Function 10 (`C_READSTR`, buffered line input) does
 its own minimal line editing (echo, backspace/DEL) since raw mode disables
 the terminal's own.
+
+**File I/O** maps every drive/user number onto one host directory
+(`CPM_DISK_DIR`/`cpm_disk/`, created by `cpm_fileio_init()` relative to
+wherever `bin/z80` is invoked from) rather than emulating real disk
+geometry — the simplest of the options weighed for how FCB-addressed
+files should map onto the host filesystem, at the cost of not being able
+to express real drive-switching or boot an actual CP/M disk image (see
+`docs/CPM_REFERENCE.md`'s Implementation status section for the trade-off
+in full). `build_host_path()` converts an FCB's name/type fields straight
+into a host path; `fcb_pattern()`/`fcb_pattern_match()` implement `'?'`
+wildcard matching for `F_SFIRST`/`F_SNEXT`/`F_DELETE`. Since there's no
+disk-block bookkeeping, open files are tracked in a small table
+(`open_files[]`) keyed by the FCB's own memory address — real CP/M
+programs have no notion of a file handle distinct from the FCB they
+opened, so this mirrors how callers already think about "which file."
+Sequential I/O keeps the FCB's real `EX`/`CR` fields in step (one 16KB
+extent = 128 records); random I/O (`R0`-`R2`) is a plain linear record
+number multiplied by 128 and seeked to directly.
 
 ## Assembler (`asm/src/`)
 

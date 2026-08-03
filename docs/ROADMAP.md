@@ -213,15 +213,21 @@ there surfaced and fixed several real dialect gaps, documented below.
   coverage: `asm/examples/console_test.asm`, driven with piped stdin by
   `tests/run_tests.sh` since it needs specific input bytes rather than
   running standalone like the other example programs.
-- File I/O (open/close/read/write/make/delete, search — BDOS functions
-  15–23, 33–40) is the remaining `cpm.c` gap, and unlike console I/O has
-  an open design question: how FCB-addressed files map onto the host
-  filesystem (see `docs/CPM_REFERENCE.md`'s Implementation status
-  section).
-- Emulate disk I/O against the host filesystem (a CP/M disk image or a
-  mapped subdirectory).
+- [x] **File I/O** (BDOS functions 15–23, 26, 33–35, 40, plus the drive/
+  user stubs 13, 14, 25, 32) — implemented in `cpm.c`. Design decision:
+  every drive/user number collapses onto a **single mapped host
+  directory** (`cpm_disk/`), the easiest of the options considered — FCB
+  names map straight onto host filenames, no disk image or DPH/DPB
+  needed. Trade-off: can't express real drive-switching/per-user areas or
+  boot an unmodified CP/M disk image (that still needs the DPH/DPB
+  machinery `docs/CPM_REFERENCE.md` documents but this design
+  deliberately skips) — revisit only if something concrete needs it.
+  Regression coverage: `asm/examples/file_test.asm` (create, rename, read
+  back, wildcard search, delete, confirm gone).
 - Implement the I/O port instructions and interrupt delivery this phase
-  will actually need for a BIOS layer (see Known gaps).
+  will actually need for a BIOS layer (see Known gaps) — I/O ports are
+  already done (see Known gaps above); interrupt delivery is the one
+  piece still deferred.
 - Get a real CP/M 2.2 (or similar) system image loaded and booting under
   the emulator.
 

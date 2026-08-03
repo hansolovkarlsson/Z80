@@ -1,8 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <termios.h>
 #include <sys/select.h>
+#include <sys/stat.h>
+#include <dirent.h>
 #include "z80.h"
 
 // Console input needs the host terminal in raw mode (no line buffering, no
@@ -53,6 +57,200 @@ static int console_read_char(void) {
     if (n <= 0) return 26;
     return c;
 }
+
+/*
+ * File I/O
+ *
+ * Real CP/M maps FCB-addressed files onto physical disk geometry via a
+ * Disk Parameter Block per drive (see docs/CPM_REFERENCE.md) - modeling
+ * that means emulating an actual disk image. Instead, every drive/user
+ * number is collapsed onto a single host directory (CPM_DISK_DIR, created
+ * relative to the current working directory if it doesn't exist): an FCB
+ * naming "FOO.TXT" maps straight to "cpm_disk/FOO.TXT" on the host. This
+ * can't express CP/M's drive-switching or per-user file areas, but covers
+ * what the vast majority of CP/M-80 transient programs actually need from
+ * BDOS file calls, without an on-disk format to get bit-exact.
+ */
+
+#define CPM_DISK_DIR "cpm_disk"
+#define CPM_RECORD_SIZE 128
+#define CPM_RECORDS_PER_EXTENT 128 // 128 * 128 bytes = 16KB, one FCB extent
+
+void cpm_fileio_init(void) {
+    mkdir(CPM_DISK_DIR, 0755); // ignore EEXIST; any other failure surfaces
+                                // later as F_OPEN/F_MAKE failing to open
+}
+
+// Builds a host path from the 8.3 name/type fields starting at `f1_addr`
+// (the address of the FCB's F1 byte - fcb_addr+1 for a file's own name,
+// fcb_addr+17 for F_RENAME's "new name" fields, which reuse FCB+16 as a
+// second F1..T3 block). Masks off the high attribute bit each byte can
+// carry and trims trailing spaces.
+static void build_host_path(Z80 *cpu, uint16_t f1_addr, char *out, size_t outsz) {
+    char name[9], type[4];
+    int n = 0, t = 0;
+
+    for (int i = 0; i < 8; i++) {
+        uint8_t ch = z80_read_byte(cpu, f1_addr + i) & 0x7F;
+        if (ch != ' ') name[n++] = (char)toupper(ch);
+    }
+    name[n] = '\0';
+
+    for (int i = 0; i < 3; i++) {
+        uint8_t ch = z80_read_byte(cpu, f1_addr + 8 + i) & 0x7F;
+        if (ch != ' ') type[t++] = (char)toupper(ch);
+    }
+    type[t] = '\0';
+
+    if (t > 0) {
+        snprintf(out, outsz, "%s/%s.%s", CPM_DISK_DIR, name, type);
+    } else {
+        snprintf(out, outsz, "%s/%s", CPM_DISK_DIR, name);
+    }
+}
+
+// An 11-char (8 name + 3 type, no dot) uppercase representation used for
+// wildcard matching: '?' in a search FCB matches any character at that
+// position (the CCP/caller already expands '*' into a run of '?'s before
+// BDOS ever sees it), anything else must match exactly, including spaces
+// for a name/type shorter than the field width.
+static void fcb_pattern(Z80 *cpu, uint16_t fcb_addr, char pat[11]) {
+    for (int i = 0; i < 11; i++) {
+        uint8_t ch = z80_read_byte(cpu, fcb_addr + 1 + i) & 0x7F;
+        pat[i] = (char)toupper(ch);
+    }
+}
+
+// Same 11-char shape, built from a host filename instead of an FCB, for
+// comparing against fcb_pattern()'s output and for filling in a matched
+// directory-entry image. Returns 0 if `host_name` doesn't fit an 8.3 shape
+// (no dot, name >8 chars, type >3 chars, extra dots) - such host files are
+// invisible to F_SFIRST/F_SNEXT.
+static int host_name_to_fcb_form(const char *host_name, char out[11]) {
+    const char *dot = strchr(host_name, '.');
+    size_t namelen = dot ? (size_t)(dot - host_name) : strlen(host_name);
+    size_t typelen = dot ? strlen(dot + 1) : 0;
+    if (namelen == 0 || namelen > 8 || typelen > 3) return 0;
+    if (dot && strchr(dot + 1, '.')) return 0; // more than one dot
+
+    memset(out, ' ', 11);
+    for (size_t i = 0; i < namelen; i++) out[i] = (char)toupper((unsigned char)host_name[i]);
+    for (size_t i = 0; i < typelen; i++) out[8 + i] = (char)toupper((unsigned char)dot[1 + i]);
+    return 1;
+}
+
+static int fcb_pattern_match(const char pat[11], const char cand[11]) {
+    for (int i = 0; i < 11; i++) {
+        if (pat[i] != '?' && pat[i] != cand[i]) return 0;
+    }
+    return 1;
+}
+
+// Tracks an open file per in-use FCB. Real CP/M has no separate "file
+// handle" - the FCB's own memory (and its address, as far as this
+// emulator's concerned) IS the handle - so this table is keyed by the FCB
+// address a program passed to F_OPEN/F_MAKE, exactly as it'll pass that
+// same address back to F_READ/F_WRITE/F_CLOSE.
+#define MAX_OPEN_FILES 16
+typedef struct {
+    int in_use;
+    uint16_t fcb_addr;
+    FILE *fp;
+} OpenFile;
+static OpenFile open_files[MAX_OPEN_FILES];
+
+static OpenFile *find_open_file(uint16_t fcb_addr) {
+    for (int i = 0; i < MAX_OPEN_FILES; i++) {
+        if (open_files[i].in_use && open_files[i].fcb_addr == fcb_addr) return &open_files[i];
+    }
+    return NULL;
+}
+
+static OpenFile *alloc_open_file(uint16_t fcb_addr) {
+    for (int i = 0; i < MAX_OPEN_FILES; i++) {
+        if (!open_files[i].in_use) {
+            open_files[i].in_use = 1;
+            open_files[i].fcb_addr = fcb_addr;
+            return &open_files[i];
+        }
+    }
+    return NULL;
+}
+
+static uint16_t dma_addr = 0x0080; // set via F_DMAOFF (26); CP/M default
+
+// Reads the FCB's EX/CR sequential-position fields as one linear record
+// number (EX counts whole 16KB extents, CR the record within one).
+static long fcb_sequential_record(Z80 *cpu, uint16_t fcb_addr) {
+    uint8_t ex = z80_read_byte(cpu, fcb_addr + 0x0C);
+    uint8_t cr = z80_read_byte(cpu, fcb_addr + 0x20);
+    return (long)ex * CPM_RECORDS_PER_EXTENT + cr;
+}
+
+static void fcb_set_sequential_record(Z80 *cpu, uint16_t fcb_addr, long rec) {
+    uint8_t ex = (uint8_t)((rec / CPM_RECORDS_PER_EXTENT) & 0x1F);
+    uint8_t cr = (uint8_t)(rec % CPM_RECORDS_PER_EXTENT);
+    z80_write_byte(cpu, fcb_addr + 0x0C, ex);
+    z80_write_byte(cpu, fcb_addr + 0x20, cr);
+}
+
+// R0-R2 (24 bits total, though CP/M 2.2 files rarely need more than R0-R1)
+// as one linear record number, for the random-access functions.
+static long fcb_random_record(Z80 *cpu, uint16_t fcb_addr) {
+    uint8_t r0 = z80_read_byte(cpu, fcb_addr + 0x21);
+    uint8_t r1 = z80_read_byte(cpu, fcb_addr + 0x22);
+    uint8_t r2 = z80_read_byte(cpu, fcb_addr + 0x23);
+    return (long)r0 | ((long)r1 << 8) | ((long)r2 << 16);
+}
+
+// Directory search (F_SFIRST/F_SNEXT) state: which pattern we're matching
+// and where we left off, so F_SNEXT can resume a search F_SFIRST started.
+static DIR *search_dir = NULL;
+static char search_pattern[11];
+
+// Advances `search_dir`, looking for the next host entry matching
+// `search_pattern`. On a match, fills a 32-byte CP/M directory-entry image
+// at the current DMA address (always slot 0 of the notional 4-per-record
+// packing real disk directories use - which slot doesn't matter to a
+// caller, only that BDOS filled in *some* entry and told us where) and
+// returns 1. Returns 0 (closing `search_dir`) once entries are exhausted.
+static int search_advance(Z80 *cpu) {
+    if (!search_dir) return 0;
+
+    struct dirent *entry;
+    while ((entry = readdir(search_dir)) != NULL) {
+        char form[11];
+        if (!host_name_to_fcb_form(entry->d_name, form)) continue;
+        if (!fcb_pattern_match(search_pattern, form)) continue;
+
+        char path[300];
+        snprintf(path, sizeof(path), "%s/%s", CPM_DISK_DIR, entry->d_name);
+        struct stat st;
+        long records = 0;
+        if (stat(path, &st) == 0) {
+            records = (st.st_size + CPM_RECORD_SIZE - 1) / CPM_RECORD_SIZE;
+        }
+        if (records > CPM_RECORDS_PER_EXTENT) records = CPM_RECORDS_PER_EXTENT;
+
+        z80_write_byte(cpu, dma_addr + 0, 0); // DR
+        for (int i = 0; i < 11; i++) {
+            z80_write_byte(cpu, dma_addr + 1 + i, (uint8_t)form[i]);
+        }
+        z80_write_byte(cpu, dma_addr + 12, 0);              // EX
+        z80_write_byte(cpu, dma_addr + 13, 0);               // S1
+        z80_write_byte(cpu, dma_addr + 14, 0);               // S2
+        z80_write_byte(cpu, dma_addr + 15, (uint8_t)records); // RC
+        for (int i = 16; i < 32; i++) z80_write_byte(cpu, dma_addr + i, 0); // AL
+        return 1;
+    }
+
+    closedir(search_dir);
+    search_dir = NULL;
+    return 0;
+}
+
+static uint8_t current_drive = 0;
+static uint8_t current_user = 0;
 
 void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
     if (cpu->pc == 0x0005) { // Intercept call to BDOS entry
@@ -125,6 +323,214 @@ void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
             // Function 11: Console Status (0 = no input waiting, 0FFh = ready)
             cpu->a = console_char_ready() ? 0xFF : 0x00;
             cpu->l = cpu->a;
+        }
+        else if (cpu->c == 13) {
+            // Function 13: Reset disk system - log out all drives, close
+            // any files a program forgot to close, select drive A.
+            for (int i = 0; i < MAX_OPEN_FILES; i++) {
+                if (open_files[i].in_use) fclose(open_files[i].fp);
+                open_files[i].in_use = 0;
+            }
+            if (search_dir) { closedir(search_dir); search_dir = NULL; }
+            current_drive = 0;
+            dma_addr = 0x0080;
+            cpu->a = 0;
+        }
+        else if (cpu->c == 14) {
+            // Function 14: Select disk drive. Every drive maps onto the
+            // same host directory (see the File I/O comment above), so
+            // this just records which one is "current" for DRV_GET.
+            current_drive = cpu->e;
+            cpu->a = 0;
+        }
+        else if (cpu->c == 15) {
+            // Function 15: Open file.
+            uint16_t fcb_addr = cpu->de;
+            char path[300];
+            build_host_path(cpu, fcb_addr + 1, path, sizeof(path));
+            FILE *fp = fopen(path, "rb+");
+            OpenFile *of = fp ? alloc_open_file(fcb_addr) : NULL;
+            if (fp && of) {
+                of->fp = fp;
+                struct stat st;
+                long records = 0;
+                if (stat(path, &st) == 0) records = (st.st_size + CPM_RECORD_SIZE - 1) / CPM_RECORD_SIZE;
+                if (records > CPM_RECORDS_PER_EXTENT) records = CPM_RECORDS_PER_EXTENT;
+                z80_write_byte(cpu, fcb_addr + 0x0C, 0);              // EX
+                z80_write_byte(cpu, fcb_addr + 0x0D, 0);              // S1
+                z80_write_byte(cpu, fcb_addr + 0x0E, 0);              // S2
+                z80_write_byte(cpu, fcb_addr + 0x0F, (uint8_t)records); // RC
+                z80_write_byte(cpu, fcb_addr + 0x20, 0);              // CR
+                cpu->a = 0;
+            } else {
+                if (fp) fclose(fp);
+                cpu->a = 0xFF;
+            }
+        }
+        else if (cpu->c == 16) {
+            // Function 16: Close file.
+            OpenFile *of = find_open_file(cpu->de);
+            if (of) {
+                fclose(of->fp);
+                of->in_use = 0;
+                cpu->a = 0;
+            } else {
+                cpu->a = 0xFF;
+            }
+        }
+        else if (cpu->c == 17 || cpu->c == 18) {
+            // Function 17/18: Find first/next directory match ('?'
+            // wildcards in the FCB - see fcb_pattern()).
+            if (cpu->c == 17) {
+                if (search_dir) closedir(search_dir);
+                fcb_pattern(cpu, cpu->de, search_pattern);
+                search_dir = opendir(CPM_DISK_DIR);
+            }
+            cpu->a = search_advance(cpu) ? 0 : 0xFF;
+        }
+        else if (cpu->c == 19) {
+            // Function 19: Delete file(s) (wildcards allowed).
+            char pat[11];
+            fcb_pattern(cpu, cpu->de, pat);
+            DIR *d = opendir(CPM_DISK_DIR);
+            int deleted = 0;
+            struct dirent *entry;
+            while (d && (entry = readdir(d)) != NULL) {
+                char form[11];
+                if (!host_name_to_fcb_form(entry->d_name, form)) continue;
+                if (!fcb_pattern_match(pat, form)) continue;
+                char path[300];
+                snprintf(path, sizeof(path), "%s/%s", CPM_DISK_DIR, entry->d_name);
+                if (remove(path) == 0) deleted++;
+            }
+            if (d) closedir(d);
+            cpu->a = deleted > 0 ? 0 : 0xFF;
+        }
+        else if (cpu->c == 20) {
+            // Function 20: Sequential read, one 128-byte record at a time.
+            OpenFile *of = find_open_file(cpu->de);
+            if (!of) {
+                cpu->a = 9; // unopened FCB
+            } else {
+                long rec = fcb_sequential_record(cpu, cpu->de);
+                fseek(of->fp, rec * CPM_RECORD_SIZE, SEEK_SET);
+                uint8_t buf[CPM_RECORD_SIZE] = {0};
+                size_t n = fread(buf, 1, CPM_RECORD_SIZE, of->fp);
+                if (n == 0) {
+                    cpu->a = 1; // EOF
+                } else {
+                    for (int i = 0; i < CPM_RECORD_SIZE; i++) z80_write_byte(cpu, dma_addr + i, buf[i]);
+                    fcb_set_sequential_record(cpu, cpu->de, rec + 1);
+                    cpu->a = 0;
+                }
+            }
+        }
+        else if (cpu->c == 21) {
+            // Function 21: Sequential write, one 128-byte record at a time.
+            OpenFile *of = find_open_file(cpu->de);
+            if (!of) {
+                cpu->a = 9; // unopened FCB
+            } else {
+                long rec = fcb_sequential_record(cpu, cpu->de);
+                fseek(of->fp, rec * CPM_RECORD_SIZE, SEEK_SET);
+                uint8_t buf[CPM_RECORD_SIZE];
+                for (int i = 0; i < CPM_RECORD_SIZE; i++) buf[i] = z80_read_byte(cpu, dma_addr + i);
+                size_t n = fwrite(buf, 1, CPM_RECORD_SIZE, of->fp);
+                fflush(of->fp);
+                if (n != CPM_RECORD_SIZE) {
+                    cpu->a = 1; // write failed (treated as "disk full")
+                } else {
+                    fcb_set_sequential_record(cpu, cpu->de, rec + 1);
+                    cpu->a = 0;
+                }
+            }
+        }
+        else if (cpu->c == 22) {
+            // Function 22: Create (and open) a new file.
+            uint16_t fcb_addr = cpu->de;
+            char path[300];
+            build_host_path(cpu, fcb_addr + 1, path, sizeof(path));
+            FILE *fp = fopen(path, "wb+");
+            OpenFile *of = fp ? alloc_open_file(fcb_addr) : NULL;
+            if (fp && of) {
+                of->fp = fp;
+                z80_write_byte(cpu, fcb_addr + 0x0C, 0); // EX
+                z80_write_byte(cpu, fcb_addr + 0x0D, 0); // S1
+                z80_write_byte(cpu, fcb_addr + 0x0E, 0); // S2
+                z80_write_byte(cpu, fcb_addr + 0x0F, 0); // RC
+                z80_write_byte(cpu, fcb_addr + 0x20, 0); // CR
+                cpu->a = 0;
+            } else {
+                if (fp) fclose(fp);
+                cpu->a = 0xFF;
+            }
+        }
+        else if (cpu->c == 23) {
+            // Function 23: Rename. New name's F1-T3 fields live at FCB+17
+            // (the "FCB+16" convention counts from a DR-equivalent byte
+            // at +16; the name itself starts one byte later).
+            char old_path[300], new_path[300];
+            build_host_path(cpu, cpu->de + 1, old_path, sizeof(old_path));
+            build_host_path(cpu, cpu->de + 17, new_path, sizeof(new_path));
+            cpu->a = (rename(old_path, new_path) == 0) ? 0 : 0xFF;
+        }
+        else if (cpu->c == 25) {
+            // Function 25: Return current drive.
+            cpu->a = current_drive;
+        }
+        else if (cpu->c == 26) {
+            // Function 26: Set DMA address for subsequent read/write calls.
+            dma_addr = cpu->de;
+        }
+        else if (cpu->c == 32) {
+            // Function 32: Set/get current user number (0FFh in E = query).
+            if (cpu->e == 0xFF) {
+                cpu->a = current_user;
+            } else {
+                current_user = cpu->e & 0x0F;
+                cpu->a = current_user;
+            }
+        }
+        else if (cpu->c == 33 || cpu->c == 34 || cpu->c == 40) {
+            // Function 33/34/40: Random-access read/write (40 = write with
+            // zero-fill, which a host filesystem gives us for free when
+            // writing past EOF via fseek, so it's handled identically to
+            // plain random write here).
+            OpenFile *of = find_open_file(cpu->de);
+            if (!of) {
+                cpu->a = 9; // unopened FCB
+            } else {
+                long rec = fcb_random_record(cpu, cpu->de);
+                fseek(of->fp, rec * CPM_RECORD_SIZE, SEEK_SET);
+                if (cpu->c == 33) {
+                    uint8_t buf[CPM_RECORD_SIZE] = {0};
+                    size_t n = fread(buf, 1, CPM_RECORD_SIZE, of->fp);
+                    if (n == 0) {
+                        cpu->a = 1; // reading past end of file
+                    } else {
+                        for (int i = 0; i < CPM_RECORD_SIZE; i++) z80_write_byte(cpu, dma_addr + i, buf[i]);
+                        cpu->a = 0;
+                    }
+                } else {
+                    uint8_t buf[CPM_RECORD_SIZE];
+                    for (int i = 0; i < CPM_RECORD_SIZE; i++) buf[i] = z80_read_byte(cpu, dma_addr + i);
+                    size_t n = fwrite(buf, 1, CPM_RECORD_SIZE, of->fp);
+                    fflush(of->fp);
+                    cpu->a = (n == CPM_RECORD_SIZE) ? 0 : 1;
+                }
+                fcb_set_sequential_record(cpu, cpu->de, rec); // keep CR/EX in step
+            }
+        }
+        else if (cpu->c == 35) {
+            // Function 35: Set R0-R2 to the file's size in records.
+            char path[300];
+            build_host_path(cpu, cpu->de + 1, path, sizeof(path));
+            struct stat st;
+            long records = (stat(path, &st) == 0) ? (st.st_size + CPM_RECORD_SIZE - 1) / CPM_RECORD_SIZE : 0;
+            z80_write_byte(cpu, cpu->de + 0x21, (uint8_t)(records & 0xFF));
+            z80_write_byte(cpu, cpu->de + 0x22, (uint8_t)((records >> 8) & 0xFF));
+            z80_write_byte(cpu, cpu->de + 0x23, (uint8_t)((records >> 16) & 0xFF));
+            cpu->a = 0;
         }
 
         // Simulate RET: Pop return address off the stack into PC

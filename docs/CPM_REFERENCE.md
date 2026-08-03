@@ -207,13 +207,58 @@ poll-and-read (`E`=0FFh) does *not* echo, matching real "raw" I/O; function
 minimal — no `^R`/`^X`/`^C` line-editing repertoire like real CP/M's CCP
 has, just enough for a program to read a line.
 
-The file functions (15–23, 33–40) are the remaining item — that's the
-next concrete Phase 3 step, and the one with an open design question (how
-FCB-addressed files map onto the host filesystem) rather than a
-self-contained implementation like console I/O was.
+The file functions are now implemented too: **15** `F_OPEN`, **16**
+`F_CLOSE`, **17**/**18** `F_SFIRST`/`F_SNEXT`, **19** `F_DELETE`, **20**/
+**21** `F_READ`/`F_WRITE` (sequential), **22** `F_MAKE`, **23**
+`F_RENAME`, **26** `F_DMAOFF`, **33**/**34**/**40** `F_READRAND`/
+`F_WRITERAND`/`F_WRITEZF`, **35** `F_SIZE`, plus the drive/user
+bookkeeping stubs **13** `DRV_ALLRESET`, **14** `DRV_SET`, **25**
+`DRV_GET`, **32** `F_USERNUM`. The design question flagged above was
+resolved with the simplest option: every drive and user number is
+collapsed onto **one host directory** (`cpm_disk/`, created next to
+wherever `bin/z80` is invoked from — see `cpm_fileio_init()`), with FCB
+names mapped straight onto host filenames (`FOO.TXT` → `cpm_disk/FOO.TXT`,
+uppercased, trailing spaces trimmed). Concretely, this means:
+
+- `DRV_SET`/`F_USERNUM` just record a number for `DRV_GET`/`F_USERNUM` to
+  echo back — they don't actually change which files are visible. A
+  program that writes `1:FOO.TXT` and reads back `2:FOO.TXT` gets the same
+  file, since drive/user aren't part of the host path.
+- There's no DPH/DPB, disk image, or block allocation — `F_OPEN`/
+  `F_MAKE`/etc. go straight through `fopen`/`fclose`/`remove`/`rename` on
+  the mapped directory. `F_SFIRST`/`F_SNEXT`'s `'?'`-wildcard matching
+  (`fcb_pattern_match()`) and the 32-byte directory-entry image they write
+  into the DMA buffer are real, but always report the match in "slot 0"
+  of the notional 4-per-record packing real disk directories use, since
+  that packing is a real-hardware storage-density detail with no
+  equivalent here.
+- Sequential I/O (`F_READ`/`F_WRITE`) tracks position via the FCB's real
+  `EX`/`CR` fields (one 16KB extent = 128 records), so a program reading a
+  file sequentially past 16KB sees `EX` roll over exactly like on real
+  CP/M. Random I/O (`F_READRAND`/`F_WRITERAND`/`F_WRITEZF`) uses `R0`-`R2`
+  as a 24-bit linear record number directly; `F_WRITEZF`'s "zero-fill
+  skipped blocks" falls out for free from writing past EOF via `fseek`, so
+  it's handled identically to plain random write.
+- The open-file table (`open_files[]` in `cpm.c`) is keyed by the FCB's
+  own memory address, not a separate handle — matching how CP/M programs
+  themselves have no notion of a file descriptor beyond the FCB they
+  passed to `F_OPEN`/`F_MAKE`.
+
+`asm/examples/file_test.asm` covers `F_MAKE`/`F_WRITE`/`F_CLOSE`/
+`F_RENAME`/`F_OPEN`/`F_READ`/`F_SFIRST`/`F_DELETE` end to end (create,
+rename, read back, wildcard-search, delete, confirm gone).
+
+What this design can't do: express CP/M's actual drive-switching or
+per-user file areas (two programs on "different drives" see the same
+files), or run an unmodified real CP/M disk image (that needs the DPH/DPB
+machinery this document describes but `cpm.c` doesn't implement). Revisit
+only if something concrete actually needs one of those — most CP/M-80
+transient programs don't.
 
 Nothing in this document is implemented as literal BIOS code (no jump
 table exists at any fixed address in this emulator yet) — real CP/M
-programs that call into BDOS functions this project doesn't yet emulate,
-or that jump into the BIOS directly (uncommon, but not unheard of),
-won't work correctly until that gap closes too.
+programs that jump into the BIOS directly (uncommon, but not unheard of)
+won't work correctly until that gap closes too. Un-stubbed drive/
+allocation-vector functions (24, 27, 28, 29, 31, 37, 38, 39) are the
+remaining BDOS gap, all of which need the DPH/DPB this design deliberately
+skipped.

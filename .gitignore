@@ -3,3 +3,4 @@ emu/src/*.o
 asm/src/*.o
 disasm/src/*.o
 .claude/
+cpm_disk/
