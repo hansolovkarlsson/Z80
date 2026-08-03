@@ -127,3 +127,24 @@ Tasty Basic's own behavior):
   *after* `RUN` finishes, since piped input is all immediately available
   rather than arriving key-by-key — not a bug, just something to know if
   scripting a session rather than typing it.
+- **`LOAD` silently truncates a program at any line number whose *low*
+  byte is `0x1A`** — i.e. any line numbered 26, 282, 538, 794, **1050**,
+  1306, 1562, 1818, 2074, ... (26 plus any multiple of 256). Each saved
+  line is a raw 2-byte little-endian line number followed by its text
+  (see above), and `LOAD`'s end-of-program scan (`cpmio.asm`) just looks
+  for the *byte value* `0x1A` anywhere in the file with no awareness that
+  it might be reading the middle of a binary line-number field rather
+  than the real `^Z` terminator — so a line numbered, say, 1050 (`0x041A`,
+  low byte `0x1A`) gets misread as "end of program" and everything from
+  that line onward is silently lost, even though the file on disk still
+  has the real content. Confirmed by saving a *single*-line program
+  (`1050 PRINT "HELLO"`) and reloading it: `LIST` shows nothing at all,
+  since the truncation happens on the very first two bytes read. This
+  bit the CP/M example programs bundled in `resources/tastybasic-main/`
+  directly — `examples/tictac.tba` has a real line 1050, so `LOAD`ing it
+  (rather than typing `examples/TICTAC.BAS`'s source in directly, which
+  never goes through `LOAD` at all) truncates the stored program right
+  there, later surfacing as `HOW?` on `GOTO 1050` once execution reaches
+  the missing part. A real bug in Tasty Basic's own file format/`LOAD`
+  routine, not this emulator or assembler - work around it by avoiding
+  line numbers with a low byte of `0x1A` in anything you intend to `SAVE`.
