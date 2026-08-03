@@ -2226,7 +2226,14 @@ int z80_step(Z80 *cpu, uint8_t *ram) {
     // without this check here, this function would immediately fetch and
     // execute the JP-to-WBOOT main.c preloads at address 0, undoing the
     // termination before that check ever runs.
-    if (cpu->pc == 0x0000) return 0;
+    //
+    // In CCP mode this guard would instead be a permanent hang: nothing
+    // would ever advance PC off of 0, since main.c no longer breaks its
+    // loop on PC==0 there either (see its own comment) - a warm boot
+    // needs the JP-to-WBOOT at address 0 to actually execute so
+    // check_cpm_bios() can catch it at the real WBOOT vector address and
+    // redirect back into the CCP.
+    if (cpu->pc == 0x0000 && !cpm_is_ccp_mode()) return 0;
 
     // 2. Fetch opcode byte
     uint8_t opcode = fetch_byte(cpu, ram);

@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include "z80.h"
+#include "cpm.h"
 
 // Console input needs the host terminal in raw mode (no line buffering, no
 // local echo) so CP/M's own character-at-a-time BDOS calls (functions 1,
@@ -265,6 +266,15 @@ static int search_advance(Z80 *cpu) {
 
 static uint8_t current_drive = 0;
 static uint8_t current_user = 0;
+static int ccp_mode = 0;
+
+void cpm_set_ccp_mode(int enabled) {
+    ccp_mode = enabled;
+}
+
+int cpm_is_ccp_mode(void) {
+    return ccp_mode;
+}
 
 /*
  * BIOS
@@ -347,12 +357,42 @@ void cpm_bios_init(uint8_t *ram) {
 
 void check_cpm_bios(Z80 *cpu, uint8_t *ram) {
     if (cpu->pc == BIOS_BASE + BIOS_V_WBOOT) {
-        // Warm boot never returns to its caller - terminate directly,
-        // same reasoning as P_TERMCPM below. Must be caught here (not
-        // left to execute the JP-to-self at this address) since
-        // z80_step() checks for PC==0 right after this call and would
-        // otherwise fetch/execute the JP-to-WBOOT at address 0 forever.
-        cpu->pc = 0x0000;
+        // With a CCP loaded (see cpm_set_ccp_mode), a warm boot re-enters
+        // it at CCP_BASE instead of halting - real CP/M's WBOOT reloads
+        // CCP+BDOS off disk and jumps back into the CCP too, so this is
+        // the direct analog for a design with no real disk image. This
+        // is also how BDOS function 0 (P_TERMCPM) gets back to the CCP
+        // prompt after a program quits: it sets PC to 0, which fetches
+        // the JP-to-WBOOT installed at address 0, landing right here.
+        //
+        // Without a CCP loaded, warm boot never returns to its caller -
+        // terminate directly, same reasoning as P_TERMCPM below. Must be
+        // caught here (not left to execute the JP-to-self at this
+        // address) since z80_step() checks for PC==0 right after this
+        // call and would otherwise fetch/execute the JP-to-WBOOT at
+        // address 0 forever.
+        if (ccp_mode) {
+            // The CCP's own cold-boot entry point (ccploc, i.e.
+            // CCP_BASE) expects the current disk/user byte packed into C
+            // - on real hardware, BIOS's WBOOT loads that from the
+            // persisted low-memory byte at 0x0004 before jumping there,
+            // since a real warm boot reloads the CCP fresh off disk on
+            // every entry, cold or warm. This design keeps the CCP
+            // resident across warm boots instead (just re-entering the
+            // same in-RAM copy) rather than reloading it - but ccploc's
+            // own logic doesn't know that, so it still needs C seeded
+            // the same way, or a stale value already sitting in C from
+            // whatever the just-exited program was doing gets
+            // misread as the disk/user byte, corrupting the CCP's own
+            // notion of the current disk (the CCP itself keeps 0x0004
+            // up to date via setdiska before ever running a program -
+            // see ccp_cpm.asm - so this is always a real, current value,
+            // not a guess).
+            cpu->c = ram[0x0004];
+            cpu->pc = CCP_BASE;
+        } else {
+            cpu->pc = 0x0000;
+        }
         return;
     }
 

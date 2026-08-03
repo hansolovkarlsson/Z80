@@ -265,7 +265,15 @@ uppercased, trailing spaces trimmed). Concretely, this means:
 - Sequential I/O (`F_READ`/`F_WRITE`) tracks position via the FCB's real
   `EX`/`CR` fields (one 16KB extent = 128 records), so a program reading a
   file sequentially past 16KB sees `EX` roll over exactly like on real
-  CP/M. Random I/O (`F_READRAND`/`F_WRITERAND`/`F_WRITEZF`) uses `R0`-`R2`
+  CP/M. `F_OPEN` honors a caller-supplied nonzero `EX` (computing `RC`
+  relative to that extent's base record) rather than always resetting to
+  0 — real CP/M's `F_OPEN` searches the directory for the extent matching
+  whatever `EX`/`S1`/`S2` the caller already set, and some real programs
+  reposition mid-file this way (a CP/M port of Colossal Cave Adventure's
+  own data-file paging is what surfaced this — see `docs/ROADMAP.md`).
+  The common `EX==0` case (a fresh, from-the-start open) still resets `CR`
+  to 0 as before, since plenty of real programs assume `F_OPEN` does that
+  for them. Random I/O (`F_READRAND`/`F_WRITERAND`/`F_WRITEZF`) uses `R0`-`R2`
   as a 24-bit linear record number directly; `F_WRITEZF`'s "zero-fill
   skipped blocks" falls out for free from writing past EOF via `fseek`, so
   it's handled identically to plain random write.
@@ -327,3 +335,25 @@ the common case - now does.
 Un-stubbed BDOS drive/allocation-vector functions (24, 27, 28, 29, 31, 37,
 38, 39) are the remaining BDOS gap, all of which need the DPH/DPB this
 design deliberately skipped.
+
+### CCP (Console Command Processor)
+
+`bin/z80 --ccp <path>` boots a real CP/M CCP (the `A>` shell) instead of
+running a single program — see `resources/ccp/` for the genuine,
+unmodified Digital Research source this is built from (translated from
+its original 8080 mnemonics to Z80, since CP/M predates the Z80) and
+`docs/ROADMAP.md`'s "Get a real CP/M 2.2 CCP booting" entry for the full
+story of what that took. The CCP is loaded at `CCP_BASE` (`0xE400`,
+`cpm.h`) instead of `0x100`, and `check_cpm_bios()`'s `WBOOT` handling
+re-enters it there (seeding register `C` from the persisted disk/user
+byte at `0x0004` first, matching what a real BIOS's `WBOOT` does) instead
+of halting the emulator — the same mechanism a running program's `jp 0`/
+BDOS function 0 (`P_TERMCPM`) both already route through. Everything else
+the CCP needs — searching the directory for `DIR`, opening/reading a
+`.COM` file to run it by name, `TYPE`ing a file's contents — is ordinary
+BDOS file I/O this project already implements; no CCP-specific emulator
+support was needed beyond the warm-boot re-entry itself. Programs typed
+at the `A>` prompt are found via the same host-mapped `cpm_disk/`
+directory as everything else (see the File I/O section above) — `DIR`
+silently skips any file whose name doesn't fit CP/M's real 8.3 filename
+limit, correct CP/M behavior rather than a bug.

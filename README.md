@@ -91,19 +91,25 @@ how many bytes to decode):
   checks. `asm/test/` is different: manual/interactive programs (e.g. a
   console-I/O test that needs a real keyboard) meant to be run and
   eyeballed by hand, not part of the automated suite.
-- `resources/tastybasic/`, `resources/sargon/`, `resources/adventure/` —
-  real, third-party CP/M programs (Tasty Basic, SARGON chess, Colossal
-  Cave Adventure) tried against the emulator by hand for real-world
-  validation (not part of `make test`, same spirit as `asm/test/`) — see
-  `docs/ROADMAP.md`'s "Real-world validation" entries for what that's
-  found and fixed. Where source is available (`tastybasic/`, `sargon/`),
+- `resources/tastybasic/`, `resources/sargon/`, `resources/adventure/`,
+  `resources/ccp/` — real, third-party CP/M programs (Tasty Basic, SARGON
+  chess, Colossal Cave Adventure, and Digital Research's own CCP shell)
+  tried against the emulator by hand for real-world validation (not part
+  of `make test`, same spirit as `asm/test/`) — see `docs/ROADMAP.md`'s
+  "Real-world validation"/CCP entries for what that's found and fixed.
+  Where source is available (`tastybasic/`, `sargon/`, `ccp/`),
   `upstream/` holds it unmodified and `derive.sh` documents/reproduces
-  the small translation needed to get it building with `z80asm`;
-  `adventure/` and `resources/Mbasic.com` are prebuilt binaries with no
-  available source.
+  the translation needed to get it building with `z80asm` (a straight
+  syntax patch for `tastybasic/`/`sargon/`; a full 8080→Z80 mnemonic
+  translation for `ccp/`, since CP/M predates the Z80 — see
+  `resources/ccp/derive.py`, general-purpose enough to reuse for other
+  8080-mnemonic CP/M-era source); `adventure/` and `resources/Mbasic.com`
+  are prebuilt binaries with no available source.
 - `cpm_disk/` — every program above (and `asm/examples/`), pre-assembled
-  and ready to run: `bin/z80 cpm_disk/<name>.com` from the repo root. See
-  `cpm_disk/README.md`.
+  and ready to run: `bin/z80 cpm_disk/<name>.com` from the repo root, or
+  `bin/z80 --ccp cpm_disk/ccp.com` to boot a real CP/M shell (`A>` prompt,
+  `DIR`/`TYPE`/etc., run any program above by name) instead of a single
+  program. See `cpm_disk/README.md`.
 - `disasm/src/` — the disassembler (`decode`, `main`); `disasm/examples/`
   has example output.
 - `docs/` — the project roadmap ([`ROADMAP.md`](docs/ROADMAP.md)), a Z80

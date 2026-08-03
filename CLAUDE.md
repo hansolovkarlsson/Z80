@@ -177,7 +177,35 @@ programs have no notion of a file handle distinct from the FCB they
 opened, so this mirrors how callers already think about "which file."
 Sequential I/O keeps the FCB's real `EX`/`CR` fields in step (one 16KB
 extent = 128 records); random I/O (`R0`-`R2`) is a plain linear record
-number multiplied by 128 and seeked to directly.
+number multiplied by 128 and seeked to directly. `F_OPEN` honors a
+caller-supplied nonzero `EX` (computing `RC` relative to that extent's
+base record) instead of always resetting to 0 — needed for programs that
+reposition mid-file by setting `EX`/`CR` before re-opening rather than
+always reading sequentially from the start (a real CP/M `F_OPEN` searches
+the directory for the extent matching whatever `EX`/`S1`/`S2` the caller
+already put in the FCB). The common `EX==0` case (a fresh, from-the-start
+open) is unaffected — `CR` is still reset to 0 there, since plenty of
+real programs assume `F_OPEN` does that for them.
+
+**Booting a CCP (`main.c`, `cpm.c`)**: `bin/z80 --ccp <path>` loads a CP/M
+Console Command Processor (the `A>` shell — see `resources/ccp/`) at
+`CCP_BASE` (`0xE400`) instead of loading a single program at `0x100`, and
+calls `cpm_set_ccp_mode(1)`. With CCP mode on, `check_cpm_bios()`'s
+`WBOOT` handling — normally "set PC to 0, which the run loop treats as
+the program terminating" — instead re-enters the CCP at `CCP_BASE`,
+first loading register `C` from `ram[0x0004]` (the persisted disk/user
+byte the CCP itself maintains via its own `setdiska` routine before ever
+running a program), matching what a real BIOS's `WBOOT` does before
+jumping to the CCP's cold-boot entry point. Two places besides
+`check_cpm_bios()` needed to become CCP-mode-aware
+(`cpm_is_ccp_mode()`/the `ccp_boot` flag `main.c` threads through) since
+both otherwise assume `PC == 0x0000` always means "halt the emulator":
+`main.c`'s own loop-level check (skipped entirely in CCP mode, since the
+`JP <wboot>` instruction at address `0x0000` needs to actually execute
+so `check_cpm_bios()` can catch it at the real `WBOOT` vector address),
+and a second, separate guard inside `z80_step()` itself (also skipped in
+CCP mode — without that, `PC` would never advance off of `0x0000` at all,
+since `main.c` no longer breaks its loop there either).
 
 ## Assembler (`asm/src/`)
 

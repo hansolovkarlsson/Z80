@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "common.h"
 
@@ -32,7 +33,18 @@ bool load_file(const char *filename, uint16_t load_address) {
 }
 
 int main(int argc, char *argv[]) {
-    const char *test_file = (argc > 1) ? argv[1] : "emu/zexall/ZEXALL-main/zexall.com";
+    // --ccp <path> boots a CCP (a "shell": DIR/TYPE/ERA/etc. plus running
+    // other .com files by name) instead of running a single program - see
+    // cpm.h's CCP_BASE/cpm_set_ccp_mode comments for how a warm boot then
+    // re-enters the CCP instead of halting the emulator.
+    bool ccp_boot = argc > 1 && strcmp(argv[1], "--ccp") == 0;
+    const char *test_file;
+    if (ccp_boot) {
+        test_file = (argc > 2) ? argv[2] : "cpm_disk/ccp.com";
+    } else {
+        test_file = (argc > 1) ? argv[1] : "emu/zexall/ZEXALL-main/zexall.com";
+    }
+    uint16_t load_address = ccp_boot ? CCP_BASE : 0x0100;
 
     // 1. Initialize CPU & lookup tables
     Z80 cpu = {0};
@@ -40,15 +52,18 @@ int main(int argc, char *argv[]) {
     z80_init_tables();
     cpm_console_init();
     cpm_fileio_init();
+    cpm_set_ccp_mode(ccp_boot);
 
-    // 2. Load zexall.com at 0x0100 (Standard CP/M transient program area)
-    if (!load_file(test_file, 0x0100)) {
+    // 2. Load the program (or CCP) into RAM
+    if (!load_file(test_file, load_address)) {
         return EXIT_FAILURE;
     }
 
     // 3. Set initial registers according to CP/M standard
-    cpu.pc = 0x0100; // Programs start at 0x0100
-    cpu.sp = 0xF000; // Set stack pointer near the top of memory
+    cpu.pc = load_address;
+    cpu.sp = 0xF000; // Set stack pointer near the top of memory - the CCP
+                      // resets this itself on entry, same as a real BIOS
+                      // cold boot would before ever reaching the CCP.
 
     // Installs the minimal BIOS jump table (JP <wboot> at 0x0000, plus
     // CONST/CONIN/CONOUT and no-op stubs for the rest) - see cpm.c's BIOS
@@ -65,8 +80,16 @@ int main(int argc, char *argv[]) {
     uint64_t total_cycles = 0;
 
     while (running) {
-        // If PC reaches address 0, the program has finished or terminated
-        if (cpu.pc == 0x0000) {
+        // If PC reaches address 0, the program has finished or terminated.
+        // Skipped in CCP mode: address 0 only holds a JP to the real WBOOT
+        // vector (installed by cpm_bios_init) - that JP needs to actually
+        // execute (via the z80_step() call below) so check_cpm_bios() can
+        // intercept it at the vector address and redirect back into the
+        // CCP. Checking pc==0 here first, before that JP ever runs, would
+        // halt the whole emulator instead - a program simply doing `jp 0`
+        // (hello.com's own way of returning to CP/M) never even reaches
+        // the WBOOT vector otherwise.
+        if (!ccp_boot && cpu.pc == 0x0000) {
             printf("\nProgram terminated normally at PC=0x0000.\n");
             break;
         }

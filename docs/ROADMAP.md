@@ -424,8 +424,78 @@ there surfaced and fixed several real dialect gaps, documented below.
   will actually need for a BIOS layer (see Known gaps) — I/O ports are
   already done, and there's now a real (if minimal) BIOS layer too (see
   above); interrupt delivery is the one piece still deferred.
-- Get a real CP/M 2.2 (or similar) system image loaded and booting under
-  the emulator.
+- [x] **Get a real CP/M 2.2 CCP (shell) booting** (`resources/ccp/`,
+  `bin/z80 --ccp cpm_disk/ccp.com`) — genuine, unmodified Digital
+  Research CCP source (the `A>` prompt, built-in `DIR`/`TYPE`/`ERA`/
+  `REN`/`SAVE`/`USER` commands, and loading/running other `.com` files by
+  name), from [brouhaha/cpm22](https://github.com/brouhaha/cpm22/blob/main/ccp.asm).
+  Scoped down from "boot a full CP/M system image" to "get just the CCP
+  running against our existing BDOS/BIOS" — avoids needing real DPH/DPB
+  disk-image machinery (see the File I/O design trade-off above) since
+  the CCP only ever talks to the rest of the system through BDOS calls
+  and a handful of BIOS conventions this project already implements.
+  Two real pieces of work:
+  1. **A general 8080→Z80 mnemonic translator** (`resources/ccp/derive.py`)
+     — CP/M predates the Z80, so DRI's own CCP source is written entirely
+     in 8080 mnemonics, unlike SARGON (real Z80) or Tasty Basic. Unlike
+     SARGON's 3 stray lines, this meant translating the whole ~1300-line
+     file — worth building properly (register-pair renaming, `M`→`(HL)`,
+     `PSW`→`AF`, condition-code jump/call/return forms, ALU ops needing
+     an explicit `A,` operand vs. not) rather than hand-translating, and
+     it's now reusable for any other 8080-mnemonic CP/M-era source, not
+     CCP-specific. `resources/ccp/preprocess.py` handles the parts that
+     *are* CCP-specific: resolving the `IFDEF`/`IFNDEF` conditionals
+     `z80asm` doesn't support (fixing the load address at `0E400h`, and
+     — deliberately — taking the reformatted source's own `noserial`/
+     `noserialize` escape hatch to omit a serialization check that
+     compares bytes at the nominal BDOS location against an embedded
+     serial number and self-patches the CCP into a `DI`/`HLT` trap on
+     mismatch: this build has no resident BDOS bytes for it to compare
+     against, since BDOS is emulated entirely on the host side rather
+     than being real resident Z80 code, so left enabled it would always
+     fail and brick the CCP the first time a program ran).
+  2. **A real warm-boot re-entry mechanism** (`emu/src/cpm.c`,
+     `emu/src/main.c`) — `main.c` gained a `--ccp <path>` boot mode
+     (loads the given file at `CCP_BASE` instead of `0x100`, sets the
+     initial PC there, and calls the new `cpm_set_ccp_mode()`). With it
+     enabled, `check_cpm_bios()`'s `WBOOT` handling — previously just "set
+     PC to 0, which halts the emulator" — instead re-enters the CCP at
+     `CCP_BASE`, the direct analog of what a real BIOS's `WBOOT` does
+     (reload CCP+BDOS off disk, jump back into the CCP) for a design with
+     no real disk image to reload from. Getting this right needed two
+     more fixes once real testing (`HELLO` → warm boot → `DIR`) surfaced
+     them:
+     - Both `main.c`'s own loop-level `PC==0` halt check *and* a second,
+       separate one inside `z80_step()` itself needed to become
+       CCP-mode-aware (`!ccp_boot` / `cpm_is_ccp_mode()`) — otherwise
+       either the `JP <wboot>` instruction main.c preloads at address 0
+       never actually got to execute (a program ending with a bare
+       `jp 0`, like `hello.com` does, never even reached the real `WBOOT`
+       vector for `check_cpm_bios()` to intercept), or once that was
+       fixed, `z80_step()`'s own guard turned into a permanent 100%-CPU
+       spin instead (returning 0 cycles forever without ever advancing
+       PC off of 0).
+     - The CCP's cold-boot entry point (`ccploc`/`ccpstart`) expects the
+       current disk/user number packed into register `C` — on real
+       hardware this comes from BIOS's `WBOOT` loading it out of the
+       persisted low-memory byte at `0x0004` before jumping there, since
+       a real warm boot reloads the CCP fresh off disk on *every* entry,
+       cold or warm. This design instead keeps the same in-RAM CCP
+       resident across warm boots (just re-entering it, no reload) —
+       but `ccpstart` doesn't know that, so without also seeding `C`
+       from `0x0004` the same way, it read whatever register `C` happened
+       to contain from the just-exited program instead, corrupting the
+       prompt (`A>` silently became `J>` after running `hello.com`, since
+       the byte the CCP itself had already dutifully written to `0x0004`
+       via its own `setdiska` routine before running the program was
+       right there the whole time, just never being read).
+  Verified interactively end-to-end: boots to a real `A>` prompt, `DIR`
+  correctly lists `cpm_disk/`'s contents via the real BDOS search
+  functions (8.3-incompatible names like `tastybasic.com` are silently
+  skipped — correct CP/M behavior, not a bug), `TYPE` prints a file's
+  contents, and running `HELLO`/`SARGON` by name loads and executes them
+  with a correct return to the `A>` prompt afterward — multiple commands
+  in a row, not just one.
 - Further real-world validation candidates queued up next, same "run a
   real unmodified program, fix whatever breaks" strategy:
   - [ ] **Turbo Pascal 3.0** — a real compiler; substantially bigger

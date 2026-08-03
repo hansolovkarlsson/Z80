@@ -14,6 +14,19 @@ bin/z80 cpm_disk/mbasic.com
 bin/z80 cpm_disk/adventure.com
 ```
 
+Or boot a real CP/M shell instead of a single program — a genuine `A>`
+prompt, `DIR`/`TYPE`/`ERA`/`REN`/etc., and the ability to run any program
+above just by typing its name:
+
+```
+bin/z80 --ccp cpm_disk/ccp.com
+```
+
+`DIR` only shows files whose name fits CP/M's real 8-character limit —
+`console_test.com`, `tastybasic.com`, `adventure.com`, etc. exceed it and
+are silently invisible to the CCP (correct CP/M behavior, not a bug); run
+those directly (`bin/z80 cpm_disk/tastybasic.com`) instead.
+
 `adventure.com` needs its data file `Phrogz.din`, also in this directory
 — `bin/z80`'s own file I/O maps every drive/user onto a `cpm_disk/`
 relative to wherever it's invoked from (see `CLAUDE.md`'s File I/O
@@ -47,6 +60,9 @@ tracked.
 - `adventure.com` + `Phrogz.din` — Colossal Cave Adventure, a prebuilt
   binary + its data file (no source available). See
   `resources/adventure/README.md`.
+- `ccp.com` — Digital Research's CP/M 2.2 CCP (shell), assembled from
+  `resources/ccp/ccp_cpm.asm`, run with `--ccp` rather than as a plain
+  program (see above). See `docs/CPM_REFERENCE.md`'s CCP section.
 
 Regenerate the assembled ones (after any assembler/source change) with:
 
@@ -61,4 +77,5 @@ bin/z80asm asm/examples/console_test.asm -o cpm_disk/console_test.com
 bin/z80asm asm/examples/file_test.asm -o cpm_disk/file_test.com
 bin/z80asm resources/tastybasic/tastybasic_cpm.asm -o cpm_disk/tastybasic.com
 bin/z80asm resources/sargon/sargon_cpm.asm -o cpm_disk/sargon.com
+bin/z80asm resources/ccp/ccp_cpm.asm -o cpm_disk/ccp.com
 ```
