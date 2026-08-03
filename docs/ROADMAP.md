@@ -389,7 +389,37 @@ there surfaced and fixed several real dialect gaps, documented below.
   8080 dialect, confirmed by grepping the whole source before touching
   it) assembles cleanly with `bin/z80asm` and runs correctly through
   `bin/z80`: banner, color/difficulty prompts, and board setup all
-  verified interactively.
+  verified interactively. Note: the board itself doesn't render properly
+  in a plain piped/captured console — the program emits real VT100/ANSI
+  cursor-positioning and color escape codes to draw it, which the current
+  bare stdout passthrough doesn't interpret; see the Phase 4 terminal
+  emulation entry below.
+- [x] **Real-world validation: Colossal Cave Adventure** (`resources/adventure/`)
+  — Willie Crowther and Don Woods' *Colossal Cave Adventure*, a CP/M port
+  (350 points, from the [Interactive Fiction Archive](https://www.ifarchive.org/if-archive/games/cpm/Advent_CPM.zip)).
+  No source available for this port, just a prebuilt `Adventur.com` plus
+  its `Phrogz.din` data file — the opposite validation profile from
+  SARGON: real file I/O against a large (113KB) data file rather than
+  register-heavy computation, and the first real program tested that
+  reads a *second*, separate file at runtime rather than just its own
+  `.com` image. Surfaced one real bug in `cpm.c`'s file I/O: `F_OPEN`
+  (function 15) unconditionally reset the FCB's `EX`/`CR` fields to 0 on
+  every open, discarding any position the caller had deliberately set.
+  Real CP/M's `F_OPEN` searches the directory for the extent matching
+  whatever `EX`/`S1`/`S2` the caller already put in the FCB — some real
+  programs (this Adventure port's own data-file paging, jumping to a
+  specific extent+record to fetch a given room's text) rely on exactly
+  that rather than always reading sequentially from the start. Fixed by
+  honoring a caller-supplied nonzero `EX` (computing `RC` relative to
+  that extent's base record) instead of always resetting to 0 — while
+  leaving the `EX==0` case (every other test/program so far) byte-for-
+  byte unchanged, since plenty of real programs *do* assume Open zeroes
+  `CR` for them in that common case. Before the fix, the game's actual
+  opening room description was silently skipped in favor of whatever
+  text happened to live at the wrong (always-record-0) file position;
+  after, the authentic banner, opening room ("YOU ARE STANDING AT THE
+  END OF A ROAD..."), and a movement command (`IN`, correctly revealing
+  the well house and its items) all verified interactively.
 - Implement the I/O port instructions and interrupt delivery this phase
   will actually need for a BIOS layer (see Known gaps) — I/O ports are
   already done, and there's now a real (if minimal) BIOS layer too (see
@@ -398,18 +428,21 @@ there surfaced and fixed several real dialect gaps, documented below.
   the emulator.
 - Further real-world validation candidates queued up next, same "run a
   real unmodified program, fix whatever breaks" strategy:
-  - [ ] **Colossal Cave Adventure** (a CP/M port) — the opposite profile
-    from SARGON: heavy string/text parsing, minimal computation.
   - [ ] **Turbo Pascal 3.0** — a real compiler; substantially bigger
-    scope than the others, likely a project of its own rather than a
-    quick validation pass.
+    scope than the others tried so far, likely a project of its own
+    rather than a quick validation pass.
 
 ## Phase 4: Beyond CP/M (exploratory)
 
 Aspirational, not yet scoped:
 
 - A GTK-based UI so this becomes a full computer emulator, not just a CLI
-  test harness.
+  test harness, with its own virtual terminal widget that actually
+  emulates a VT100 (cursor positioning, ANSI color/attribute escape
+  codes) instead of the current bare stdout passthrough — surfaced as a
+  real gap by SARGON (see above), which draws its chessboard entirely
+  with VT100 cursor/color sequences that a plain terminal capture doesn't
+  interpret.
 - A custom ROM/OS on top of it — open design questions include a stack VM
   and whether Logo-style prefix notation could combine with a stack machine
   model.

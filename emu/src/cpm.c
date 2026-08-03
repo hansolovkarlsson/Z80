@@ -510,14 +510,32 @@ void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
             if (fp && of) {
                 of->fp = fp;
                 struct stat st;
-                long records = 0;
-                if (stat(path, &st) == 0) records = (st.st_size + CPM_RECORD_SIZE - 1) / CPM_RECORD_SIZE;
-                if (records > CPM_RECORDS_PER_EXTENT) records = CPM_RECORDS_PER_EXTENT;
-                z80_write_byte(cpu, fcb_addr + 0x0C, 0);              // EX
+                long total_records = 0;
+                if (stat(path, &st) == 0) total_records = (st.st_size + CPM_RECORD_SIZE - 1) / CPM_RECORD_SIZE;
+                // Real CP/M's F_OPEN searches the directory for the
+                // extent matching the FCB's own EX/S1/S2, letting a
+                // caller reposition mid-file by setting EX (and CR)
+                // before calling Open rather than always restarting from
+                // the beginning - some real programs rely on exactly
+                // that (a CP/M Colossal Cave Adventure port's own
+                // data-file paging is what surfaced this). Since this
+                // design maps a whole CP/M file onto one flat host file
+                // rather than real per-extent directory entries, honor a
+                // caller-supplied nonzero EX instead of always resetting
+                // to 0, computing RC relative to that extent's base
+                // record. EX==0 (the overwhelmingly common "just open
+                // it" case) keeps the previous always-reset-CR behavior
+                // unchanged, since plenty of real programs assume Open
+                // zeroes CR for them in that case.
+                uint8_t ex = z80_read_byte(cpu, fcb_addr + 0x0C);
+                long base_record = (long)ex * CPM_RECORDS_PER_EXTENT;
+                long remaining = total_records - base_record;
+                if (remaining < 0) remaining = 0;
+                if (remaining > CPM_RECORDS_PER_EXTENT) remaining = CPM_RECORDS_PER_EXTENT;
                 z80_write_byte(cpu, fcb_addr + 0x0D, 0);              // S1
                 z80_write_byte(cpu, fcb_addr + 0x0E, 0);              // S2
-                z80_write_byte(cpu, fcb_addr + 0x0F, (uint8_t)records); // RC
-                z80_write_byte(cpu, fcb_addr + 0x20, 0);              // CR
+                z80_write_byte(cpu, fcb_addr + 0x0F, (uint8_t)remaining); // RC
+                if (ex == 0) z80_write_byte(cpu, fcb_addr + 0x20, 0); // CR
                 cpu->a = 0;
             } else {
                 if (fp) fclose(fp);
