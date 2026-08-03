@@ -127,8 +127,9 @@ how many bytes to decode):
   work, and references for the real CP/M software this emulator's been
   validated against: the CCP shell
   ([`CCP_REFERENCE.md`](docs/CCP_REFERENCE.md)), Tasty Basic
-  ([`TASTYBASIC_REFERENCE.md`](docs/TASTYBASIC_REFERENCE.md)), and MBASIC
-  ([`MBASIC_REFERENCE.md`](docs/MBASIC_REFERENCE.md)).
+  ([`TASTYBASIC_REFERENCE.md`](docs/TASTYBASIC_REFERENCE.md)), MBASIC
+  ([`MBASIC_REFERENCE.md`](docs/MBASIC_REFERENCE.md)), and Turbo Pascal
+  ([`TURBOPASCAL_REFERENCE.md`](docs/TURBOPASCAL_REFERENCE.md)).
 - `scripts/` — standalone reusable tooling that isn't part of the
   emulator/assembler/disassembler build itself: `config.sh` (`PATH`
   setup, see above) and `8080_to_z80.py` (the general 8080→Z80 mnemonic

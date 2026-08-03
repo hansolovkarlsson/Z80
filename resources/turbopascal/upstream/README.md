@@ -29,3 +29,9 @@ itself surfaced.
 **License note**: like `resources/sargon/`, `resources/ccp/`, and
 `resources/adventure/`, this is commercial 1985 software with no open
 license — kept here per the same private-repo policy as those.
+
+See `docs/TURBOPASCAL_REFERENCE.md` for the editor's WordStar-style
+keyboard commands and what the language adds beyond standard Wirth
+Pascal (strings, typed constants, direct memory/port access, and a large
+standard library) — sourced from Borland's own 1985 manual, not just
+this README.

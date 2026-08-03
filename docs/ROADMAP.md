@@ -623,9 +623,16 @@ there surfaced and fixed several real dialect gaps, documented below.
      BIOS vectors).
   Verified interactively: real `TURBO Pascal system Version 3.01A`
   banner, the main menu (`E)dit C)ompile R)un S)ave e(X)ecute D)ir
-  Q)uit`, memory stats), all genuine. The full-screen editor itself
-  (the main reason this was deferred until VT100/CP437 was sorted out)
-  is the natural next thing to try interactively.
+  Q)uit`, memory stats), all genuine, and the editor itself — typing,
+  echo, status-line tracking. See `docs/TURBOPASCAL_REFERENCE.md`
+  (sourced from Borland's real 1985 manual) for the editor's WordStar-
+  style keyboard commands and what the language adds beyond standard
+  Wirth Pascal. One open finding from that first interactive session:
+  `Ctrl-H` (delete-left) moved the cursor but didn't reliably erase the
+  character from either the screen or Turbo's own text buffer — not yet
+  root-caused; `docs/TURBOPASCAL_REFERENCE.md`'s Known limitations notes
+  it as an open question with `Ctrl-G` (delete-under-cursor) as a
+  workaround.
 
 ## Phase 4: Beyond CP/M (exploratory)
 

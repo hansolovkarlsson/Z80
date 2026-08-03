@@ -72,7 +72,8 @@ tracked.
   a "Microbee VDU" terminal profile otherwise). A genuine integrated
   environment — full-screen editor, compiler, and compile-and-run, all
   in one program, not just a compiler. See
-  `resources/turbopascal/upstream/README.md`.
+  `docs/TURBOPASCAL_REFERENCE.md` for the editor's keyboard commands and
+  the language itself.
 
 Regenerate the assembled ones (after any assembler/source change) with:
 
