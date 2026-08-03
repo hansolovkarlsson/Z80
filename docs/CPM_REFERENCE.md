@@ -356,4 +356,6 @@ support was needed beyond the warm-boot re-entry itself. Programs typed
 at the `A>` prompt are found via the same host-mapped `cpm_disk/`
 directory as everything else (see the File I/O section above) — `DIR`
 silently skips any file whose name doesn't fit CP/M's real 8.3 filename
-limit, correct CP/M behavior rather than a bug.
+limit, correct CP/M behavior rather than a bug. See
+`docs/CCP_REFERENCE.md` for the built-in commands (`DIR`/`ERA`/`TYPE`/
+`SAVE`/`REN`/`USER`) and general command-line syntax.

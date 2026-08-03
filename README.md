@@ -118,9 +118,10 @@ how many bytes to decode):
   ([`Z80_REFERENCE.md`](docs/Z80_REFERENCE.md)), the assembler syntax
   reference ([`ASSEMBLER.md`](docs/ASSEMBLER.md)), a CP/M 2.2 BDOS/BIOS
   reference ([`CPM_REFERENCE.md`](docs/CPM_REFERENCE.md)) for the Phase 3
-  work, and language references for the two real CP/M programs this
-  emulator's been validated against: Tasty Basic
-  ([`TASTYBASIC_REFERENCE.md`](docs/TASTYBASIC_REFERENCE.md)) and MBASIC
+  work, and references for the real CP/M software this emulator's been
+  validated against: the CCP shell
+  ([`CCP_REFERENCE.md`](docs/CCP_REFERENCE.md)), Tasty Basic
+  ([`TASTYBASIC_REFERENCE.md`](docs/TASTYBASIC_REFERENCE.md)), and MBASIC
   ([`MBASIC_REFERENCE.md`](docs/MBASIC_REFERENCE.md)).
 - `scripts/` — standalone reusable tooling that isn't part of the
   emulator/assembler/disassembler build itself: `config.sh` (`PATH`

@@ -63,7 +63,8 @@ tracked.
   `resources/adventure/README.md`.
 - `ccp.com` — Digital Research's CP/M 2.2 CCP (shell), assembled from
   `resources/ccp/ccp_cpm.asm`, run with `--ccp` rather than as a plain
-  program (see above). See `docs/CPM_REFERENCE.md`'s CCP section.
+  program (see above). See `docs/CCP_REFERENCE.md` for its built-in
+  commands (`DIR`/`ERA`/`TYPE`/`SAVE`/`REN`/`USER`).
 
 Regenerate the assembled ones (after any assembler/source change) with:
 
