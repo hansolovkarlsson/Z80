@@ -17,7 +17,9 @@ static int is_ident_char(char c) {
 }
 
 // Parses a numeric literal at *s: decimal (123), hex with trailing h/H
-// (0FFh - must start with a digit), or hex with a 0x/0X prefix (0xFF).
+// (0FFh - must start with a digit), hex with a 0x/0X prefix (0xFF), or
+// binary with a trailing b/B (1100000b - a common vintage-assembler
+// convention real CP/M-era source uses, e.g. Digital Research's own CCP).
 static long parse_number(const char **s) {
     const char *p = *s;
     const char *start = p;
@@ -31,15 +33,39 @@ static long parse_number(const char **s) {
         return val;
     }
 
-    while (isxdigit((unsigned char)*p)) p++;
-    if (*p == 'h' || *p == 'H') {
-        long val = strtol(start, NULL, 16);
-        *s = p + 1;
+    // Scan the *full* run of alphanumeric characters before deciding the
+    // radix from what it ends with, rather than scanning hex digits
+    // first and only then checking for a trailing 'h' (the previous
+    // approach here): 'b'/'B' is itself a valid hex digit (11), so a
+    // hex-digit-first scan greedily swallows a binary literal's own 'b'
+    // suffix as if it were part of the number, then finds no 'h' after
+    // it and silently falls through to decimal - misparsing e.g.
+    // "1100000b" as the literal decimal 1100000, later truncated to a
+    // wildly wrong byte value wherever it's used. Deciding from the full
+    // token's *last* character first avoids that ambiguity entirely.
+    while (isalnum((unsigned char)*p)) p++;
+    size_t len = (size_t)(p - start);
+
+    if (len > 1 && (start[len - 1] == 'h' || start[len - 1] == 'H')) {
+        long val = strtol(start, NULL, 16); // stops at the 'h' - base 16 excludes it
+        *s = p;
         return val;
     }
 
-    // Not a hex-with-suffix literal (e.g. "ff" with no trailing 'h' isn't
-    // valid decimal) - fall back to plain decimal digits only.
+    if (len > 1 && (start[len - 1] == 'b' || start[len - 1] == 'B')) {
+        int all_binary = 1;
+        for (size_t i = 0; i + 1 < len; i++) {
+            if (start[i] != '0' && start[i] != '1') { all_binary = 0; break; }
+        }
+        if (all_binary) {
+            long val = strtol(start, NULL, 2); // stops at the 'b' - base 2 excludes it
+            *s = p;
+            return val;
+        }
+    }
+
+    // Not a hex/binary-with-suffix literal (e.g. "ff" with no trailing
+    // 'h' isn't valid decimal) - fall back to plain decimal digits only.
     p = start;
     while (isdigit((unsigned char)*p)) p++;
     long val = strtol(start, NULL, 10);

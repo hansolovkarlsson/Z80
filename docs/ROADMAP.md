@@ -498,6 +498,32 @@ there surfaced and fixed several real dialect gaps, documented below.
   contents, and running `HELLO`/`SARGON` by name loads and executes them
   with a correct return to the `A>` prompt afterward — multiple commands
   in a row, not just one.
+  - **A real assembler bug, found via actual interactive use** (not
+     scripted testing): once `cpm_disk/`'s filenames were fixed to all
+     fit CP/M's 8.3 limit (see below), `DIR` should have wrapped its
+     output every 4 entries — instead it printed exactly one correct
+     4-entry line, then crammed every remaining entry onto a single
+     giant line. The suspect looked like the CCP translation at first,
+     but the real cause was one level deeper: `z80asm` had **no binary-
+     literal (`1100000b`-style) support at all**. `expr.c`'s number
+     parser scanned *hex* digits first (since `b`/`B` is itself a valid
+     hex digit) and only checked for a trailing `h` afterward — so a
+     binary literal's own `b` suffix got silently swallowed as if it
+     were part of the number, found no `h` following it, and fell
+     through to decimal, misparsing `1100000b` as literal decimal
+     1,100,000 — later truncated to fit a byte wherever it was used
+     (`0xE0`, wildly different from the intended `0x60`). This exact
+     literal is what `ccp.asm`'s `DIR` routine uses to compute a
+     directory-entry buffer offset from the returned search-slot number,
+     so every 4th entry's "start a new line" branch silently took the
+     wrong path. Fixed by scanning the *full* alphanumeric token first
+     and deciding hex/binary/decimal from what it ends with, not from a
+     greedy hex-digit scan — see `docs/ASSEMBLER.md`'s Numbers and
+     literals table for the now-supported binary suffix. Confirms once
+     more that even a translated, non-original-Z80 source (unlike
+     SARGON) can surface a genuine gap nothing else had ever exercised;
+     none of the other real-world programs use binary literals, so this
+     was CCP-only.
 - Further real-world validation candidates queued up next, same "run a
   real unmodified program, fix whatever breaks" strategy:
   - [ ] **Turbo Pascal 3.0** — a real compiler; substantially bigger
