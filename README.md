@@ -81,7 +81,11 @@ how many bytes to decode):
   (third-party, GPLv2, by Frank D. Cringle via YAZE-AG — not this
   project's code, not meant to be edited).
 - `asm/src/` — the assembler (`symtab`, `expr`, `encode`, `assemble`,
-  `preprocess`, `main`); `asm/examples/` has example `.asm` programs.
+  `preprocess`, `main`); `asm/examples/` has example `.asm` programs, all
+  wired into `make test` (`tests/run_tests.sh`) as automated regression
+  checks. `asm/test/` is different: manual/interactive programs (e.g. a
+  console-I/O test that needs a real keyboard) meant to be run and
+  eyeballed by hand, not part of the automated suite.
 - `disasm/src/` — the disassembler (`decode`, `main`); `disasm/examples/`
   has example output.
 - `docs/` — the project roadmap ([`ROADMAP.md`](docs/ROADMAP.md)), a Z80
