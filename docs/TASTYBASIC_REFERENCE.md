@@ -1,24 +1,24 @@
 # Tasty Basic Language Reference
 
 A reference for the BASIC dialect implemented by [Tasty
-Basic](https://github.com/dimitrit/tastybasic) (`asm/tastybasic/`), the
+Basic](https://github.com/dimitrit/tastybasic) (`resources/tastybasic/`), the
 real CP/M program this emulator has been validated against — see
 `docs/CPM_REFERENCE.md`'s Implementation status section and
 `docs/ROADMAP.md` for how that testing surfaced and fixed real bugs in
 this project's own emulator and assembler. This document describes Tasty
 Basic's *language*, independent of this codebase — for what it's
 implemented on top of (Palo Alto Tiny BASIC), see
-`asm/tastybasic/upstream/README.md`.
+`resources/tastybasic/upstream/README.md`.
 
 Gathered from Tasty Basic's own command tables (`tab1`/`tab2`/`tab4`/
-`tab5`/`tab6`/`tab8` in `asm/tastybasic/upstream/tastybasic.asm`) and its
+`tab5`/`tab6`/`tab8` in `resources/tastybasic/upstream/tastybasic.asm`) and its
 upstream `README.md`, not just the upstream doc alone, so this reflects
 what's actually wired into the interpreter's dispatch tables.
 
 ## Quick start
 
 ```
-bin/z80asm asm/tastybasic/tastybasic_cpm.asm -o tastybasic.com
+bin/z80asm resources/tastybasic/tastybasic_cpm.asm -o tastybasic.com
 bin/z80 tastybasic.com
 ```
 
@@ -102,7 +102,7 @@ emulator/assembler side — none of these are emulator bugs, they're
 Tasty Basic's own behavior):
 
 - **Filenames are capped at 7 characters, not 8.** `fname:`'s length
-  check (`asm/tastybasic/upstream/cpmio.asm`) decrements its counter
+  check (`resources/tastybasic/upstream/cpmio.asm`) decrements its counter
   *then* checks for zero, so an 8-character name between the quotes
   (e.g. `SAVE "TEST.BAS"`, exactly 8 characters counting the dot) hits
   `HOW?` instead of succeeding — one character short of the 8-byte FCB

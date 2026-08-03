@@ -91,7 +91,7 @@ how many bytes to decode):
   checks. `asm/test/` is different: manual/interactive programs (e.g. a
   console-I/O test that needs a real keyboard) meant to be run and
   eyeballed by hand, not part of the automated suite.
-- `asm/tastybasic/` — [Tasty Basic](https://github.com/dimitrit/tastybasic)
+- `resources/tastybasic/` — [Tasty Basic](https://github.com/dimitrit/tastybasic)
   (GPLv3), a real, third-party CP/M TinyBASIC tried against the emulator
   by hand (not part of `make test`, same spirit as `asm/test/`).
   `upstream/` holds the unmodified source, `derive.sh` documents and

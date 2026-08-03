@@ -187,7 +187,7 @@ there surfaced and fixed several real dialect gaps, documented below.
     that output through `bin/z80` gives the same clean 67/67 OK, 0 errors
     as every other validated path.
 - [x] **Two more real dialect gaps, found assembling Tasty Basic**
-  (`asm/tastybasic/`, a genuine third-party CP/M program — see Phase 3's
+  (`resources/tastybasic/`, a genuine third-party CP/M program — see Phase 3's
   "Real-world validation" milestone below):
   1. **No `>>`/`<<` shift operators** — worse, `addr >> 8` silently
      mis-parsed as two relational `>` comparisons instead of erroring
@@ -206,7 +206,7 @@ there surfaced and fixed several real dialect gaps, documented below.
      required something to follow on the *same* line; relaxed to also
      cover the label-alone case, falling through to the same bare-label-
      line handling the colon form already used.
-  With both fixed, `asm/tastybasic/derive.sh`'s C-preprocessed,
+  With both fixed, `resources/tastybasic/derive.sh`'s C-preprocessed,
   directive-translated `tastybasic_cpm.asm` assembles and runs correctly.
 - [x] **Disassembler** (`disasm/src/`, builds to `bin/z80dasm`) — the
   assembler's sibling tool, in a separate binary rather than a mode flag
@@ -286,7 +286,7 @@ there surfaced and fixed several real dialect gaps, documented below.
   deliberately skips) — revisit only if something concrete needs it.
   Regression coverage: `asm/examples/file_test.asm` (create, rename, read
   back, wildcard search, delete, confirm gone).
-- [x] **Real-world validation: Tasty Basic** (`asm/tastybasic/`) — the
+- [x] **Real-world validation: Tasty Basic** (`resources/tastybasic/`) — the
   best return on effort of anything tried this phase. Rather than only
   hand-written regression tests, got a real, unmodified third-party CP/M
   program (a genuine [Tasty
