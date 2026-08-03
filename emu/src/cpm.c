@@ -254,7 +254,18 @@ static uint8_t current_user = 0;
 
 void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
     if (cpu->pc == 0x0005) { // Intercept call to BDOS entry
-        if (cpu->c == 1) {
+        if (cpu->c == 0) {
+            // Function 0: System Reset (P_TERMCPM) - warm boot, i.e. quit
+            // back to the OS. Real CP/M restarts the CCP; there's no CCP
+            // here, so just jump straight to 0x0000 - main.c's run loop
+            // already treats PC==0 as normal program termination. Unlike
+            // every other function, this does NOT fall through to the
+            // RET simulation below: a real warm boot never returns to the
+            // caller, so popping a return address here would be wrong.
+            cpu->pc = 0x0000;
+            return;
+        }
+        else if (cpu->c == 1) {
             // Function 1: Console Input (wait for a char, echo it, return in A/L)
             int c = console_read_char();
             putchar(c);

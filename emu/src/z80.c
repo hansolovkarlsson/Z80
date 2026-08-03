@@ -2209,6 +2209,14 @@ int z80_step(Z80 *cpu, uint8_t *ram) {
     // 1. Intercept CP/M BDOS call for zexall output before fetching
     check_cpm_bdos(cpu, ram);
 
+    // BDOS function 0 (P_TERMCPM) sets PC to 0x0000 directly rather than
+    // returning to the caller - main.c's run loop checks for PC==0x0000
+    // at the top of its *next* iteration, but without this check here,
+    // this function would immediately fetch and execute the RET stub
+    // main.c preloads at address 0, popping the real return address off
+    // the stack and undoing the termination before that check ever runs.
+    if (cpu->pc == 0x0000) return 0;
+
     // 2. Fetch opcode byte
     uint8_t opcode = fetch_byte(cpu, ram);
 
