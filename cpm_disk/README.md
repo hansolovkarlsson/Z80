@@ -17,6 +17,7 @@ bin/z80 cpm_disk/sargon.com
 bin/z80 cpm_disk/mbasic.com
 bin/z80 cpm_disk/adventur.com
 bin/z80 cpm_disk/turbo.com
+bin/z80 cpm_disk/hanoi.com
 ```
 
 Or boot a real CP/M shell instead of a single program — a genuine `A>`
@@ -74,6 +75,13 @@ tracked.
   in one program, not just a compiler. See
   `docs/TURBOPASCAL_REFERENCE.md` for the editor's keyboard commands and
   the language itself.
+- `hanoi.com` — Francesco Sblendorio's Towers of Hanoi (GPLv2), a genuine
+  third-party Turbo Pascal 3.01A program (not written for this project),
+  compiled from `resources/hanoi/upstream/hanoi-p.pas` by
+  `resources/hanoi/derive.sh` running the real `TURBO.COM` above as the
+  build tool. First real program that needed more than a trivial amount
+  of source to load — see `docs/TURBOPASCAL_REFERENCE.md`'s Known
+  limitations for the FCB-reuse bug this surfaced and fixed in `cpm.c`.
 
 Regenerate the assembled ones (after any assembler/source change) with:
 
@@ -96,3 +104,9 @@ source available) — regenerate them by re-running
 `resources/turbopascal/derive.sh` (which patches
 `resources/turbopascal/upstream/TURBO.COM` for an ANSI terminal) and
 copying its output into `cpm_disk/`.
+
+`hanoi.com` is compiled (not assembled) from real Pascal source — after
+regenerating `turbo.com` above if needed, regenerate it with
+`resources/hanoi/derive.sh` (which runs the real `TURBO.COM` under this
+project's own emulator to compile `resources/hanoi/upstream/hanoi-p.pas`)
+and copy `resources/hanoi/hanoi.com` here.

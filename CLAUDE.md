@@ -221,7 +221,20 @@ always reading sequentially from the start (a real CP/M `F_OPEN` searches
 the directory for the extent matching whatever `EX`/`S1`/`S2` the caller
 already put in the FCB). The common `EX==0` case (a fresh, from-the-start
 open) is unaffected — `CR` is still reset to 0 there, since plenty of
-real programs assume `F_OPEN` does that for them.
+real programs assume `F_OPEN` does that for them. `F_OPEN`'s
+`alloc_open_file()` reuses (closing the stale handle first) any existing
+`open_files[]` entry already at the target FCB address rather than
+allocating a second entry alongside it — real CP/M has no file-handle
+concept distinct from the FCB itself, so a program reusing one FCB
+buffer for a new file without an intervening `F_CLOSE` (completely
+normal — Turbo Pascal's compiler does exactly this loading `TURBO.MSG`
+and then a work file through the same FCB) must transparently start
+reading the new file, not silently keep re-reading whichever file
+happened to open that address first (found via a real Turbo Pascal
+compile that mysteriously always stopped at the same byte count no
+matter the source file's real size or content — traced to `TURBO.MSG`'s
+own trailing bytes, still open, shadowing every later open at that FCB
+address).
 
 **Booting a CCP (`main.c`, `cpm.c`)**: `bin/z80 --ccp <path>` loads a CP/M
 Console Command Processor (the `A>` shell — see `resources/ccp/`) at

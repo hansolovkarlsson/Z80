@@ -338,6 +338,35 @@ Including Files).
   project's `resources/turbopascal/derive.sh` reconfigures it via
   `TINST.COM`'s real "ANSI" profile before use. See
   `resources/turbopascal/upstream/README.md`.
+- **A real emulator bug, found compiling a genuinely large source file
+  (`resources/hanoi/`) — now fixed.** Loading or compiling any work/main
+  file bigger than a trivial size (a few dozen bytes) silently stopped
+  at exactly the same byte count (1313) no matter the file's real size
+  or content — confirmed with two completely unrelated files (a 12.7KB
+  real Pascal program and a synthetic file of different content and
+  length), ruling out anything about the *source* being the cause.
+  Traced (BDOS-call and Z80 instruction-level tracing, not guesswork) to
+  `cpm.c`'s `open_files[]` tracking: `alloc_open_file()` always allocated
+  a *new* table entry for a newly-opened FCB address instead of checking
+  whether that address was already open, so when Turbo Pascal reused one
+  FCB buffer for a second file (loading `TURBO.MSG` first, then a work
+  file, through the same FCB — entirely normal CP/M practice, since real
+  CP/M has no file-handle concept distinct from the FCB itself) without
+  an intervening `F_CLOSE` (which Turbo Pascal, like plenty of real
+  software, never bothers to call for its own internal reads), the *old*
+  `open_files[]` entry for `TURBO.MSG` kept matching first. Every
+  "later" file's reads silently kept re-reading `TURBO.MSG`'s own
+  content instead — confirmed directly: the stalled read's raw bytes
+  were byte-for-byte identical to `TURBO.MSG`'s real record 10, and byte
+  1313 of `TURBO.MSG` is a genuine embedded `Ctrl-Z` (`0x1A`) marking
+  where its real message text ends, which is exactly where every
+  affected read stopped, regardless of what file was supposedly being
+  read. Fixed by having `alloc_open_file()` reuse (closing the stale
+  handle first) any existing entry at that FCB address rather than
+  shadowing it with a second one. Verified with `resources/hanoi/` (see
+  below): the real 12,750-byte `hanoi-p.pas` now loads as the full
+  12,800 bytes (100 records) it should, compiles cleanly (492/492
+  lines, 0 errors), and the compiled program runs correctly.
 
 ## Verified against this emulator
 
@@ -346,6 +375,11 @@ banner and main menu, `TINST.COM`'s terminal reconfiguration (Microbee →
 ANSI) and command reconfiguration (`Ctrl-H` → real delete), entering the
 editor and typing text (echo, `Insert` status, line/column tracking all
 correct), `Ctrl-K D` to exit the editor, and `R)un` compiling and
-executing a program from the main menu. The much larger remainder of the
+executing a program from the main menu. Also, a genuine third-party
+program from scratch: `resources/hanoi/upstream/hanoi-p.pas` (Francesco
+Sblendorio's Towers of Hanoi, GPLv2, unmodified) compiles cleanly (492
+lines, 0 errors) and the compiled `.COM` runs correctly end-to-end —
+real banner, menu, and board — see `resources/hanoi/derive.sh`. The
+much larger remainder of the
 language above is documented from the manual but not yet individually
 exercised here.

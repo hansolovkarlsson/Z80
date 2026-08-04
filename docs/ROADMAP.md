@@ -669,6 +669,39 @@ there surfaced and fixed several real dialect gaps, documented below.
     delete-under-cursor) still works too. See
     `docs/TURBOPASCAL_REFERENCE.md`'s Known limitations for the full
     writeup of both this and the `IXON` fix above.
+- [x] **Real-world validation: a genuine third-party Turbo Pascal
+  program from scratch** (`resources/hanoi/`) — Francesco Sblendorio's
+  Towers of Hanoi (GPLv2), the "portable" KayPro/ADM-3A-escape-sequence
+  variant of [hanoi-cpm](https://github.com/sblendorio/hanoi-cpm),
+  unmodified. The first program tried here bigger than the trivial few-
+  byte files the Ctrl-H fix above was verified with, and it immediately
+  surfaced a real, previously-invisible emulator bug: loading or
+  compiling *any* file over a tiny size silently truncated at exactly
+  the same byte count (1313) regardless of the file's real size or
+  content — confirmed by trying a completely unrelated synthetic file
+  of different length and content and getting the identical cutoff, then
+  root-causing it (BDOS-call and Z80 instruction-level tracing) to
+  `cpm.c`'s `open_files[]` table: `alloc_open_file()` always created a
+  *new* entry for a newly-opened FCB address rather than checking for
+  one already there, so when Turbo Pascal reused a single FCB buffer to
+  open a second file (loading `TURBO.MSG` first, then the work file,
+  through the same FCB — normal CP/M practice, and it never calls
+  `F_CLOSE` for its own internal reads) without closing the first, the
+  *original* `TURBO.MSG` entry kept matching first on every later read.
+  Confirmed precisely: the "truncated" read's bytes were byte-for-byte
+  identical to `TURBO.MSG`'s own real record 10, and `TURBO.MSG`
+  genuinely has an embedded `Ctrl-Z` (`0x1A`) at byte 1313 marking where
+  its real message text ends — exactly the observed cutoff, for a file
+  that was never actually being read at all. Fixed by having
+  `alloc_open_file()` reuse (closing the stale handle first) any
+  existing entry at that FCB address instead of shadowing it with a
+  second one — see `CLAUDE.md`'s File I/O section. With the fix, the
+  real 12,750-byte `hanoi-p.pas` loads as the full 12,800 bytes (100
+  records) it should, compiles cleanly (492/492 lines, 0 errors via
+  `resources/hanoi/derive.sh`, which drives the real `TURBO.COM` under
+  this project's own emulator as the build tool — mirroring
+  `resources/turbopascal/derive.sh`'s own use of `TINST.COM`), and the
+  compiled `hanoi.com` runs correctly: real banner, menu, and board.
 
 ## Phase 4: Beyond CP/M (exploratory)
 

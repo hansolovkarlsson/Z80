@@ -246,6 +246,21 @@ static OpenFile *find_open_file(uint16_t fcb_addr) {
 }
 
 static OpenFile *alloc_open_file(uint16_t fcb_addr) {
+    // Real CP/M has no file-handle concept distinct from the FCB itself -
+    // opening an FCB address that's already open (a program reusing one
+    // FCB buffer for a new file without an intervening F_CLOSE, which is
+    // completely normal: Turbo Pascal does exactly this loading TURBO.MSG
+    // and then a work/main file through the same FCB) just overwrites that
+    // FCB's fields on real hardware. Mirror that here: reuse the existing
+    // slot (closing its stale handle first) instead of leaving it in place
+    // and allocating a second entry for the same address - find_open_file()
+    // would then keep matching the *old* entry first, silently reading the
+    // previous file's content forever.
+    OpenFile *existing = find_open_file(fcb_addr);
+    if (existing) {
+        fclose(existing->fp);
+        return existing;
+    }
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         if (!open_files[i].in_use) {
             open_files[i].in_use = 1;
