@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "common.h"
 
@@ -34,14 +35,73 @@ bool load_file(const char *filename, uint16_t load_address) {
 
 static void print_usage(const char *prog) {
     printf("Usage:\n");
-    printf("  %s <program.com>   Run a CP/M .com file (loaded at 0x0100)\n", prog);
-    printf("  %s --ccp [ccp.com] Boot a CP/M CCP shell (default: cpm_disk/ccp.com)\n", prog);
-    printf("  %s -h | --help     Show this message\n", prog);
+    printf("  %s <program.com> [args...]   Run a CP/M .com file (loaded at 0x0100)\n", prog);
+    printf("  %s --ccp [ccp.com]           Boot a CP/M CCP shell (default: cpm_disk/ccp.com)\n", prog);
+    printf("  %s -h | --help               Show this message\n", prog);
     printf("\n");
     printf("Examples:\n");
     printf("  %s cpm_disk/hello.com\n", prog);
     printf("  %s emu/zexall/ZEXALL-main/zexall.com\n", prog);
+    printf("  %s cpm_disk/cc.com HELLO.C\n", prog);
     printf("  %s --ccp\n", prog);
+}
+
+// Builds the CP/M command-line tail at 0x0080 (length byte) / 0x0081
+// onward (raw text, not null-terminated) from any extra argv entries
+// after the .com file - e.g. `bin/z80 cpm_disk/cc.com HELLO.C` needs
+// "HELLO.C" to reach CC.COM the same way a real CCP would deliver it.
+// Confirmed against this project's own real CCP source
+// (resources/ccp/upstream/ccp.asm's bmove0/bmove1/bmove2, which copies
+// starting from the first space *after* the command name): the tail
+// includes that leading space as its own first byte, and the length
+// byte counts it too - a bare `CC` with no arguments gets length 0.
+// Real CP/M's tail buffer is at most 127 bytes (0x0081-0x00FF); longer
+// input is truncated rather than corrupting whatever's above 0x00FF.
+static void write_command_tail(uint8_t *ram, int argc, char *argv[], int first_arg) {
+    if (first_arg >= argc) {
+        ram[0x0080] = 0;
+        return;
+    }
+    uint8_t tail[127];
+    size_t len = 0;
+    for (int i = first_arg; i < argc; i++) {
+        if (len < sizeof(tail)) tail[len++] = ' ';
+        for (const char *p = argv[i]; *p && len < sizeof(tail); p++) {
+            tail[len++] = (uint8_t)toupper((unsigned char)*p);
+        }
+    }
+    ram[0x0080] = (uint8_t)len;
+    memcpy(ram + 0x0081, tail, len);
+}
+
+// Parses one host-style filename argument ("HELLO.C", "A:FOO.TXT") into
+// an unopened FCB at fcb_addr the way a real CCP's own filename parser
+// (fillfcb in resources/ccp/upstream/ccp.asm) would: DR, then F1-F8/
+// T1-T3 space-padded and uppercased, everything else zeroed. Real
+// command-line programs of this era commonly read their filename
+// argument this way instead of (or as well as) the raw tail text -
+// BDS C's CC.COM is the first program tested here that needs it: it
+// reads straight from the default FCB at 0x005C rather than parsing the
+// tail itself.
+static void write_default_fcb(uint8_t *ram, uint16_t fcb_addr, const char *arg) {
+    memset(ram + fcb_addr, 0, 36);
+    memset(ram + fcb_addr + 1, ' ', 11); // F1-F8, T1-T3
+    if (arg[0] && arg[1] == ':') {
+        char drive = (char)toupper((unsigned char)arg[0]);
+        if (drive >= 'A' && drive <= 'P') ram[fcb_addr] = (uint8_t)(drive - 'A' + 1);
+        arg += 2;
+    }
+    int i = 0;
+    for (; arg[0] && arg[0] != '.' && i < 8; arg++, i++) {
+        ram[fcb_addr + 1 + i] = (uint8_t)toupper((unsigned char)arg[0]);
+    }
+    while (arg[0] && arg[0] != '.') arg++; // skip any name chars past 8
+    if (arg[0] == '.') {
+        arg++;
+        for (i = 0; arg[0] && i < 3; arg++, i++) {
+            ram[fcb_addr + 9 + i] = (uint8_t)toupper((unsigned char)arg[0]);
+        }
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -74,6 +134,19 @@ int main(int argc, char *argv[]) {
     // 2. Load the program (or CCP) into RAM
     if (!load_file(test_file, load_address)) {
         return EXIT_FAILURE;
+    }
+
+    // In CCP mode, any command-line tail is for programs typed at the
+    // CCP's own `A>` prompt interactively - the CCP builds their tail
+    // itself (see write_command_tail()'s own comment), so there's
+    // nothing to seed here.
+    if (!ccp_boot) {
+        write_command_tail(ram, argc, argv, 2);
+        // Real CCP also auto-parses up to the first two command-line
+        // filename arguments into the default FCBs at 0x005C/0x006C -
+        // see write_default_fcb()'s own comment.
+        if (argc > 2) write_default_fcb(ram, 0x005C, argv[2]);
+        if (argc > 3) write_default_fcb(ram, 0x006C, argv[3]);
     }
 
     // 3. Set initial registers according to CP/M standard

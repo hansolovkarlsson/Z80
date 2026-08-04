@@ -201,6 +201,20 @@ only a bare `RET` at `0005h` (leaving `0006h`-`0007h` at zero), it read
 back "no memory available" and immediately printed `Not enough memory` /
 `Program aborted`, refusing to start at all.
 
+`005Ch`-`006Bh`/`006Ch`-`007Fh` (the default FCBs) and `0080h`-`00FFh`
+(the command-line tail) are now genuinely populated too, by `main.c`
+(`write_default_fcb()`/`write_command_tail()`), from any argv entries
+after the `.com` file itself - `./bin/z80 cpm_disk/CC.COM HELLO.C` reads
+exactly like a real CCP-launched `CC HELLO.C` would to the loaded
+program. Confirmed against this project's own real CCP source
+(`resources/ccp/upstream/ccp.asm`'s `bmove0`/`bmove1`/`bmove2`), not
+guessed: the tail is space-prefixed and *not* null-terminated. BDS C's
+`CC.COM`/`CLINK.COM` are what surfaced this - every program tested here
+before them was menu-driven and never needed a command-line argument at
+all; without this, `CC.COM` either printed its own usage message (no
+tail) or `Cannot open` a filename made of NUL bytes (a still-zeroed
+default FCB).
+
 ## Implementation status
 
 `emu/src/cpm.c`'s `check_cpm_bdos()` currently implements **0**
@@ -238,6 +252,22 @@ was written against terminals using the classic `BS` (0x08) erase
 convention and often only recognizes that byte — `console_read_char()`
 translates `DEL` to `BS` so backspace works without reconfiguring the
 host terminal's erase key.
+
+`console_char_ready()` (`C_STAT`/BIOS `CONST`) can't just trust
+`select()` on stdin: for a piped/redirected stdin, `select()` reports
+readable both when a real byte is waiting *and* when stdin has hit EOF
+(a `read()` genuinely wouldn't block either way) - a real terminal's
+idle console status is never ambiguous like that. Found via BDS C's own
+`CC.COM`/linked programs: their console-output routine checks for a
+Ctrl-C abort after printing *every* character, and once a non-
+interactive stdin ran dry, `console_char_ready()` reported "ready"
+forever, the resulting "real" read got EOF's `^Z` (26) sentinel, and
+that got echoed into the output stream after each character printed.
+Fixed by having `console_char_ready()` attempt the read itself to
+disambiguate the two cases: a genuine byte is buffered (`pending_char`)
+for the next `console_read_char()` call rather than lost, while true
+EOF sets a sticky `seen_eof` flag so status checks correctly stop
+reporting "ready" afterward.
 
 Function 0 (`P_TERMCPM`, "quit to CP/M") needed a two-part fix, not just
 setting `cpu->pc = 0x0000`: real CP/M's warm boot never returns to the

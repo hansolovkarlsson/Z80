@@ -55,22 +55,62 @@ void cpm_console_init(void) {
     tcsetattr(STDIN_FILENO, TCSANOW, &raw);
 }
 
-// Non-blocking: is a byte waiting on stdin right now?
+// select() alone can't tell "a real byte is waiting" apart from "stdin
+// is at EOF" for a pipe/redirected file - both make it report readable,
+// since a read() genuinely wouldn't block either way. A real terminal's
+// console status never has this ambiguity (idle means "no key pressed
+// yet", never "spontaneously readable"), so software that polls status
+// before reading - e.g. BDS C's own console-output routine, which checks
+// for a Ctrl-C abort after every character it prints - saw "ready"
+// forever once a piped/redirected stdin ran dry, called what it thought
+// was a real read, and got EOF's ^Z (26) sentinel echoed into the
+// output stream after every single character. One real byte of
+// look-ahead (`pending_char`) plus a sticky `seen_eof` flag (once a pipe
+// hits EOF it never has more data) lets `console_char_ready()` actually
+// disambiguate by attempting the read itself, buffering a genuine byte
+// for the next `console_read_char()` call rather than losing it.
+static int pending_char = -1;
+static int seen_eof = 0;
+
 static int console_char_ready(void) {
+    if (seen_eof) return 0;
+    if (pending_char != -1) return 1;
     fd_set set;
     FD_ZERO(&set);
     FD_SET(STDIN_FILENO, &set);
     struct timeval timeout = {0, 0};
-    return select(STDIN_FILENO + 1, &set, NULL, NULL, &timeout) > 0;
+    if (select(STDIN_FILENO + 1, &set, NULL, NULL, &timeout) <= 0) return 0;
+    uint8_t c;
+    ssize_t n = read(STDIN_FILENO, &c, 1);
+    if (n <= 0) {
+        seen_eof = 1;
+        return 0;
+    }
+    pending_char = c;
+    return 1;
 }
 
 // Blocking single-byte read. EOF (e.g. piped/redirected stdin exhausted)
 // maps to ^Z (26), the traditional CP/M "no more input" sentinel, so a
 // program driven from a non-interactive stdin doesn't spin forever.
 static int console_read_char(void) {
-    uint8_t c;
-    ssize_t n = read(STDIN_FILENO, &c, 1);
-    if (n <= 0) return 26;
+    int c;
+    if (pending_char != -1) {
+        c = pending_char;
+        pending_char = -1;
+    } else if (seen_eof) {
+        c = -1; // no real read attempted; already known to be EOF
+    } else {
+        uint8_t byte;
+        ssize_t n = read(STDIN_FILENO, &byte, 1);
+        if (n <= 0) {
+            seen_eof = 1;
+            c = -1;
+        } else {
+            c = byte;
+        }
+    }
+    if (c < 0) return 26;
     // Modern keyboards' Backspace/Delete key sends DEL (0x7F) in raw
     // terminal mode, but CP/M-era software (e.g. Tasty Basic's own
     // line-input routine) was written against real serial terminals that

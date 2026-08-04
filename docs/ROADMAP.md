@@ -750,6 +750,57 @@ there surfaced and fixed several real dialect gaps, documented below.
   whether this is a genuine dBASE bug or a real BDOS behavior this
   project doesn't replicate is unresolved) — the DPB fix is real and
   independently confirmed regardless.
+- [x] **Real-world validation: BDS C, and the first program tested here
+  that needed command-line arguments** (`resources/bdsc/`) — Leor
+  Zolman's BDS C v1.60, a real 8080/Z80 C compiler and linker for
+  CP/M-80, **public domain** since 2002 (the author released all rights
+  explicitly - see `resources/bdsc/upstream/README.md`). A genuinely
+  different kind of program from everything validated so far: a
+  command-line toolchain (`CC.COM`/`CC2.COM` compiler, `CLINK.COM`
+  linker), not a menu-driven interactive one, and it surfaced two real,
+  previously-invisible gaps:
+  1. **`bin/z80` never populated the CP/M command-line tail or default
+     FCBs** - `main.c` only ever loaded the `.com` file at `0x0100` and
+     started executing; nothing wrote to `0x0080` (tail) or `0x005C`/
+     `0x006C` (default FCBs) the way a real CCP would before running a
+     program. Every program tested here up to this point was menu-driven
+     (Turbo Pascal, WordStar, dBASE, Tasty Basic, MBASIC) and never
+     needed a command-line argument, so this never surfaced. `CC.COM`
+     reads its source filename from the default FCB, and without this
+     fix either printed its own usage message (empty tail) or `Cannot
+     open` a filename made of NUL bytes (a still-zeroed FCB). Fixed with
+     `write_command_tail()`/`write_default_fcb()` in `main.c`, taking
+     any argv entries after the `.com` file itself
+     (`./bin/z80 cpm_disk/CC.COM HELLO.C`) - confirmed against this
+     project's own real CCP source
+     (`resources/ccp/upstream/ccp.asm`'s `bmove0`/`bmove1`/`bmove2`) for
+     the exact tail format (space-prefixed, not null-terminated), not
+     guessed. See `CLAUDE.md`'s File I/O section.
+  2. **A stray `^Z` injected into every compiled program's output when
+     run non-interactively** - BDS C's own runtime library checks for a
+     Ctrl-C abort after printing *every character*, polling console
+     status before reading. `console_char_ready()` only ever asked
+     `select()` "is stdin readable," which can't distinguish "a real key
+     is waiting" from "stdin is at EOF" for a piped/redirected input (a
+     `read()` genuinely wouldn't block either way) - a real terminal's
+     idle console status is never ambiguous like that. Once a
+     non-interactive stdin ran dry, every status check reported "ready"
+     forever, the resulting "real" read got EOF's `^Z` (26) sentinel,
+     and BDOS function 1's echo put that byte into the output stream
+     after every single character printed - `Hello from BDS C!` came out
+     as `H^Ze^Zl^Zl^Zo^Z ^Zf^Zr...`. Fixed by having
+     `console_char_ready()` attempt the read itself to disambiguate: a
+     genuine byte gets buffered (`pending_char`) for the next real read
+     rather than lost, while true EOF sets a sticky `seen_eof` flag so
+     status checks stop reporting "ready" from then on. See
+     `docs/CPM_REFERENCE.md`'s Implementation status for the console
+     input section.
+  With both fixed, `resources/bdsc/derive.sh` compiles and links two
+  example programs (`hello.c`, and `fib.c` - recursion, a loop, and
+  multi-argument `printf`, not just "does it boot") through the real
+  `CC.COM`/`CLINK.COM` under this project's own emulator, runs each
+  resulting `.com`, and checks its output - a real, reproducible build
+  *and* correctness check for the toolchain itself.
 
 ## Phase 4: Beyond CP/M (exploratory)
 

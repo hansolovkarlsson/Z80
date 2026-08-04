@@ -19,6 +19,8 @@ bin/z80 cpm_disk/adventur.com
 bin/z80 cpm_disk/turbo.com
 bin/z80 cpm_disk/hanoi.com
 bin/z80 cpm_disk/queens.com
+bin/z80 cpm_disk/bdshello.com
+bin/z80 cpm_disk/bdsfib.com
 ```
 
 Or boot a real CP/M shell instead of a single program — a genuine `A>`
@@ -94,6 +96,26 @@ tracked.
   `docs/TURBOPASCAL_REFERENCE.md`'s Known limitations for the full
   story. The binary itself runs correctly, including reading
   `queens.dat`'s saved solutions (the `F)ound solutions` menu option).
+- `CC.COM`/`CC2.COM`/`CLINK.COM`/`CLIB.COM`/`DEFF.CRL`/`DEFF2.CRL`/`C.CCC`
+  — Leor Zolman's BDS C v1.60, a real 8080/Z80 C compiler and linker for
+  CP/M-80, **public domain** since 2002 (see
+  `resources/bdsc/upstream/README.md`). Compile and link your own C
+  programs interactively: `bin/z80 cpm_disk/CC.COM YOURPROG.C` then
+  `bin/z80 cpm_disk/CLINK.COM YOURPROG`. First real program tested here
+  that needed command-line arguments (a filename, not menu-driven input)
+  — surfaced two real gaps, both now fixed: `bin/z80` never populated
+  the CP/M command-tail/default-FCB a real CCP would set up (see
+  `CLAUDE.md`'s File I/O section), and `console_char_ready()` couldn't
+  tell "a real key is waiting" apart from "stdin is at EOF," so BDS C's
+  own per-character Ctrl-C-abort check injected a stray `^Z` into every
+  program's output when run non-interactively (see
+  `docs/CPM_REFERENCE.md`'s Implementation status).
+- `bdshello.com`/`bdsfib.com` — compiled and linked from
+  `resources/bdsc/examples/hello.c`/`fib.c` by `resources/bdsc/derive.sh`
+  running the real `CC.COM`/`CLINK.COM` above as the build tool (named
+  `bds*` here since plain `hello.com` is already taken by this project's
+  own `asm/examples/hello.asm`). `fib.c` exercises recursion, a loop,
+  and multi-argument `printf`, not just "does it boot."
 
 Regenerate the assembled ones (after any assembler/source change) with:
 
@@ -126,3 +148,11 @@ and copy `resources/hanoi/hanoi.com` here.
 `queens.com`/`queens.dat` are copies of `resources/queens/upstream/`'s
 own prebuilt binary/data file, not built by this project — see
 `resources/queens/upstream/README.md` for why.
+
+`CC.COM`/`CC2.COM`/`CLINK.COM`/`CLIB.COM`/`DEFF.CRL`/`DEFF2.CRL`/`C.CCC`
+are copies of `resources/bdsc/upstream/`'s own real BDS C distribution
+files, not built by this project. `bdshello.com`/`bdsfib.com` regenerate
+with `resources/bdsc/derive.sh` (which compiles and links
+`resources/bdsc/examples/*.c` via those same toolchain files, running
+under this project's own emulator) — copy `resources/bdsc/hello.com`/
+`fib.com` here afterward.

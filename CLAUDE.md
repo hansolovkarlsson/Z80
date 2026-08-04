@@ -62,6 +62,21 @@ arguments (or `-h`/`--help`) just prints usage instead:
 ./bin/z80 emu/zexall/ZEXALL-main/zexdoc.com
 ```
 
+Any further argv entries become the program's own CP/M command-line
+arguments — `./bin/z80 cpm_disk/CC.COM HELLO.C` compiles `HELLO.C` the
+way a real CCP-launched `CC HELLO.C` would. `write_command_tail()`
+(`main.c`) seeds the raw tail at `0x0080` (length byte) /`0x0081`
+onward — space-prefixed, uppercased, *not* null-terminated, confirmed
+against this project's own real CCP source
+(`resources/ccp/upstream/ccp.asm`'s `bmove0`/`bmove1`/`bmove2`) rather
+than guessed. `write_default_fcb()` additionally auto-parses the first
+two arguments into the default FCBs at `0x005C`/`0x006C`, matching what
+a real CCP also does before running a program — command-line CP/M
+utilities of this era commonly read one or the other (or both). Neither
+existed before BDS C's `CC.COM`/`CLINK.COM` needed it: every program
+tested here up to that point was menu-driven (Turbo Pascal, WordStar,
+dBASE, Tasty Basic, MBASIC) and never took an argument this way.
+
 The zexdoc variant checks only documented flag behavior; zexall also
 checks the undocumented flags (bits 3 and 5, `FLAG_X`/`FLAG_Y`). Passing
 `--ccp [ccp.com]` instead of a plain `.com` path boots a CP/M CCP shell
@@ -179,6 +194,23 @@ CR-vs-LF fix, `IXON` (classic Unix software flow control) is disabled too
 and never delivers the byte at all, silently breaking any real program
 that uses them for something else (Turbo Pascal's editor binds `Ctrl-S`
 to cursor-left, which is what surfaced this).
+
+`console_char_ready()` (BDOS `C_STAT`/BIOS `CONST`) can't just ask
+`select()` "is stdin readable" - for a piped/redirected stdin, `select()`
+reports readable both when a real byte is waiting *and* when stdin has
+hit EOF (a `read()` genuinely wouldn't block either way), but a real
+terminal's console status is never ambiguous like that (idle just means
+no key pressed yet). Software that polls status before reading - BDS C's
+own console-output routine checks for a Ctrl-C abort after printing
+*every* character - saw "ready" forever once a non-interactive stdin ran
+dry, called what it thought was a real read, and got EOF's `^Z` (26)
+sentinel echoed into the output stream after each character it printed.
+Fixed by having `console_char_ready()` actually attempt the read itself
+to disambiguate: a genuine byte gets buffered in `pending_char` for the
+next `console_read_char()` call (so it isn't lost), while a real EOF
+sets a sticky `seen_eof` flag so status checks stop reporting "ready"
+from then on, matching how a real console never spontaneously un-idles
+on its own.
 
 Console *output* (BDOS functions 1's echo, 2, 6, 9, and BIOS `CONOUT`)
 routes every program-supplied byte through `console_emit()` rather than
