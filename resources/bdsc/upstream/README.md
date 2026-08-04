@@ -20,8 +20,9 @@ plain-CP/M-80 compile-and-link toolchain are kept here, from the
 - `CLIB.COM` - the librarian (not exercised yet by anything in this repo).
 - `DEFF.CRL`/`DEFF2.CRL` - compiled object code for the standard library
   (`printf` and the rest of the C-coded runtime), linked in by default.
-- `C.CCC` - linker configuration (default library search path etc.) -
-  `CLINK.COM` refuses to run without it (`Can't find 0/A:C.CCC`).
+- `C.CCC` - the run-time initializer and subroutine module, ~1.5K,
+  linked onto the front of every compiled program - `CLINK.COM` refuses
+  to run without a copy of it in reach (`Can't find 0/A:C.CCC`).
 
 Not included: the ZCPR3-specific `bdsz20/` variant, the CDB debugger,
 RED editor, and BCD (binary-coded decimal) packages the full archive
