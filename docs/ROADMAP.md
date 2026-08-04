@@ -729,6 +729,27 @@ there surfaced and fixed several real dialect gaps, documented below.
   `resources/queens/upstream/README.md` and
   `docs/TURBOPASCAL_REFERENCE.md`'s Known limitations for the full
   writeup.
+- [x] **A real Disk Parameter Block, found via a user's own live-testing
+  observation.** While trying WordStar and dBASE II live, the user
+  noticed Turbo Pascal's own `D`ir command reporting `Bytes Remaining On
+  A: 0k` despite writes succeeding, and correctly guessed it was the
+  same underlying cause as a `Disk is full` message dBASE II printed on
+  `QUIT`. Root cause: BDOS functions `DRV_DPB` (31) and `DRV_ALLOCVEC`
+  (27), plus BIOS `SELDSK`, were never handled at all — a caller got
+  back whatever `HL` already contained, not a real DPB address, and
+  real software reading garbage as disk-space info reports nonsense.
+  Fixed with a real, internally-consistent fake DPB — an ~8MB fixed
+  disk, values computed per the actual formulas in the real CP/M 2.2
+  Alteration Guide (ch. 6) rather than guessed — see `CLAUDE.md`'s File
+  I/O section and `docs/CPM_REFERENCE.md`'s Implementation status for
+  the full byte-level writeup. Confirmed fixed via Turbo Pascal, now
+  reporting a plausible `8160k`. dBASE II's specific `Disk is full`
+  message turned out to have a second, different, still-open cause
+  (it reads/writes a file's FCB again after already closing it, without
+  reopening — real CP/M's `F_CLOSE` wouldn't allow that either, so
+  whether this is a genuine dBASE bug or a real BDOS behavior this
+  project doesn't replicate is unresolved) — the DPB fix is real and
+  independently confirmed regardless.
 
 ## Phase 4: Beyond CP/M (exploratory)
 

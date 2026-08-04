@@ -236,6 +236,19 @@ matter the source file's real size or content — traced to `TURBO.MSG`'s
 own trailing bytes, still open, shadowing every later open at that FCB
 address).
 
+**A fake Disk Parameter Block** (`DPH_BASE`/`DPB_BASE`/`DIRBUF_BASE`/
+`ALV_BASE` in `cpm.c`, written once by `cpm_bios_init()`) backs BDOS
+functions `DRV_DPB` (31) and `DRV_ALLOCVEC` (27), plus BIOS `SELDSK` —
+previously unhandled, so a caller got back whatever `HL` already
+contained rather than a real DPB address. Found via Turbo Pascal's `D`ir
+command showing `Bytes Remaining On A: 0k` despite writes succeeding
+(now reports a plausible `8160k`) — see `docs/CPM_REFERENCE.md`'s File
+I/O Implementation status section for the exact values (an ~8MB fixed
+disk, computed per the real CP/M 2.2 Alteration Guide's DPB formulas)
+and the full story, including a real Ashton-Tate dBASE II binary whose
+own `Disk is full` message looked like the same bug but turned out to
+have a different, still-open cause.
+
 **Booting a CCP (`main.c`, `cpm.c`)**: `bin/z80 --ccp <path>` loads a CP/M
 Console Command Processor (the `A>` shell — see `resources/ccp/`) at
 `CCP_BASE` (`0xE400`) instead of loading a single program at `0x100`, and

@@ -209,7 +209,10 @@ input (**1** `C_READ`, **6** `C_RAWIO`, **10** `C_READSTR`, **11**
 `C_STAT`), and **12** `S_BDOSVER` — intercepted directly at `PC == 0x0005`
 rather than by placing real BDOS code in memory and executing a real
 `CALL`/jump to it. There *is* now a minimal, real BIOS jump table (see
-below) — just no DPH/DPB, so no real disk geometry.
+below), and a fake but internally-consistent DPH/DPB (see the Implementation
+status note near the end of the File I/O section) — real disk geometry
+still isn't emulated, but "how much disk space is free" now gets a
+plausible answer instead of whatever garbage happened to be in `HL`.
 
 Console input needs the host terminal in raw mode (character-at-a-time, no
 local echo) to behave like real CP/M hardware; `cpm_console_init()`
@@ -264,9 +267,14 @@ uppercased, trailing spaces trimmed). Concretely, this means:
   echo back — they don't actually change which files are visible. A
   program that writes `1:FOO.TXT` and reads back `2:FOO.TXT` gets the same
   file, since drive/user aren't part of the host path.
-- There's no DPH/DPB, disk image, or block allocation — `F_OPEN`/
-  `F_MAKE`/etc. go straight through `fopen`/`fclose`/`remove`/`rename` on
-  the mapped directory. `F_SFIRST`/`F_SNEXT`'s `'?'`-wildcard matching
+- There's no real disk image or block allocation — `F_OPEN`/`F_MAKE`/etc.
+  go straight through `fopen`/`fclose`/`remove`/`rename` on the mapped
+  directory. There *is* now a fake, static DPH/DPB (`DRV_DPB`/
+  `DRV_ALLOCVEC`, BDOS functions 31/27, plus BIOS `SELDSK` — see the
+  Implementation status note below), but it doesn't back real block
+  allocation: it exists purely to give real software a plausible,
+  non-garbage answer when it asks how much disk space is free.
+  `F_SFIRST`/`F_SNEXT`'s `'?'`-wildcard matching
   (`fcb_pattern_match()`) and the 32-byte directory-entry image they write
   into the DMA buffer are real, but always report the match in "slot 0"
   of the notional 4-per-record packing real disk directories use, since
@@ -291,6 +299,37 @@ uppercased, trailing spaces trimmed). Concretely, this means:
   own memory address, not a separate handle — matching how CP/M programs
   themselves have no notion of a file descriptor beyond the FCB they
   passed to `F_OPEN`/`F_MAKE`.
+- **The fake DPH/DPB** (`DPH_BASE`/`DPB_BASE`/`DIRBUF_BASE`/`ALV_BASE` in
+  `cpm.c`, written once by `cpm_bios_init()`): before this existed,
+  `DRV_DPB` (31), `DRV_ALLOCVEC` (27), and BIOS `SELDSK` weren't handled
+  at all, so a caller got back whatever `HL` already held — not a real
+  DPB address, just leftover register content from its own prior code.
+  Found live-testing two independent real programs: Turbo Pascal's `D`ir
+  command showed `Bytes Remaining On A: 0k` despite writes succeeding
+  (see `docs/TURBOPASCAL_REFERENCE.md`) — **confirmed fixed**, now
+  reports a plausible `8160k`. dBASE II (a real Ashton-Tate 2.43 binary,
+  not yet otherwise documented in this project) printed `Disk is full`
+  on `QUIT` for a database it had just written correctly, which looked
+  like the same symptom and prompted this fix — but turned out to have
+  a *different*, still-open root cause (dBASE reads/writes a file's FCB
+  again after already closing it, without reopening, which real CP/M's
+  `F_CLOSE` also wouldn't allow; unclear yet whether that's a genuine
+  dBASE bug or a real BDOS behavior this project doesn't replicate), so
+  this specific message is unaffected by the DPB fix even though the fix
+  itself is real and independently confirmed via Turbo Pascal. Built
+  with a real, internally-consistent DPB describing a plausible ~8MB
+  fixed disk — values
+  computed per the actual formulas in the CP/M 2.2 Alteration Guide
+  (ch. 6): 4096-byte blocks (`BSH`=5, `BLM`=31), `DSM`=2039 (2040 blocks
+  × 4096 = 8,355,840 bytes), `DRM`=1023 (1024 directory entries, so the
+  first 8 blocks — all of `AL0` — are reserved for the directory),
+  `CKS`=0 and `OFF`=0 since there's no removable-media or reserved-track
+  concept here. The allocation vector (`ALV_BASE`) is all zero — nothing
+  ever marked "in use" — so free space always reports as the whole fake
+  disk, which is representationally fine since this project doesn't
+  track real block-level allocation. Not modeling any specific real
+  drive, the same spirit as `BDOS_ENTRY`'s "plausible ~61KB of free
+  memory" (see the zero-page section above).
 
 `asm/examples/file_test.asm` covers `F_MAKE`/`F_WRITE`/`F_CLOSE`/
 `F_RENAME`/`F_OPEN`/`F_READ`/`F_SFIRST`/`F_DELETE` end to end (create,
@@ -298,10 +337,11 @@ rename, read back, wildcard-search, delete, confirm gone).
 
 What this design can't do: express CP/M's actual drive-switching or
 per-user file areas (two programs on "different drives" see the same
-files), or run an unmodified real CP/M disk image (that needs the DPH/DPB
-machinery this document describes but `cpm.c` doesn't implement). Revisit
-only if something concrete actually needs one of those — most CP/M-80
-transient programs don't.
+files), or run an unmodified real CP/M disk image with real block-level
+storage (the fake DPH/DPB above reports a plausible free-space figure,
+but doesn't back real allocation tracking or multiple distinct drives).
+Revisit only if something concrete actually needs one of those — most
+CP/M-80 transient programs don't.
 
 ### BIOS
 
@@ -333,18 +373,21 @@ returns to its caller, same as `P_TERMCPM`), `CONST`/`CONIN`/`CONOUT`
 (reusing the same host-terminal plumbing as the BDOS console functions -
 note `CONOUT` takes its character in `C`, not `E` like BDOS `C_WRITE`),
 and sensible fixed responses for `READER` (`^Z`, no reader attached),
-`SELDSK` (`HL`=0, no DPH), `READ`/`WRITE` (error, no BIOS-level disk I/O -
-see the File I/O section above for the BDOS-level equivalent that *does*
-work), `LISTST` (never ready, no printer), and `SECTRAN` (identity, no
-sector skewing). Every other vector (`BOOT`, `LIST`, `PUNCH`, `HOME`,
-`SETTRK`, `SETSEC`, `SETDMA`) is a harmless no-op. Real CP/M programs that
-jump directly into the BIOS for genuine disk I/O still won't work
-correctly (no DPH/DPB backs any of this), but console-only BIOS use -
-the common case - now does.
+`SELDSK` (`HL`=the fake DPH described in the File I/O section above -
+every drive number is "valid" here, matching the one-host-directory
+design, so this never returns 0), `READ`/`WRITE` (error, no BIOS-level
+disk I/O - see the File I/O section above for the BDOS-level equivalent
+that *does* work), `LISTST` (never ready, no printer), and `SECTRAN`
+(identity, no sector skewing). Every other vector (`BOOT`, `LIST`,
+`PUNCH`, `HOME`, `SETTRK`, `SETSEC`, `SETDMA`) is a harmless no-op. Real
+CP/M programs that jump directly into the BIOS for genuine disk I/O
+still won't work correctly (no real block-level storage backs any of
+this), but console-only BIOS use - the common case - now does.
 
-Un-stubbed BDOS drive/allocation-vector functions (24, 27, 28, 29, 31, 37,
-38, 39) are the remaining BDOS gap, all of which need the DPH/DPB this
-design deliberately skipped.
+Un-stubbed BDOS drive/allocation-vector functions (24, 28, 29, 37, 38,
+39) are the remaining BDOS gap; **27** `DRV_ALLOCVEC` and **31**
+`DRV_DPB` are now implemented (see the fake DPH/DPB note in the File I/O
+section above).
 
 ### CCP (Console Command Processor)
 

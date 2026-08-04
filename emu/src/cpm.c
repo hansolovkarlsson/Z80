@@ -410,6 +410,33 @@ int cpm_is_ccp_mode(void) {
 #define BIOS_V_LISTST  0x2D
 #define BIOS_V_SECTRAN 0x30
 
+// A fake but internally-consistent Disk Parameter Header/Block, giving
+// real software a plausible non-garbage answer when it asks "how much
+// disk space is free" - BDOS functions DRV_DPB (31) and DRV_ALLOCVEC (27)
+// and BIOS SELDSK all point here. Before this existed, none of the three
+// were handled at all, so a caller got back whatever HL already
+// contained (leftover from its own prior code, not a real DPB address) -
+// found via two independent real programs that both read it as "the disk
+// is full": Turbo Pascal's D)ir command showing "Bytes Remaining On A:
+// 0k" despite writes succeeding, and dBASE II's QUIT sequence reporting
+// "Disk is full" for a database that had just been written successfully.
+// Values describe an ~8MB fixed (non-removable) disk - BSH/BLM/EXM/DSM/
+// DRM/AL0/AL1/CKS chosen per the real formulas in the CP/M 2.2 Alteration
+// Guide (ch. 6): BLS=4096-byte blocks (BSH=5, BLM=31), DSM=2039 (2040
+// blocks * 4096 = 8,355,840 bytes), DRM=1023 (1024 directory entries, 128
+// per 4096-byte block, so the first 8 blocks - all of AL0 - are reserved
+// for the directory), CKS=0 and OFF=0 since there's no real removable-
+// media or reserved-track concept here. Not modeling any specific real
+// drive, the same spirit as BDOS_ENTRY's "plausible ~61KB of free
+// memory" - this project doesn't emulate real disk geometry (see
+// docs/CPM_REFERENCE.md's DPB section), so the actual number just needs
+// to read as sane and report plenty of free space, which an all-zero
+// allocation vector (nothing marked "in use") does directly.
+#define DPH_BASE    0xF300 // 16 bytes: XLT, 3 scratch words, DIRBUF, DPB, CSV, ALV
+#define DPB_BASE    0xF310 // 15 bytes: SPT BSH BLM EXM DSM DRM AL0 AL1 CKS OFF
+#define DIRBUF_BASE 0xF320 // 128-byte BDOS directory scratch buffer (also reused as CSV, since CKS=0 means it's never actually touched)
+#define ALV_BASE    0xF3A0 // 255 bytes = ceil((DSM+1)/8); all zero = nothing allocated
+
 void cpm_bios_init(uint8_t *ram) {
     // JP to WBOOT at address 0 - this is what a program actually reads to
     // locate the BIOS (see the comment above).
@@ -431,6 +458,31 @@ void cpm_bios_init(uint8_t *ram) {
         ram[addr] = 0xC3; // JP
         ram[addr + 1] = (uint8_t)(addr & 0xFF);
         ram[addr + 2] = (uint8_t)(addr >> 8);
+    }
+
+    // The fake DPB (see its own comment above) - written once, here,
+    // rather than computed per-call, since none of it ever changes.
+    static const uint8_t dpb[15] = {
+        0x80, 0x00, // SPT = 128
+        0x05,       // BSH
+        0x1F,       // BLM
+        0x01,       // EXM
+        0xF7, 0x07, // DSM = 2039
+        0xFF, 0x03, // DRM = 1023
+        0xFF, 0x00, // AL0, AL1
+        0x00, 0x00, // CKS = 0 (fixed disk)
+        0x00, 0x00, // OFF = 0
+    };
+    memcpy(ram + DPB_BASE, dpb, sizeof(dpb));
+    memset(ram + DIRBUF_BASE, 0, 128);
+    memset(ram + ALV_BASE, 0, 255); // nothing allocated = all free
+
+    // DPH: XLT=0000 (no sector translation), 3 scratch words=0000,
+    // DIRBUF, DPB, CSV (=DIRBUF_BASE, unused since CKS=0), ALV.
+    uint16_t dph[8] = {0, 0, 0, 0, DIRBUF_BASE, DPB_BASE, DIRBUF_BASE, ALV_BASE};
+    for (int i = 0; i < 8; i++) {
+        ram[DPH_BASE + i * 2] = (uint8_t)(dph[i] & 0xFF);
+        ram[DPH_BASE + i * 2 + 1] = (uint8_t)(dph[i] >> 8);
     }
 }
 
@@ -485,7 +537,11 @@ void check_cpm_bios(Z80 *cpu, uint8_t *ram) {
     } else if (cpu->pc == BIOS_BASE + BIOS_V_READER) {
         cpu->a = 26; // ^Z: no reader device attached
     } else if (cpu->pc == BIOS_BASE + BIOS_V_SELDSK) {
-        cpu->hl = 0; // no DPH: invalid/unsupported drive
+        // Every drive number is "valid" here (see the File I/O comment -
+        // every drive/user collapses onto one host directory), so this
+        // always returns the one fake DPH rather than 0 (which real CP/M
+        // reserves for "no such drive").
+        cpu->hl = DPH_BASE;
     } else if (cpu->pc == BIOS_BASE + BIOS_V_READ || cpu->pc == BIOS_BASE + BIOS_V_WRITE) {
         cpu->a = 1; // no disk I/O at the BIOS level here - see the File I/O comment
     } else if (cpu->pc == BIOS_BASE + BIOS_V_LISTST) {
@@ -781,6 +837,18 @@ void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
         else if (cpu->c == 26) {
             // Function 26: Set DMA address for subsequent read/write calls.
             dma_addr = cpu->de;
+        }
+        else if (cpu->c == 27) {
+            // Function 27: Address of the current drive's allocation
+            // bitmap - see the fake-DPB comment above BIOS_V_SELDSK's
+            // definition.
+            cpu->hl = ALV_BASE;
+        }
+        else if (cpu->c == 31) {
+            // Function 31: Address of the current drive's Disk Parameter
+            // Block - see the fake-DPB comment above BIOS_V_SELDSK's
+            // definition.
+            cpu->hl = DPB_BASE;
         }
         else if (cpu->c == 32) {
             // Function 32: Set/get current user number (0FFh in E = query).
