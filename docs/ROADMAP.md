@@ -702,6 +702,33 @@ there surfaced and fixed several real dialect gaps, documented below.
   this project's own emulator as the build tool — mirroring
   `resources/turbopascal/derive.sh`'s own use of `TINST.COM`), and the
   compiled `hanoi.com` runs correctly: real banner, menu, and board.
+- [x] **A second third-party program (`resources/queens/`) hit a real
+  Turbo Pascal 3.01A compiler limit, not an emulator bug — confirmed and
+  documented, not chased further.** Francesco Sblendorio's Eight Queens
+  (same author/style as the Hanoi program above) fails to compile
+  through the real `TURBO.COM` with `Error 99: Compiler overflow`,
+  consistently inside its `introscreen` procedure's title-banner
+  `write(...)` calls — each one has 40-60+ tiny string-literal
+  arguments, since the argument list itself is the picture. Confirmed
+  this is a genuine workspace limit, not a fixed table size, by varying
+  how much free TPA the compiler sees: more memory consistently let it
+  compile further (line 302 → 350 → 429 → 437 as this project's own
+  `BDOS_ENTRY` constant — which controls what real software reads back
+  as "top of memory" — was experimentally raised) — but even pushed to
+  the safe maximum this project's 64KB memory map allows (`BDOS_ENTRY`
+  right up against `BIOS_BASE`, no further room without colliding with
+  the real BIOS vector table), it only reached line 437 of 735. The
+  upstream project's own prebuilt `queens.com` must have been compiled
+  with meaningfully more free TPA than any realistic CP/M-80 64KB setup
+  can offer. `resources/queens/` therefore uses that prebuilt binary
+  (plus its `queens.dat` sample solutions file) rather than compiling
+  from source, and it runs correctly under this emulator end-to-end —
+  banner, board, piece rendering, and reading `queens.dat`'s saved
+  solutions back — real validation of the runtime path independent of
+  the compile-time limitation. See
+  `resources/queens/upstream/README.md` and
+  `docs/TURBOPASCAL_REFERENCE.md`'s Known limitations for the full
+  writeup.
 
 ## Phase 4: Beyond CP/M (exploratory)
 

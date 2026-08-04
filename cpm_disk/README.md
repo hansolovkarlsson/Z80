@@ -18,6 +18,7 @@ bin/z80 cpm_disk/mbasic.com
 bin/z80 cpm_disk/adventur.com
 bin/z80 cpm_disk/turbo.com
 bin/z80 cpm_disk/hanoi.com
+bin/z80 cpm_disk/queens.com
 ```
 
 Or boot a real CP/M shell instead of a single program — a genuine `A>`
@@ -82,6 +83,17 @@ tracked.
   build tool. First real program that needed more than a trivial amount
   of source to load — see `docs/TURBOPASCAL_REFERENCE.md`'s Known
   limitations for the FCB-reuse bug this surfaced and fixed in `cpm.c`.
+- `queens.com` + `queens.dat` — Francesco Sblendorio's Eight Queens
+  (GPLv2), another genuine third-party Turbo Pascal 3.01A program from
+  the same author. Unlike `hanoi.com`, this is the upstream project's
+  own prebuilt binary, not compiled by this project — its source
+  (`resources/queens/upstream/queens.pas`) hits a genuine Turbo Pascal
+  3.01A compiler resource limit (`Error 99: Compiler overflow`) that
+  this project's own memory map can't work around; see
+  `resources/queens/upstream/README.md` and
+  `docs/TURBOPASCAL_REFERENCE.md`'s Known limitations for the full
+  story. The binary itself runs correctly, including reading
+  `queens.dat`'s saved solutions (the `F)ound solutions` menu option).
 
 Regenerate the assembled ones (after any assembler/source change) with:
 
@@ -110,3 +122,7 @@ regenerating `turbo.com` above if needed, regenerate it with
 `resources/hanoi/derive.sh` (which runs the real `TURBO.COM` under this
 project's own emulator to compile `resources/hanoi/upstream/hanoi-p.pas`)
 and copy `resources/hanoi/hanoi.com` here.
+
+`queens.com`/`queens.dat` are copies of `resources/queens/upstream/`'s
+own prebuilt binary/data file, not built by this project — see
+`resources/queens/upstream/README.md` for why.

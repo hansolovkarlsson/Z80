@@ -367,6 +367,36 @@ Including Files).
   below): the real 12,750-byte `hanoi-p.pas` now loads as the full
   12,800 bytes (100 records) it should, compiles cleanly (492/492
   lines, 0 errors), and the compiled program runs correctly.
+- **A genuine, real Turbo Pascal 3.01A compiler limit, hit by a second
+  third-party program (`resources/queens/`) — not an emulator bug, and
+  not fixable within this project's own memory map.** Francesco
+  Sblendorio's Eight Queens (`queens.pas`, same author and style as
+  `hanoi-p.pas`) fails to compile through the real `TURBO.COM` with
+  `Error 99: Compiler overflow`, consistently partway through its
+  `introscreen` procedure — which draws its title banner via several
+  `write(...)` calls whose *argument list is the picture itself*: dozens
+  of tiny 2-6 character string literals as separate comma-separated
+  arguments, one call spanning 40-60+ arguments. Confirmed this is a
+  genuine workspace/memory limit rather than a fixed table size: giving
+  the compiler more free TPA (varying compile options, and
+  experimentally raising this project's own `BDOS_ENTRY` constant —
+  which controls what real software reads back as "top of memory," see
+  `CLAUDE.md`) consistently let it compile further into the file before
+  failing (line 302 → 350 → 429 → 437 as available memory increased) —
+  but even pushed to the safe practical ceiling in this project's own
+  64KB memory map (`BDOS_ENTRY` moved right up against `BIOS_BASE`,
+  leaving no further room without colliding with the real BIOS vector
+  table), it still only reached line 437 of 735. The real `queens.com`
+  the upstream project ships must have been compiled on a system with
+  meaningfully more free TPA than any realistic CP/M-80 64KB
+  configuration can offer — not something to keep chasing here.
+  `resources/queens/` therefore uses the upstream project's own prebuilt
+  `queens.com`/`queens.dat` rather than compiling from source (unlike
+  `resources/hanoi/`) — see `resources/queens/upstream/README.md`. The
+  prebuilt binary itself runs correctly under this emulator, which is
+  real validation of the runtime path (BDOS/BIOS, console I/O, and file
+  I/O reading `queens.dat`'s saved solutions) independent of the
+  compile-time limitation.
 
 ## Verified against this emulator
 
@@ -379,7 +409,12 @@ executing a program from the main menu. Also, a genuine third-party
 program from scratch: `resources/hanoi/upstream/hanoi-p.pas` (Francesco
 Sblendorio's Towers of Hanoi, GPLv2, unmodified) compiles cleanly (492
 lines, 0 errors) and the compiled `.COM` runs correctly end-to-end —
-real banner, menu, and board — see `resources/hanoi/derive.sh`. The
-much larger remainder of the
+real banner, menu, and board — see `resources/hanoi/derive.sh`. And a
+third: `resources/queens/upstream/queens.com` (Francesco Sblendorio's
+Eight Queens, GPLv2, the upstream project's own prebuilt binary — see
+the Known limitations entry above for why this one isn't compiled from
+source here) runs correctly too — real banner, board, piece rendering,
+and reading `queens.dat`'s saved solutions back (browsing them with
+`SPACE`/`ENTER`/`ESC`, real file I/O). The much larger remainder of the
 language above is documented from the manual but not yet individually
 exercised here.
