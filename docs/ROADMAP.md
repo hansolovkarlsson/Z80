@@ -744,12 +744,36 @@ there surfaced and fixed several real dialect gaps, documented below.
   I/O section and `docs/CPM_REFERENCE.md`'s Implementation status for
   the full byte-level writeup. Confirmed fixed via Turbo Pascal, now
   reporting a plausible `8160k`. dBASE II's specific `Disk is full`
-  message turned out to have a second, different, still-open cause
-  (it reads/writes a file's FCB again after already closing it, without
-  reopening — real CP/M's `F_CLOSE` wouldn't allow that either, so
-  whether this is a genuine dBASE bug or a real BDOS behavior this
-  project doesn't replicate is unresolved) — the DPB fix is real and
-  independently confirmed regardless.
+  message turned out to have a second, different cause, closed out
+  separately below.
+- [x] **`find_or_reopen_file()`, closing out dBASE II's `Disk is full` /
+  `End of file found unexpectedly`.** Both messages traced (via a real
+  Ashton-Tate dBASE II 2.43 binary, piped input driven through a real
+  pty with paced keystrokes so its console-burst-detection logic didn't
+  swallow the whole script silently — a plain redirected file delivers
+  bytes with none of the gaps a real serial terminal would have) to the
+  exact same root cause: `CREATE TEST` closes `TEST.DBF`'s FCB once the
+  record structure is defined; `USE TEST` and later `QUIT` both then
+  read that file back via random I/O (`F_READRAND`/`F_WRITERAND`)
+  *through the same FCB, without ever reopening it*. This project's
+  `open_files[]` table required a live entry for random I/O the same
+  way sequential I/O does, so both calls failed with error 9 ("unopened
+  FCB") — dBASE surfaced that as `End of file found unexpectedly` on
+  `USE` and `Disk is full` on `QUIT`, neither of which had anything to
+  do with disk space. Real CP/M's random I/O doesn't need a live
+  "handle" the way this project's table does — it works directly off
+  the FCB's own `EX`/`S1`/`S2` fields, which a Close doesn't erase — so
+  dBASE reusing a closed FCB this way is relying on real (if informally
+  documented) CP/M behavior, not a dBASE bug. Fixed with
+  `find_or_reopen_file()` in `cpm.c`, the same real-hardware reasoning
+  `alloc_open_file()` already applies one paragraph up for sequential
+  I/O's FCB-reuse case. Both messages are gone with the fix in place;
+  `asm/examples/file_test.asm` check 6 is the permanent regression test
+  (dBASE itself isn't committed to this repo, unlike this project's other
+  validated third-party software, given its much more restrictive
+  "unpublished... proprietary" license text). See `CLAUDE.md`'s File I/O
+  section and `docs/CPM_REFERENCE.md`'s Implementation status for the
+  full writeup.
 - [x] **Real-world validation: BDS C, and the first program tested here
   that needed command-line arguments** (`resources/bdsc/`) — Leor
   Zolman's BDS C v1.60, a real 8080/Z80 C compiler and linker for

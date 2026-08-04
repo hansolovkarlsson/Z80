@@ -311,6 +311,37 @@ static OpenFile *alloc_open_file(uint16_t fcb_addr) {
     return NULL;
 }
 
+// Real CP/M's random-access functions (33/34/40) work directly off the
+// FCB's own EX/S1/S2 fields, which survive a Close - BDOS has no separate
+// "handle" that a Close invalidates the way this project's open_files[]
+// table does, so a program that calls F_CLOSE and then later reuses the
+// same FCB for random I/O without an intervening F_OPEN is relying on
+// real, if informally documented, CP/M behavior, not committing a bug.
+// (A real Ashton-Tate dBASE II binary does exactly this on QUIT - reading
+// back a just-written .DBF's header via random I/O through an FCB it had
+// already closed during CREATE - and printed "Disk is full" here before
+// this existed, since F_READRAND/F_WRITERAND on a not-currently-open FCB
+// used to fail outright with error 9. Mirrors the same real-hardware
+// reasoning alloc_open_file()'s own comment above already documents for
+// the sequential-I/O FCB-reuse case.) Falls back to a plain
+// F_OPEN-equivalent open-by-filename when no open_files[] entry already
+// exists.
+static OpenFile *find_or_reopen_file(Z80 *cpu, uint16_t fcb_addr) {
+    OpenFile *of = find_open_file(fcb_addr);
+    if (of) return of;
+    char path[300];
+    build_host_path(cpu, fcb_addr + 1, path, sizeof(path));
+    FILE *fp = fopen(path, "rb+");
+    if (!fp) return NULL;
+    of = alloc_open_file(fcb_addr);
+    if (!of) {
+        fclose(fp);
+        return NULL;
+    }
+    of->fp = fp;
+    return of;
+}
+
 static uint16_t dma_addr = 0x0080; // set via F_DMAOFF (26); CP/M default
 
 // Reads the FCB's EX/CR sequential-position fields as one linear record
@@ -904,7 +935,7 @@ void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
             // zero-fill, which a host filesystem gives us for free when
             // writing past EOF via fseek, so it's handled identically to
             // plain random write here).
-            OpenFile *of = find_open_file(cpu->de);
+            OpenFile *of = find_or_reopen_file(cpu, cpu->de);
             if (!of) {
                 cpu->a = 9; // unopened FCB
             } else {

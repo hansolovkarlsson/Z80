@@ -324,7 +324,13 @@ uppercased, trailing spaces trimmed). Concretely, this means:
   for them. Random I/O (`F_READRAND`/`F_WRITERAND`/`F_WRITEZF`) uses `R0`-`R2`
   as a 24-bit linear record number directly; `F_WRITEZF`'s "zero-fill
   skipped blocks" falls out for free from writing past EOF via `fseek`, so
-  it's handled identically to plain random write.
+  it's handled identically to plain random write. These three go through
+  `find_or_reopen_file()` rather than requiring an `open_files[]` entry to
+  already exist: real CP/M's random I/O works directly off the FCB's own
+  `EX`/`S1`/`S2` fields, which an `F_CLOSE` doesn't erase, so a program
+  reusing an already-closed FCB for random access without an intervening
+  `F_OPEN` is relying on real (if informally documented) CP/M behavior —
+  see the dBASE entry below.
 - The open-file table (`open_files[]` in `cpm.c`) is keyed by the FCB's
   own memory address, not a separate handle — matching how CP/M programs
   themselves have no notion of a file descriptor beyond the FCB they
@@ -340,15 +346,11 @@ uppercased, trailing spaces trimmed). Concretely, this means:
   reports a plausible `8160k`. dBASE II (a real Ashton-Tate 2.43 binary,
   not yet otherwise documented in this project) printed `Disk is full`
   on `QUIT` for a database it had just written correctly, which looked
-  like the same symptom and prompted this fix — but turned out to have
-  a *different*, still-open root cause (dBASE reads/writes a file's FCB
-  again after already closing it, without reopening, which real CP/M's
-  `F_CLOSE` also wouldn't allow; unclear yet whether that's a genuine
-  dBASE bug or a real BDOS behavior this project doesn't replicate), so
-  this specific message is unaffected by the DPB fix even though the fix
-  itself is real and independently confirmed via Turbo Pascal. Built
-  with a real, internally-consistent DPB describing a plausible ~8MB
-  fixed disk — values
+  like the same symptom and prompted this fix — but turned out to have a
+  *different* root cause, since traced and fixed: `find_or_reopen_file()`
+  (see the Random I/O bullet above). Built with a real,
+  internally-consistent DPB describing a plausible ~8MB fixed disk —
+  values
   computed per the actual formulas in the CP/M 2.2 Alteration Guide
   (ch. 6): 4096-byte blocks (`BSH`=5, `BLM`=31), `DSM`=2039 (2040 blocks
   × 4096 = 8,355,840 bytes), `DRM`=1023 (1024 directory entries, so the
@@ -363,7 +365,9 @@ uppercased, trailing spaces trimmed). Concretely, this means:
 
 `asm/examples/file_test.asm` covers `F_MAKE`/`F_WRITE`/`F_CLOSE`/
 `F_RENAME`/`F_OPEN`/`F_READ`/`F_SFIRST`/`F_DELETE` end to end (create,
-rename, read back, wildcard-search, delete, confirm gone).
+rename, read back, wildcard-search, delete, confirm gone), plus
+`F_WRITERAND`/`F_READRAND` on a closed FCB with no intervening `F_OPEN`
+(check 6 — the dBASE regression case above).
 
 What this design can't do: express CP/M's actual drive-switching or
 per-user file areas (two programs on "different drives" see the same

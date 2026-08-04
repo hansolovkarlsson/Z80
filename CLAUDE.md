@@ -266,7 +266,24 @@ happened to open that address first (found via a real Turbo Pascal
 compile that mysteriously always stopped at the same byte count no
 matter the source file's real size or content — traced to `TURBO.MSG`'s
 own trailing bytes, still open, shadowing every later open at that FCB
-address).
+address). Random I/O (`F_READRAND`/`F_WRITERAND`/`F_WRITEZF`, functions
+33/34/40) goes through `find_or_reopen_file()` rather than
+`find_open_file()` — real CP/M's random-access functions work directly
+off the FCB's own `EX`/`S1`/`S2` fields, which a `F_CLOSE` doesn't erase,
+so a program reusing an already-closed FCB for random I/O without an
+intervening `F_OPEN` is relying on real (if informally documented)
+CP/M behavior, not committing a bug; `find_or_reopen_file()` transparently
+opens the file by the FCB's own filename when no `open_files[]` entry
+already exists, the same real-hardware reasoning `alloc_open_file()`
+already applies to the sequential-I/O FCB-reuse case above. Found via a
+real Ashton-Tate dBASE II binary: `CREATE`ing then `USE`ing a database
+printed `End of file found unexpectedly`, and `QUIT`ing it afterward
+printed `Disk is full` — both traced to the exact same cause (dBASE
+re-reads a just-written `.DBF`'s header via random I/O through an FCB it
+had already closed during `CREATE`, without reopening), not two separate
+bugs, and not a disk-space or DPB issue at all despite dBASE's own
+wording; both messages are gone with `find_or_reopen_file()` in place.
+`asm/examples/file_test.asm`'s check 6 is the regression test.
 
 **A fake Disk Parameter Block** (`DPH_BASE`/`DPB_BASE`/`DIRBUF_BASE`/
 `ALV_BASE` in `cpm.c`, written once by `cpm_bios_init()`) backs BDOS
