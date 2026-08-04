@@ -424,9 +424,22 @@ hands that pty to a `VteTerminal` widget, which does the actual
 VT100/ANSI interpretation — `z80.c`/`cpm.c`/`emu/src/main.c` needed zero
 changes for this, since `console_emit()`/`console_read_char()` already
 just talk to stdin/stdout, and a pty's slave side *is* stdin/stdout from
-the child's point of view. Currently blocked by an intermittent crash
-inside GLib's own `GType` registration (confirmed via real macOS crash
-reports as a Homebrew GTK4/glib bottle vs. OS-version ABI mismatch, not
-a bug in this project's own code) — see `gtk/README.md` for the full
-diagnostic writeup and `docs/ROADMAP.md`'s Phase 4 for status.
+the child's point of view. `main()` calls `lower_fd_limit()` before
+touching GTK/VTE at all, capping `RLIMIT_NOFILE` down to 4096 — this
+shell's default open-file limit is over a million, and VTE's
+`vte_terminal_spawn_async()` closes every inherited fd below that
+ceiling in the child before `exec` (glib's `fdwalk()` fallback, since
+macOS has no `/proc/self/fd`), which overflowed the spawn thread's stack
+at that size (confirmed via a real crash report:
+`vte::base::SpawnContext::exec` → `fdwalk` → `__chkstk_darwin`,
+"Thread stack size exceeded"). Still blocked, separately, by an
+intermittent (~2-3% of launches, matching Apple's own reported rate)
+crash inside `libsystem_malloc`'s new "xzone" allocator during
+`posix_spawn()` of the large `bin/z80-gtk` binary itself, before any of
+this project's own code runs — a confirmed macOS 26 OS bug (see Apple
+Developer Forums thread 821081, "Sporadic crash in
+xzm_main_malloc_zone_init_range_groups when spawning large binaries"),
+not a Homebrew bottle mismatch as first suspected and not fixable from
+application code — see `gtk/README.md` for the full diagnostic writeup
+and `docs/ROADMAP.md`'s Phase 4 for status.
 

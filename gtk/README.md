@@ -30,31 +30,48 @@ Every argument is passed straight through to `bin/z80` (located as a
 sibling of `bin/z80-gtk` via `_NSGetExecutablePath()`, not trusted from
 `argv[0]`), exactly as if it had been typed directly at a shell.
 
-## Status: work in progress, currently blocked
+## Status: work in progress, blocked on a macOS 26 OS bug
 
-Builds cleanly and launches, but crashes **intermittently** on this
-development machine (macOS 26.5.2) before any of this file's own code
-runs — every crash so far happens inside `gtk_application_new()`, deep in
-GLib's own `GType` registration and memory allocator
-(`g_malloc0`/`mfm_alloc`/`_xzm_xzone_malloc_freelist_outlined`), with
-`EXC_BREAKPOINT`/`SIGTRAP` on one run and `EXC_BAD_ACCESS` ("possible
-pointer authentication failure") on another. That's a strong signal of
-an ABI/build mismatch between Homebrew's precompiled GTK4/glib bottles
-and this specific (very recent) macOS version, not a bug in this file —
-confirmed via the actual macOS crash reports
-(`~/Library/Logs/DiagnosticReports/z80-gtk-*.ips`), not guessed. The
-standard `MallocNanoZone=0` mitigation for this class of crash didn't
-fix it (just changed which way it crashes).
+Builds cleanly, and terminal rendering itself is now confirmed working —
+running `bin/z80-gtk emu/zexall/ZEXALL-main/zexall.com` shows the real
+`VteTerminal` widget with `bin/z80`'s own output rendering correctly. Two
+separate crash causes were found along the way, one fixed in this
+project's own code, one that isn't fixable here at all:
 
-Because of this, **terminal rendering itself is still unconfirmed** —
-the one run that didn't crash showed an empty window (no `bin/z80`
-output visible), which hasn't yet been root-caused since the crash has
-made this hard to iterate on reliably. Two independent things need
-verifying once the environment issue is sorted: that the crash is really
-gone, and that real CP/M program output actually appears in the
-`VteTerminal` widget as expected.
+1. **Fixed**: `vte_terminal_spawn_async()` closes every inherited file
+   descriptor below the process's open-file limit in the child before
+   `exec` (glib's `fdwalk()` fallback — macOS has no `/proc/self/fd` to
+   just enumerate the ones actually open). This shell's default
+   `ulimit -n` is over a million, and walking that many overflowed the
+   spawn thread's stack — confirmed via a real crash report showing
+   `EXC_BAD_ACCESS`/"Thread stack size exceeded" directly inside
+   `vte::base::SpawnContext::exec` → `fdwalk` → `__chkstk_darwin`.
+   `main()` now calls `lower_fd_limit()` (caps `RLIMIT_NOFILE` to 4096)
+   before touching GTK/VTE at all, which resolved this one.
 
-Next steps, not yet attempted: rebuilding `glib`/`gtk4`/`vte3` from
-source via Homebrew (`brew reinstall --build-from-source glib gtk4
-vte3`) to rule out a bottled-binary mismatch, or retrying once Homebrew
-ships updated bottles for this macOS version.
+2. **Not fixable here**: a separate, intermittent (~2-3% of launches)
+   crash inside `libsystem_malloc`'s new "xzone" memory allocator during
+   `posix_spawn()` of the `bin/z80-gtk` binary itself — happening before
+   any of this project's own code, or even GTK/VTE's, runs at all. First
+   suspected as a Homebrew GTK4/glib bottle vs. OS-version ABI mismatch,
+   but that theory doesn't hold: the crash occurs at process-launch time,
+   across several different internal call paths
+   (`gtk_application_new`/`libintl_dcigettext`/`vte`'s own `g_strdupv`
+   all crash inside the same allocator symbol,
+   `_xzm_xzone_malloc_freelist_outlined`), and matches a bug Apple's own
+   engineers have confirmed on their Developer Forums: [Sporadic crash in
+   xzm_main_malloc_zone_init_range_groups when spawning large binaries
+   (macOS 26.3.1)](https://developer.apple.com/forums/thread/821081) —
+   same "~2-3% of spawns," same allocator, same "before the app's own
+   `main()` runs" symptom, reported against large Mach-O binaries in
+   general, not GTK/VTE specifically. `bin/z80-gtk` links a lot of large
+   dylibs (GTK4, VTE, Pango, Cairo, HarfBuzz, GLib...), which plausibly
+   makes it more likely to trip this than a small binary like plain
+   `bin/z80` ever would. The standard `MallocNanoZone=0` mitigation
+   doesn't help (it targets a different, older malloc-zone crash class).
+
+Practical upshot: `bin/z80-gtk` now works when it launches, but still
+occasionally fails to launch at all, for a reason outside this project's
+control. If a launch crashes, just try again. No further action makes
+sense here until Apple ships a macOS update fixing the allocator bug
+linked above.

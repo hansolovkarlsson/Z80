@@ -820,14 +820,19 @@ Aspirational, not yet scoped:
   `emu/src/main.c` needed zero changes. Kept as a separate opt-in binary
   (`bin/z80-gtk`, built via `make gtk`, never part of `make`/`make
   test`) specifically so the default build stays free of the GTK4+VTE
-  dependency. **Blocked**: crashes intermittently before any of this
-  project's own code runs, inside GLib's own `GType` registration/
-  allocator - confirmed via real macOS crash reports as an ABI/build
-  mismatch between Homebrew's precompiled GTK4/glib bottles and this
-  specific (very recent) macOS version, not a bug in `main.c`. See
-  `gtk/README.md` for the full diagnostic writeup and next steps
-  (rebuilding the Homebrew formulas from source is the leading
-  candidate, not yet attempted).
+  dependency. **Working, but still intermittently blocked**: terminal
+  rendering itself is now confirmed correct (real `bin/z80` output shows
+  up in the `VteTerminal` widget). One real crash cause found and fixed
+  in `main.c` (`lower_fd_limit()`, working around a `fdwalk()` stack
+  overflow at this shell's very high default file-descriptor limit). A
+  second, separate crash - inside `libsystem_malloc`'s new "xzone"
+  allocator during `posix_spawn()` of the large `bin/z80-gtk` binary,
+  before any of this project's own code runs - turned out not to be a
+  Homebrew bottle mismatch as first suspected, but a confirmed macOS 26
+  OS bug matching Apple's own Developer Forums report (~2-3% of process
+  launches, same allocator, same symptom - see `gtk/README.md` for the
+  citation). Not fixable from application code; just retry the launch
+  when it happens, and revisit if/when Apple ships a fix.
 - **A future GameBoy emulator** (discussed, not started) - the Sharp
   LR35902 CPU is Z80-*derived*, not identical (no `IX`/`IY`, no
   alternate register set, no block instructions; it adds its own

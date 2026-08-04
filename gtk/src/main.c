@@ -17,9 +17,31 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/resource.h>
 #include <mach-o/dyld.h>
 #include <gtk/gtk.h>
 #include <vte/vte.h>
+
+// This shell's default open-file soft limit (`ulimit -n`) is over a
+// million on this machine. VTE's vte_terminal_spawn_async() closes every
+// inherited file descriptor below that limit in the child before exec
+// (glib's fdwalk() fallback, since macOS has no /proc/self/fd to just
+// list the ones that are actually open) - with a million-plus as the
+// ceiling, that walk overflows the spawn thread's stack. Confirmed via a
+// real crash report (~/Library/Logs/DiagnosticReports/z80-gtk-*.ips):
+// EXC_BAD_ACCESS, "Thread stack size exceeded", straight in
+// vte::base::SpawnContext::exec -> fdwalk -> __chkstk_darwin. Capping
+// RLIMIT_NOFILE down here, before any GTK/VTE call, keeps that walk
+// bounded - bin/z80 itself never needs more than a handful of fds.
+static void lower_fd_limit(void) {
+    struct rlimit rl;
+    if (getrlimit(RLIMIT_NOFILE, &rl) != 0) return;
+    const rlim_t cap = 4096;
+    if (rl.rlim_cur > cap) {
+        rl.rlim_cur = cap;
+        setrlimit(RLIMIT_NOFILE, &rl);
+    }
+}
 
 // Locates the real bin/z80 binary as a sibling of this one (both build
 // into bin/), using _NSGetExecutablePath() (the standard macOS way to
@@ -106,6 +128,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
 }
 
 int main(int argc, char *argv[]) {
+    lower_fd_limit();
+
     if (argc < 2 || strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
         printf("Usage:\n");
         printf("  %s <program.com> [args...]   Run a CP/M .com file in a GTK window\n", argv[0]);
