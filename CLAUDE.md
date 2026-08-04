@@ -415,3 +415,18 @@ two are now aligned, since `IN`/`OUT`, `IM`, `RETI`/`RETN`, `LD A,I` etc.
 are implemented on the emulator side too, but that wasn't always true and
 isn't a given for any future gap).
 
+## GTK terminal (`gtk/src/`, work in progress)
+
+`bin/z80-gtk` (built via the opt-in `make gtk`, never part of
+`make`/`make test`) is a thin GTK4 launcher, not a terminal emulator of
+its own: it spawns the real, unmodified `bin/z80` attached to a pty and
+hands that pty to a `VteTerminal` widget, which does the actual
+VT100/ANSI interpretation — `z80.c`/`cpm.c`/`emu/src/main.c` needed zero
+changes for this, since `console_emit()`/`console_read_char()` already
+just talk to stdin/stdout, and a pty's slave side *is* stdin/stdout from
+the child's point of view. Currently blocked by an intermittent crash
+inside GLib's own `GType` registration (confirmed via real macOS crash
+reports as a Homebrew GTK4/glib bottle vs. OS-version ABI mismatch, not
+a bug in this project's own code) — see `gtk/README.md` for the full
+diagnostic writeup and `docs/ROADMAP.md`'s Phase 4 for status.
+

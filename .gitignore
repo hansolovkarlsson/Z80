@@ -2,6 +2,7 @@ bin/
 emu/src/*.o
 asm/src/*.o
 disasm/src/*.o
+gtk/src/*.o
 .claude/
 cpm_disk/
 !/cpm_disk/

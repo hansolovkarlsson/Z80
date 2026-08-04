@@ -806,16 +806,42 @@ there surfaced and fixed several real dialect gaps, documented below.
 
 Aspirational, not yet scoped:
 
-- A GTK-based UI so this becomes a full computer emulator, not just a CLI
-  test harness — a real terminal widget of its own would mean not
-  depending on the host terminal at all (useful for a standalone GUI
-  app, or capturing/replaying screen state programmatically), though
-  note this is no longer motivated by a VT100 gap the way an earlier
-  version of this entry claimed: the current bare stdout passthrough
-  already lets any real host terminal correctly interpret standard
-  cursor-positioning/color escape codes on its own (see the corrected
-  SARGON entry above) — what that investigation actually needed was a
-  much smaller CP437-to-Unicode translation, already done.
+- **A GTK-based UI, in progress but currently blocked** (`gtk/`) — a real
+  standalone app, not depending on the host terminal, useful for handing
+  someone a double-clickable program rather than a CLI incantation. No
+  longer motivated by a VT100 gap the way an earlier version of this
+  entry claimed (the bare stdout passthrough already lets any real host
+  terminal correctly interpret cursor-positioning/color escape codes on
+  its own - see the corrected SARGON entry above). Architecture decided
+  and implemented: `gtk/src/main.c` is a *thin launcher*, not a terminal
+  emulator of its own — it spawns the real, completely unmodified
+  `bin/z80` attached to a pty and hands that pty to a `VteTerminal`
+  widget (the same widget GNOME Terminal uses), so `z80.c`/`cpm.c`/
+  `emu/src/main.c` needed zero changes. Kept as a separate opt-in binary
+  (`bin/z80-gtk`, built via `make gtk`, never part of `make`/`make
+  test`) specifically so the default build stays free of the GTK4+VTE
+  dependency. **Blocked**: crashes intermittently before any of this
+  project's own code runs, inside GLib's own `GType` registration/
+  allocator - confirmed via real macOS crash reports as an ABI/build
+  mismatch between Homebrew's precompiled GTK4/glib bottles and this
+  specific (very recent) macOS version, not a bug in `main.c`. See
+  `gtk/README.md` for the full diagnostic writeup and next steps
+  (rebuilding the Homebrew formulas from source is the leading
+  candidate, not yet attempted).
+- **A future GameBoy emulator** (discussed, not started) - the Sharp
+  LR35902 CPU is Z80-*derived*, not identical (no `IX`/`IY`, no
+  alternate register set, no block instructions; it adds its own
+  opcodes), so "sharing the Z80 code" means the table-driven dispatch/
+  ALU *pattern* in `z80.c`/`alu.c` is reusable, not a drop-in reuse of
+  the opcode table as-is. `cpm.c` (BDOS/BIOS) is already 100% CP/M-
+  specific and wouldn't apply at all - that boundary already exists.
+  Plan, deferred until this actually starts rather than guessed now:
+  extract `z80.c`/`alu.c` into a shared location (e.g. `core/`),
+  parameterize the opcode table for the LR35902's real differences, and
+  build a new `gameboy/` sibling to `emu/`/`asm/`/`disasm/`/`gtk/` with
+  its own GTK+Cairo pixel-framebuffer window (a GameBoy screen is
+  graphics, not text, so this would *not* reuse the VTE-based approach
+  above).
 - A custom ROM/OS on top of it — open design questions include a stack VM
   and whether Logo-style prefix notation could combine with a stack machine
   model.
