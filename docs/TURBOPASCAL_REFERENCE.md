@@ -296,36 +296,37 @@ Including Files).
   emulator: "IBM PC systems come with arrows and dedicated function keys
   already installed" (i.e., only the IBM PC version does). Use the
   WordStar diamond above.
-- **`Ctrl-H`/Backspace/Delete moves the cursor left without erasing —
-  root-caused, and it's working as designed, not a bug.** By default,
-  Turbo Pascal binds byte `0x08` (`Ctrl-H`, and whatever a `Backspace`-
-  labeled key sends on many real terminals) to the *same* function as
-  `Ctrl-S` — non-destructive character-left — reserving true delete for
-  the distinct `<DEL>`/`<RUBOUT>` byte (`0x7F`), confirmed straight from
-  the manual's own wording ("The `<BACKSPACE>` key which normally
-  backspaces non-destructively like `Ctrl-S` may be installed to have
-  the same effect [delete] if... your keyboard lacks a `<DELETE>` key").
-  This project's own `console_read_char()` (`cpm.c`) always translates a
-  modern keyboard's Delete/Backspace key (`0x7F`) into `0x08` before any
-  program sees it — a real fix for Tasty Basic, which only recognizes
-  `0x08` and ignores `0x7F` entirely (confirmed from its own source,
-  `cpmio.asm`) — but that means Turbo Pascal, which wants the two bytes
-  to mean two genuinely different things, never gets the raw `0x7F` it
-  needs for delete; `0x08` always lands on its non-destructive-left
-  binding instead. A real per-program conflict, not something a single
-  shared host-level translation can resolve both ways at once.
-  **Practical workaround** (uses only already-working commands):
-  `Ctrl-S` then `Ctrl-G` — move left, then delete the character under
-  the cursor — has exactly the same net effect as a working backspace.
-  A real single-key fix exists too: Turbo Pascal's own `TINST.COM`
-  supports fully re-binding every editor command (`[C]ommand
-  installation` on its main menu) — rebinding "Delete left character"
-  (or its "Alternative" slot) onto `0x08` would give backspace a single
-  key again, at the cost of walking through all 45 commands from
-  scratch (not just the one binding) since Command installation doesn't
-  offer a "keep everything else as-is" shortcut. Not done in this
-  project's own `resources/turbopascal/derive.sh` yet — a candidate for
-  later if the two-key workaround proves annoying enough in practice.
+- **`Ctrl-H`/Backspace/Delete used to move the cursor left without
+  erasing — root-caused, and now fixed with a single-key rebind.** By
+  default, Turbo Pascal binds byte `0x08` (`Ctrl-H`, and whatever a
+  `Backspace`-labeled key sends on many real terminals) to the *same*
+  function as `Ctrl-S` — non-destructive character-left — reserving true
+  delete for the distinct `<DEL>`/`<RUBOUT>` byte (`0x7F`), confirmed
+  straight from the manual's own wording ("The `<BACKSPACE>` key which
+  normally backspaces non-destructively like `Ctrl-S` may be installed
+  to have the same effect [delete] if... your keyboard lacks a
+  `<DELETE>` key"). This project's own `console_read_char()` (`cpm.c`)
+  always translates a modern keyboard's Delete/Backspace key (`0x7F`)
+  into `0x08` before any program sees it — a real fix for Tasty Basic,
+  which only recognizes `0x08` and ignores `0x7F` entirely (confirmed
+  from its own source, `cpmio.asm`) — so Turbo Pascal, out of the box,
+  never got the raw `0x7F` it wanted for delete; `0x08` always landed on
+  its non-destructive-left binding instead.
+  **Fixed** by using Turbo Pascal's own reconfiguration tool the way real
+  users would: `resources/turbopascal/derive.sh` now also runs
+  `TINST.COM`'s `[C]ommand installation` (a *second*, separate `TINST`
+  invocation layered on top of the ANSI Screen-installed `TURBO.COM` —
+  entering `Q` at `TINST`'s own top-level menu saves and exits
+  immediately, so Screen and Command installation can't be answered in
+  one continuous session) and binds item 27, "Delete left character", to
+  `0x08` — the same rebind a real Turbo Pascal user with this exact
+  keyboard conflict would have made by hand. All other 44 commands are
+  left on their defaults (a bare `<RETURN>` at each prompt); Command
+  installation offers no partial-edit shortcut, so answering all 45 is
+  the only way to change one. Verified directly: typing `ABCD` then two
+  `Ctrl-H` in the editor and saving now produces `AB`, not `ABCD` —
+  genuine destructive delete. The two-key `Ctrl-S`-then-`Ctrl-G`
+  (move left, then delete-under-cursor) still works too, if ever needed.
 - **`Ctrl-S`/`Ctrl-Q` appearing to do nothing was a real, separate bug,
   now fixed** — classic Unix software flow control (`IXON`): the host
   terminal driver intercepts these as XOFF/XON (pause/resume output)
@@ -342,8 +343,9 @@ Including Files).
 
 Actually run through `bin/z80`, not just documented: booting to the real
 banner and main menu, `TINST.COM`'s terminal reconfiguration (Microbee →
-ANSI), entering the editor and typing text (echo, `Insert` status,
-line/column tracking all correct), `Ctrl-K D` to exit the editor, and
-`R)un` compiling and executing a program from the main menu. The much
-larger remainder of the language above is documented from the manual but
-not yet individually exercised here.
+ANSI) and command reconfiguration (`Ctrl-H` → real delete), entering the
+editor and typing text (echo, `Insert` status, line/column tracking all
+correct), `Ctrl-K D` to exit the editor, and `R)un` compiling and
+executing a program from the main menu. The much larger remainder of the
+language above is documented from the manual but not yet individually
+exercised here.

@@ -641,8 +641,8 @@ there surfaced and fixed several real dialect gaps, documented below.
     have shown the difference between "byte never arrived" and "byte
     arrived but was ignored").
   - **`Ctrl-H`/Backspace/Delete moving the cursor left without erasing —
-    root-caused, and it's Turbo Pascal working as designed, not a bug.**
-    By default it binds `0x08` (`Ctrl-H`, and what many real terminals'
+    root-caused, and fixed with a single-key TINST rebind.** By default
+    Turbo Pascal binds `0x08` (`Ctrl-H`, and what many real terminals'
     `Backspace` key sends) to the *same* function as `Ctrl-S` —
     non-destructive left — reserving true delete for the distinct
     `<DEL>` byte (`0x7F`), confirmed directly from the manual's own
@@ -651,18 +651,24 @@ there surfaced and fixed several real dialect gaps, documented below.
     `console_read_char()` always translates a modern Delete key's
     `0x7F` into `0x08` — a real, necessary fix for Tasty Basic, which
     only recognizes `0x08` and ignores `0x7F` entirely (confirmed from
-    its own source) — so Turbo Pascal never gets the raw byte it wants
-    for delete; a genuine per-program conflict a single shared
-    host-level translation can't resolve both ways at once. Workaround
-    needing no reconfiguration: `Ctrl-S` then `Ctrl-G` (move left, then
-    delete-under-cursor) has the exact same effect as a working
-    backspace. A real single-key fix exists too — Turbo Pascal's own
-    `TINST.COM` supports fully re-binding every editor command — but
-    Command installation redefines all 45 from scratch with no "keep
-    everything else" shortcut, so it's left as a candidate for later
-    rather than done in `resources/turbopascal/derive.sh` now. See
+    its own source) — so Turbo Pascal, unmodified, never got the raw
+    byte it wanted for delete.
+    **Fixed** by having `resources/turbopascal/derive.sh` run
+    `TINST.COM`'s `[C]ommand installation` — a *second*, separate
+    `TINST` invocation layered onto the already-ANSI-configured
+    `TURBO.COM`, since entering `Q` at TINST's own top-level menu saves
+    and exits immediately (empirically confirmed: a chained
+    single-session Screen-then-Command attempt silently produced a
+    Screen-only result, since `TINST` had already exited by the time the
+    `C` selection was sent) — and binding item 27, "Delete left
+    character", to `0x08`, leaving every other one of the 45 commands on
+    its default (a bare `<RETURN>` at each prompt, since Command
+    installation offers no partial-edit shortcut). Verified directly:
+    typing `ABCD` then two `Ctrl-H` in the editor and saving now produces
+    `AB`. The two-key `Ctrl-S`-then-`Ctrl-G` workaround (move left, then
+    delete-under-cursor) still works too. See
     `docs/TURBOPASCAL_REFERENCE.md`'s Known limitations for the full
-    writeup of both.
+    writeup of both this and the `IXON` fix above.
 
 ## Phase 4: Beyond CP/M (exploratory)
 
