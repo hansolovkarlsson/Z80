@@ -5,7 +5,7 @@
 
 // Direct unit tests for cart.c's MBC1/MBC3/MBC5 banking logic, grounded
 // against pandocs' MBC1.md/MBC3.md/MBC5.md addressing diagrams (fetched
-// during Phase 2 - see docs/GAMEBOY_ROADMAP.md). None of Blargg's
+// during Phase 2 - see gameboy/docs/GAMEBOY_ROADMAP.md). None of Blargg's
 // cpu_instrs ROMs use banking at all (they're all plain 32KB MBC-less),
 // so this is the only real coverage this banking code has - the CP/M
 // side's "every fix gets a permanent, software-independent regression

@@ -29,7 +29,7 @@ void gb_alu_add_hl(GBCpu *cpu, uint16_t val);
 // Shared by ADD SP,e8 and LD HL,SP+e8 - both compute the exact same
 // result and flags from SP and a signed 8-bit immediate, differing only
 // in which register receives the result (see opcodes 0xe8/0xf8 in
-// docs/GAMEBOY_ROADMAP.md's grounding notes).
+// gameboy/docs/GAMEBOY_ROADMAP.md's grounding notes).
 uint16_t gb_alu_add_sp_e8(GBCpu *cpu, int8_t e8);
 
 void gb_alu_daa(GBCpu *cpu);

@@ -9,7 +9,7 @@ struct GBCpu;
 // (0xFF10-0xFF26 plus Wave RAM at 0xFF30-0xFF3F, including the real,
 // unconnected 0xFF27-0xFF2F gap - see mmu.c). Grounded against pandocs'
 // Audio.md/Audio_Registers.md/Audio_details.md (fetched during this
-// phase - see docs/GAMEBOY_ROADMAP.md's Phase 5 status for exactly
+// phase - see gameboy/docs/GAMEBOY_ROADMAP.md's Phase 5 status for exactly
 // what's implemented vs. deliberately deferred): the DIV-APU frame
 // sequencer (512 Hz, tied to DIV bit 4's falling edge - the same real-
 // hardware-counter approach timer.c already uses for DIV/TIMA, not a

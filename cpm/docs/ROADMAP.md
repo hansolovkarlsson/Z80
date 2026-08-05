@@ -1017,7 +1017,7 @@ Aspirational, not yet scoped:
   citation). Not fixable from application code; just retry the launch
   when it happens, and revisit if/when Apple ships a fix.
 - **A Game Boy emulator - now underway** (`gameboy/`) - see
-  `docs/GAMEBOY_ROADMAP.md` for the full phase plan, CPU-difference
+  `gameboy/docs/GAMEBOY_ROADMAP.md` for the full phase plan, CPU-difference
   rationale, and directory layout (`gameboy/src/`, `gameboy/roms/`,
   `gameboy/test_roms/`). Superseded the earlier "extract a shared
   `core/`" idea sketched here in favor of a standalone

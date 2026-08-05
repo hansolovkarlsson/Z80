@@ -1,12 +1,12 @@
 # Game Boy emulator - directory layout
 
-See `docs/GAMEBOY_ROADMAP.md` for project status and phases. This file
+See `gameboy/docs/GAMEBOY_ROADMAP.md` for project status and phases. This file
 just covers the two ROM directories and why they're treated differently.
 
 - `src/` - the emulator source itself, completely separate from
   `cpm/emu/src/` (the Z80/CP-M emulator elsewhere in this repo, kept
   under `cpm/` - see the top-level `README.md`/`CLAUDE.md` for that
-  split). See `docs/GAMEBOY_ROADMAP.md` for why this isn't sharing code
+  split). See `gameboy/docs/GAMEBOY_ROADMAP.md` for why this isn't sharing code
   with the Z80 core, at least not yet.
 
 - `test_roms/` - open-source correctness test suites (Blargg's

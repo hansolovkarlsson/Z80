@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-// See docs/GAMEBOY_ROADMAP.md's "Architecture decision" section for why
+// See gameboy/docs/GAMEBOY_ROADMAP.md's "Architecture decision" section for why
 // this is a standalone core rather than sharing code/structs with
 // cpm/emu/src/z80.h - the two CPUs are related but not identical, and this
 // struct reflects the SM83's own real register file: no IX/IY, no

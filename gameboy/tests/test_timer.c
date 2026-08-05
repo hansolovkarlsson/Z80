@@ -6,7 +6,7 @@
 // Direct unit tests for timer.c's trickiest documented behaviors -
 // grounded against pandocs' Timer_and_Divider_Registers.md/
 // Timer_Obscure_Behaviour.md (fetched during Phase 4 - see
-// docs/GAMEBOY_ROADMAP.md). All 12 of Blargg's cpu_instrs/instr_timing
+// gameboy/docs/GAMEBOY_ROADMAP.md). All 12 of Blargg's cpu_instrs/instr_timing
 // ROMs pass with this timer (see the roadmap's Phase 4 status), which
 // already covers a lot - but the specific DIV/TAC-write "spurious
 // tick" quirks are obscure enough that they're worth a direct,

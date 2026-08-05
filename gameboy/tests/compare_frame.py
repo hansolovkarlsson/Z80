@@ -3,7 +3,7 @@
 against a reference image (PNG, 2-bit grayscale) pixel-for-pixel.
 
 Written for gameboy/test_roms/dmg-acid2/reference-dmg.png specifically
-(see docs/GAMEBOY_ROADMAP.md's Phase 3 status), but the PNG decoder
+(see gameboy/docs/GAMEBOY_ROADMAP.md's Phase 3 status), but the PNG decoder
 below is generic to any 2-bit grayscale, non-interlaced PNG. No image
 library dependency - a minimal decoder using only the standard library
 (struct + zlib, both stdlib) is enough for this one format, and this
@@ -16,7 +16,7 @@ dmg-acid2's mid-frame LY=LYC-driven register writes actually happen
 (see its own README, and gameboy/test_roms/dmg-acid2/README.md). The
 remaining gap (row 0's "HELLO WORLD!" text and the tail end of the
 footer text) is a real, open, documented issue - see
-docs/GAMEBOY_ROADMAP.md's Phase 4 status - plausibly related to this
+gameboy/docs/GAMEBOY_ROADMAP.md's Phase 4 status - plausibly related to this
 emulator's scanline-at-once renderer not modeling exact sub-scanline
 interrupt-response timing, but not fully root-caused yet. This script's
 job is to catch a real *regression* (a match rate meaningfully below
@@ -138,7 +138,7 @@ def main():
         return 1
 
     print("OK (informational gate against a 95% floor, not a 100% target - see "
-          "docs/GAMEBOY_ROADMAP.md's Phase 4 status for the still-open remaining gap)")
+          "gameboy/docs/GAMEBOY_ROADMAP.md's Phase 4 status for the still-open remaining gap)")
     return 0
 
 

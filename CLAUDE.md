@@ -13,7 +13,7 @@ git repository (initialized after the first working ZEXALL/ZEXDOC pass).
 The CP/M side (emulator, assembler, disassembler, GTK launcher, sample
 disk, and third-party reference software/docs) all live under `cpm/`,
 kept separate from the unrelated `gameboy/` subproject (a standalone
-Game Boy emulator sharing this repo, see `docs/GAMEBOY_ROADMAP.md`) —
+Game Boy emulator sharing this repo, see `gameboy/docs/GAMEBOY_ROADMAP.md`) —
 only `bin/` (the shared build output for both) and `scripts/`
 (general-purpose tooling used by both) stay at the true repo root.
 

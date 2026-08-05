@@ -105,7 +105,7 @@ int gb_cart_load(GBCart *cart, const char *path) {
         default:
             fprintf(stderr,
                     "'%s': unsupported cartridge type 0x%02X - only MBC-less/MBC1/MBC3/MBC5 "
-                    "are implemented so far (see docs/GAMEBOY_ROADMAP.md)\n",
+                    "are implemented so far (see gameboy/docs/GAMEBOY_ROADMAP.md)\n",
                     path, cart_type);
             free(rom);
             return -1;

@@ -14,7 +14,7 @@ struct GBCpu; // forward-declared - see cpu.h's own comment on why
 // priority rule below is grounded against pandocs' LCDC.md/STAT.md/
 // Tile_Data.md/Tile_Maps.md/OAM.md/Rendering.md/Palettes.md/
 // OAM_DMA_Transfer.md (fetched during this phase - see
-// docs/GAMEBOY_ROADMAP.md), not guessed. One deliberate simplification,
+// gameboy/docs/GAMEBOY_ROADMAP.md), not guessed. One deliberate simplification,
 // documented there in detail: Mode 3 is always the documented minimum
 //172 dots, not the real hardware's variable 172-289 (which depends on
 // SCX/window/object timing penalties this phase doesn't model) - this

@@ -9,7 +9,7 @@
 // behavior (echo RAM, the "not usable" region, a serial-port capture
 // hook) for the CPU core to run real ROMs against. No cartridge/MBC
 // logic at all (0x0000-0x7FFF is one flat, writable-by-loader-only
-// block) - that's Phase 2's job per docs/GAMEBOY_ROADMAP.md, and this
+// block) - that's Phase 2's job per gameboy/docs/GAMEBOY_ROADMAP.md, and this
 // file will be substantially reworked when it lands.
 
 // Set by a test harness (see main.c) to observe Blargg-style serial

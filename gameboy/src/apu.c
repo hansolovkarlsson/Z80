@@ -430,7 +430,7 @@ void gb_apu_write(GBApu *apu, uint16_t addr, uint8_t val) {
     // not affect Wave RAM... which can always be read/written"). This
     // phase doesn't model the DMG's exact "only accessible on the same
     // cycle CH3 itself reads" mid-playback lock - see
-    // docs/GAMEBOY_ROADMAP.md's Phase 5 status.
+    // gameboy/docs/GAMEBOY_ROADMAP.md's Phase 5 status.
     if (addr >= 0xFF30 && addr <= 0xFF3F) {
         apu->wave_ram[addr - 0xFF30] = val;
         return;

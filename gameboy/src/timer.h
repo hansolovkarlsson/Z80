@@ -7,7 +7,7 @@ struct GBCpu;
 
 // DIV/TIMA/TMA/TAC (0xFF04-0xFF07). Grounded against pandocs'
 // Timer_and_Divider_Registers.md and Timer_Obscure_Behaviour.md
-// (fetched during this phase - see docs/GAMEBOY_ROADMAP.md), including
+// (fetched during this phase - see gameboy/docs/GAMEBOY_ROADMAP.md), including
 // the real "system counter" model (DIV is just the visible upper byte
 // of a free-running 16-bit counter) rather than a naive independent
 // periodic counter - this is what makes the DIV-write/TAC-write

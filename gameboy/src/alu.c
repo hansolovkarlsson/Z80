@@ -4,7 +4,7 @@
 // fetched from https://github.com/lmmendes/game-boy-opcodes (verified
 // against a full 512-entry dump, cross-checked bit-for-bit against the
 // gaps in the unprefixed table matching the 11 real invalid SM83
-// opcodes) during this phase - see docs/GAMEBOY_ROADMAP.md. Nothing
+// opcodes) during this phase - see gameboy/docs/GAMEBOY_ROADMAP.md. Nothing
 // here is carried over from cpm/emu/src/alu.c's Z80 flag math; the SM83's
 // F register only has Z/N/H/C (no X/Y undocumented bits), and several
 // of these operations (DAA, ADD SP,e8/LD HL,SP+e8, the accumulator-vs-
@@ -119,7 +119,7 @@ uint16_t gb_alu_add_sp_e8(GBCpu *cpu, int8_t e8) {
 // The canonical SM83 DAA algorithm (cross-referenced against multiple
 // independent open-source implementations that all agree bit-for-bit,
 // and validated against Blargg's cpu_instrs test ROM #01 - see
-// docs/GAMEBOY_ROADMAP.md's Status section): correction depends on N
+// gameboy/docs/GAMEBOY_ROADMAP.md's Status section): correction depends on N
 // (were we adding or subtracting?) and on H/C from the *previous*
 // arithmetic op, not on freshly recomputing them from A.
 void gb_alu_daa(GBCpu *cpu) {

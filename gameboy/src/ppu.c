@@ -37,7 +37,7 @@ static void update_lyc_flag(GBPpu *ppu, struct GBCpu *cpu) {
 // window tiles are never flipped, only objects are). Shared by the BG
 // and window paths below since both read tiles identically once the
 // tile map base and pixel coordinates are worked out - see
-// docs/GAMEBOY_ROADMAP.md's Tile_Data.md citation for the addressing
+// gameboy/docs/GAMEBOY_ROADMAP.md's Tile_Data.md citation for the addressing
 // modes and bit-packing this implements.
 static uint8_t read_tile_pixel(struct GBCpu *cpu, uint8_t lcdc, uint8_t tile_id, int px, int py) {
     uint16_t tile_addr;

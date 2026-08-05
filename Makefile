@@ -32,7 +32,7 @@ GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 
 # Opt-in only (never part of `all`/`test`), same reasoning as GTK above
 # but for a different reason: this is a brand new, separate emulator
-# (see docs/GAMEBOY_ROADMAP.md), still too early to fold into the
+# (see gameboy/docs/GAMEBOY_ROADMAP.md), still too early to fold into the
 # default build/test - revisit once it can run real games end to end.
 GAMEBOY_SRC_DIR := gameboy/src
 GAMEBOY_SRCS := $(wildcard $(GAMEBOY_SRC_DIR)/*.c)
@@ -41,7 +41,7 @@ GAMEBOY_TARGET := $(BIN_DIR)/gameboy
 
 # cart.c's own unit tests (gameboy/tests/test_cart.c) - unlike Blargg's
 # cpu_instrs (fetched locally, never committed - see
-# docs/GAMEBOY_ROADMAP.md's licensing note), this is this project's own
+# gameboy/docs/GAMEBOY_ROADMAP.md's licensing note), this is this project's own
 # code with no licensing question, so it's a real `make`-able regression
 # gate for the MBC1/MBC3/MBC5 banking logic despite no real MBC test ROM
 # being available to commit.
@@ -59,7 +59,7 @@ GAMEBOY_TEST_TIMER_TARGET := $(BIN_DIR)/gameboy-test-timer
 # unlike Blargg's ROMs) is the PPU's real correctness gate: render a
 # frame, compare it pixel-for-pixel against the reference image.
 # Informational against a regression floor rather than a hard 100%
-# pass/fail - see docs/GAMEBOY_ROADMAP.md's Phase 4 status for the
+# pass/fail - see gameboy/docs/GAMEBOY_ROADMAP.md's Phase 4 status for the
 # current match rate and its still-open remaining gap, and
 # compare_frame.py's own comment for the regression-baseline reasoning.
 GAMEBOY_VISUAL_ROM := gameboy/test_roms/dmg-acid2/dmg-acid2.gb
