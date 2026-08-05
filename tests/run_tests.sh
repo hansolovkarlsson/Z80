@@ -91,6 +91,40 @@ check_asm_example() {
     fi
 }
 
+check_term_test() {
+    # term_test.asm has no OK-n/FAIL-n self-check to grep for - unlike
+    # file I/O, there's no CP/M-visible way for a program to read back its
+    # own console output, so this checks the raw byte stream directly for
+    # console_emit()'s legacy-terminal-protocol translation (ADM-3A/VT52,
+    # see cpm.c's own comment) instead of delegating to check_asm_example.
+    local src="asm/examples/term_test.asm" name="term_test.asm"
+    local com="$WORKDIR/$name.com"
+
+    local asm_log
+    if ! asm_log=$("$Z80ASM" "$src" -o "$com" 2>&1); then
+        echo "FAIL: $name failed to assemble"
+        echo "$asm_log" | sed 's/^/    /'
+        overall_status=1
+        return
+    fi
+
+    local out
+    out=$(cd "$WORKDIR" && "$Z80" "$com" < /dev/null 2>&1)
+    local status=0
+
+    echo "$out" | grep -qF $'\x1b[2;2H' || { echo "FAIL: $name - ADM-3A cursor addressing (ESC = row col) not translated to ANSI"; status=1; }
+    echo "$out" | grep -qF $'\x1b[1;1H' || { echo "FAIL: $name - VT52 cursor addressing (ESC Y row col) not translated to ANSI"; status=1; }
+    echo "$out" | grep -qF $'\x1b[K' || { echo "FAIL: $name - VT52 erase-to-EOL (ESC K) not translated to ANSI"; status=1; }
+    echo "$out" | grep -qF $'\x1b[2K' || { echo "FAIL: $name - H19 erase-line (ESC l) not translated to ANSI"; status=1; }
+    echo "$out" | grep -qF $'\x1b[1m' || { echo "FAIL: $name - real ANSI SGR passthrough (ESC [ 1 m) was altered"; status=1; }
+
+    if [ "$status" -eq 0 ]; then
+        echo "PASS: $name"
+    else
+        overall_status=1
+    fi
+}
+
 if [ ! -x "$Z80" ] || [ ! -x "$Z80ASM" ]; then
     echo "tests/run_tests.sh: bin/z80 and bin/z80asm must be built first (run 'make')" >&2
     exit 1
@@ -105,8 +139,12 @@ for src in asm/examples/*.asm; do
         # checks (C_READ/C_RAWIO/C_READSTR) - see the .asm file's header
         # comment for exactly what each byte is for.
         console_test.asm) check_asm_example "$src" $'ABOK\r' ;;
+        # Not an OK-n/FAIL-n self-check - see check_term_test() above.
+        term_test.asm) ;;
         *) check_asm_example "$src" ;;
     esac
 done
+
+check_term_test
 
 exit "$overall_status"

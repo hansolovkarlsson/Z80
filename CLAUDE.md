@@ -254,30 +254,60 @@ they're plain ASCII bytes the host terminal already interprets correctly
 on its own. Console *input* echo (typed keystrokes) skips `console_emit()`
 entirely, since that's always plain ASCII from the keyboard.
 
-`console_emit()` also runs a small state machine (`console_adm3a_state`)
-that translates one other, older protocol: real Ashton-Tate dBASE II
-(`cpm_disk/DBASE.COM`) was hardcoded, at whatever terminal type it was
-originally installed for, to a Lear-Siegler ADM-3A-class terminal —
-shared by several CP/M machines' own built-in terminals (Kaypro among
-them) — rather than VT100/ANSI: direct cursor addressing is `ESC =
-<row+32> <col+32>` (not VT100's `ESC [ row ; col H`), and `^Z` (0x1A)
-clears the screen (not VT100's `ESC [ 2 J`). Confirmed by capturing
-dBASE II's own raw output byte-for-byte while driving it through a pty
-with paced keystrokes (the same pty/paced-keystroke technique the
-`find_or_reopen_file()` investigation above used) — on a plain xterm,
-neither sequence means anything, so it printed as literal garbage
-("RECORD # 00001" preceded by a stray "1", stray "!"/"@" where a
-cursor-address landed, etc.) instead of moving the cursor. `ESC B <n>` /
-`ESC C <n>` bracket some video attribute (almost certainly reverse-video/
-underline for field highlighting) whose exact ADM-3A-variant mapping
-isn't confirmed from primary-source documentation, so rather than guess
-at an SGR code, `console_emit()` only strips those 3-byte sequences —
-that alone removes the stray digits from the screen even without
-reproducing the highlight itself. None of `ESC =`/`ESC B`/`ESC C` collide
-with real VT100/ANSI, which always follows `ESC` with `[` (CSI), so this
-translation is a pure superset of the old plain-passthrough behavior: an
-unrecognized byte after `ESC` (including `[`) is replayed through
-untouched, so any other program's real ANSI escape codes are unaffected.
+`console_emit()` also runs a small state machine (`console_term_state`)
+that translates two other, older protocols, each found the same way: a
+real full-screen CP/M program behaving correctly in line mode but
+printing garbage the moment it drew a form or editing screen.
+
+Real Ashton-Tate dBASE II (`cpm_disk/DBASE.COM`) was hardcoded, at
+whatever terminal type it was originally installed for, to a
+Lear-Siegler ADM-3A-class terminal — shared by several CP/M machines'
+own built-in terminals (Kaypro among them) — rather than VT100/ANSI:
+direct cursor addressing is `ESC = <row+32> <col+32>` (not VT100's
+`ESC [ row ; col H`), and `^Z` (0x1A) clears the screen (not VT100's
+`ESC [ 2 J`). Confirmed by capturing dBASE II's own raw output
+byte-for-byte while driving it through a pty with paced keystrokes (the
+same pty/paced-keystroke technique the `find_or_reopen_file()`
+investigation above used) — on a plain xterm, neither sequence means
+anything, so it printed as literal garbage ("RECORD # 00001" preceded by
+a stray "1", stray "!"/"@" where a cursor-address landed, etc.) instead
+of moving the cursor. `ESC B <n>` / `ESC C <n>` bracket some video
+attribute (almost certainly reverse-video/underline for field
+highlighting) whose exact ADM-3A-variant mapping isn't confirmed from
+primary-source documentation, so rather than guess at an SGR code,
+`console_emit()` only strips those 3-byte sequences — that alone removes
+the stray digits from the screen even without reproducing the highlight
+itself.
+
+Edward Ream's RED screen editor — part of the same BDS C distribution
+as `CC.COM`/`CLINK.COM` (see the BDS C section below), but with its own,
+separate copyright (`Copyright (C) 1986 by Enteleki, Inc.`, printed at
+its own startup — not covered by Leor Zolman's public-domain release of
+the compiler itself, so RED's own source isn't committed to this repo,
+unlike `CC.COM`/`CLINK.COM`) — targets a VT52/Heath-Zenith-H19-class
+terminal instead: a real, well-documented standard, not guessed. Cursor
+addressing is `ESC Y <row+32> <col+32>` (VT52's own convention, the same
+offset scheme as ADM-3A's `ESC =` just under a different letter), `ESC K`
+erases to end of line (plain VT52), and `ESC l` erases the entire current
+line without moving the cursor (an H19 extension beyond plain VT52). RED
+doesn't use a dedicated clear-screen code at all — it clears by
+positioning to each row in turn and issuing `ESC l`, confirmed the same
+pty-capture way. `ESC M` (Reverse Index) also appears in that capture but
+needs no translation at all — real ANSI/VT100 terminals already support
+it natively as the identical bare `ESC M`, no `[` (CSI) required.
+
+None of `ESC =`/`ESC Y`/`ESC B`/`ESC C`/`ESC K`/`ESC l` collide with real
+VT100/ANSI, which always follows `ESC` with `[` (CSI) for cursor/color
+control (or is otherwise a real, already-supported bare code like
+`ESC M`), so this translation is a pure superset of the old
+plain-passthrough behavior: an unrecognized byte after `ESC` (including
+`[`) is replayed through untouched, so any other program's real ANSI
+escape codes are unaffected. `asm/examples/term_test.asm` is the
+permanent regression test — unlike the file-I/O checks, there's no
+CP/M-visible way for a program to read back its own translated console
+output, so `tests/run_tests.sh`'s own dedicated check greps the raw byte
+stream this program produces for the expected ANSI translation instead
+of relying on an in-program OK-n/FAIL-n self-check.
 
 **File I/O** maps every drive/user number onto one host directory
 (`CPM_DISK_DIR`/`cpm_disk/`, created by `cpm_fileio_init()` relative to

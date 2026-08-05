@@ -165,35 +165,57 @@ static void putchar_utf8(uint16_t cp) {
     }
 }
 
-// Some real CP/M-80 software's full-screen editing (dBASE II's own
-// APPEND/EDIT/BROWSE among them - see the real Ashton-Tate binary this
-// was traced against, resources/... and docs/CPM_REFERENCE.md) was
-// hardcoded, at whatever terminal type it was originally installed for,
-// to an ADM-3A-class protocol - the Lear-Siegler ADM-3A's own convention,
-// also shared by several CP/M machines' built-in terminals (Kaypro among
-// them) - rather than VT100/ANSI: direct cursor addressing is
-// `ESC = <row+32> <col+32>` (not VT100's `ESC [ row ; col H`), and ^Z
-// (0x1A) clears the screen (not VT100's `ESC [ 2 J`). Confirmed by
-// capturing dBASE II's actual raw output byte-for-byte while driving it
-// through a pty with paced keystrokes (the same technique
-// find_or_reopen_file()'s investigation used) - on a plain xterm/VT100,
-// neither sequence means anything, so it prints as literal garbage
-// ("RECORD # 00001" preceded by a stray "1", stray "!"/"@" where a
-// cursor-address landed, etc.) instead of moving the cursor.
-// `ESC B <n>` / `ESC C <n>` bracket some video attribute (almost
-// certainly reverse-video/underline for field highlighting - `ESC B 1`
-// wraps the "RECORD # 00001" header, `ESC B 0`/`ESC C 0` bracket
-// everything else) whose exact ADM-3A-variant mapping isn't confirmed
-// from primary-source documentation, so rather than guess at an SGR code
-// this only strips the 3-byte sequence - that alone removes the stray
-// digits from the screen even without reproducing the highlight itself.
-// None of ESC = / ESC B / ESC C collide with real VT100/ANSI, which
-// always follows ESC with '[' (CSI) for cursor/color control - so this
-// translation is a pure superset of the old plain-passthrough behavior:
-// any other program's real ANSI escape codes still flow through
-// untouched via the "unrecognized ESC" fallback below.
-static enum { ADM3A_NORMAL, ADM3A_ESC, ADM3A_EQ_ROW, ADM3A_EQ_COL, ADM3A_ATTR } console_adm3a_state = ADM3A_NORMAL;
-static uint8_t console_adm3a_row;
+// Some real CP/M-80 software's full-screen output was hardcoded, at
+// whatever terminal type it was originally installed for, to a
+// pre-VT100/ANSI protocol rather than one a plain xterm understands -
+// found (and re-found, in a second real program with a different
+// protocol) via real full-screen CP/M software behaving correctly in
+// line mode but printing garbage the moment it drew a form or editing
+// screen:
+//   - dBASE II's own APPEND/EDIT/BROWSE (`cpm_disk/DBASE.COM`) targets a
+//     Lear-Siegler ADM-3A-class terminal - shared by several CP/M
+//     machines' own built-in terminals (Kaypro among them). Cursor
+//     addressing is `ESC = <row+32> <col+32>`; `^Z` (0x1A) clears the
+//     screen. `ESC B <n>` / `ESC C <n>` bracket some video attribute
+//     (almost certainly reverse-video/underline for field highlighting)
+//     whose exact ADM-3A-variant mapping isn't confirmed from
+//     primary-source documentation, so rather than guess at an SGR code
+//     these are only stripped - that alone removes the stray digits from
+//     the screen even without reproducing the highlight itself.
+//   - Edward Ream's RED screen editor, part of the BDS C distribution
+//     (`resources/bdsc/upstream/README.md`) and built from its real
+//     source under this project's own toolchain, targets a VT52/Heath-
+//     Zenith-H19-class terminal instead - a real, well-documented
+//     standard, not guessed: cursor addressing is `ESC Y <row+32>
+//     <col+32>` (VT52's own convention, same offset scheme as ADM-3A's
+//     `ESC =` just under a different letter), `ESC K` erases to end of
+//     line (VT52), and `ESC l` erases the entire current line without
+//     moving the cursor (an H19 extension beyond plain VT52). RED
+//     doesn't use a dedicated clear-screen code at all - it clears by
+//     positioning to each row in turn and issuing `ESC l`, confirmed by
+//     capturing its actual startup output. `ESC M` (Reverse Index) also
+//     appears in that same capture but needs no translation at all - real
+//     ANSI/VT100 terminals already support it natively as the identical
+//     bare `ESC M`, no `[` (CSI) required.
+// Both were confirmed the same way: capturing the real program's actual
+// output byte-for-byte while driving it through a pty with paced
+// keystrokes (the same technique find_or_reopen_file()'s investigation
+// used), rather than guessed. On a plain xterm/VT100, none of these
+// mean anything, so they print as literal garbage (stray digits,
+// punctuation, letters where a cursor move or line-erase was intended)
+// instead of actually controlling the screen. None of these sequences
+// collide with real VT100/ANSI, which always follows ESC with '[' (CSI)
+// for cursor/color control (or is otherwise a real, already-supported
+// bare code like `ESC M`) - so this translation is a pure superset of
+// plain passthrough: any other program's real ANSI escape codes, or a
+// genuinely unrecognized one, still flow through untouched via the
+// "unrecognized ESC" fallback below.
+// Shared by both protocols above: TERM_ROW/TERM_COL handle either
+// ADM-3A's `ESC =` or VT52's `ESC Y` identically (same row/col-plus-0x20
+// encoding, just a different trigger letter), and TERM_ATTR handles
+// ADM-3A's `ESC B`/`ESC C` attribute bracket.
+static enum { TERM_NORMAL, TERM_ESC, TERM_ROW, TERM_COL, TERM_ATTR } console_term_state = TERM_NORMAL;
+static uint8_t console_term_row;
 
 static void console_emit_raw(uint8_t c) {
     if (c < 0x80) {
@@ -208,35 +230,41 @@ static void console_emit_raw(uint8_t c) {
 // *input* echo (typed keystrokes) skips it, since that's always plain
 // ASCII from the keyboard.
 static void console_emit(uint8_t c) {
-    switch (console_adm3a_state) {
-    case ADM3A_ESC:
-        if (c == '=') {
-            console_adm3a_state = ADM3A_EQ_ROW;
+    switch (console_term_state) {
+    case TERM_ESC:
+        if (c == '=' || c == 'Y') {
+            console_term_state = TERM_ROW;
         } else if (c == 'B' || c == 'C') {
-            console_adm3a_state = ADM3A_ATTR;
+            console_term_state = TERM_ATTR;
+        } else if (c == 'K') {
+            console_term_state = TERM_NORMAL;
+            fputs("\x1B[K", stdout); // VT52 erase-to-end-of-line needs the CSI form in real ANSI
+        } else if (c == 'l') {
+            console_term_state = TERM_NORMAL;
+            fputs("\x1B[2K", stdout); // H19 erase-entire-line, likewise
         } else {
-            console_adm3a_state = ADM3A_NORMAL;
+            console_term_state = TERM_NORMAL;
             console_emit_raw(0x1B);
-            console_emit(c); // not one of ours - replay untouched, e.g. a real ESC [ ... CSI sequence
+            console_emit(c); // not one of ours - replay untouched, e.g. a real ESC [ ... CSI sequence, or bare ESC M (Reverse Index), already valid ANSI as-is
         }
         return;
-    case ADM3A_EQ_ROW:
-        console_adm3a_row = c;
-        console_adm3a_state = ADM3A_EQ_COL;
+    case TERM_ROW:
+        console_term_row = c;
+        console_term_state = TERM_COL;
         return;
-    case ADM3A_EQ_COL: {
-        int row = (int)console_adm3a_row - 0x20;
+    case TERM_COL: {
+        int row = (int)console_term_row - 0x20;
         int col = (int)c - 0x20;
         if (row < 0) row = 0;
         if (col < 0) col = 0;
         printf("\x1B[%d;%dH", row + 1, col + 1);
-        console_adm3a_state = ADM3A_NORMAL;
+        console_term_state = TERM_NORMAL;
         return;
     }
-    case ADM3A_ATTR:
-        console_adm3a_state = ADM3A_NORMAL; // discard the attribute-class digit too
+    case TERM_ATTR:
+        console_term_state = TERM_NORMAL; // discard the attribute-class digit too
         return;
-    case ADM3A_NORMAL:
+    case TERM_NORMAL:
     default:
         break;
     }
@@ -244,7 +272,7 @@ static void console_emit(uint8_t c) {
     if (c == 0x1A) {
         fputs("\x1B[2J\x1B[H", stdout);
     } else if (c == 0x1B) {
-        console_adm3a_state = ADM3A_ESC;
+        console_term_state = TERM_ESC;
     } else {
         console_emit_raw(c);
     }

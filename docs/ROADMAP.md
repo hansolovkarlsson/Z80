@@ -908,6 +908,34 @@ there surfaced and fixed several real dialect gaps, documented below.
   it in the opposite order - FCBs first, tail last - so on real hardware
   the tail always wins the overlap. Fixed by reordering `main.c` to
   match. See `CLAUDE.md`'s Build & Run section.
+- [x] **Real-world validation: BDS C's own auxiliary tools completed -
+  `LDIR.COM`/`LBREXT.COM`/`UNCRUNCH.COM` (library-archive tools),
+  `L2.COM` (the alternate linker, compiled and linked entirely under this
+  project's own emulator from real BDS C source), and Edward Ream's RED
+  screen editor** (`resources/bdsc/upstream/README.md`) - all three fixes
+  above (the `*`/`?` wildcard expansion, `find_or_reopen_file()` on
+  sequential I/O, and the FCB/tail ordering) were found compiling and
+  linking this real, previously-untested corner of the BDS C toolchain.
+  With those fixed, `L2.C` (BDS C's own alternate linker) and all 13
+  files of Edward Ream's RED screen editor compile and link cleanly,
+  producing a working `RED.COM` that loads a file, displays its content,
+  and enters insert mode correctly. RED turned out to target a
+  VT52/Heath-Zenith-H19-class terminal - a different protocol from
+  dBASE's ADM-3A, found and fixed the same way (a real pty capture); see
+  `CLAUDE.md`'s Console output section for the full writeup and
+  `asm/examples/term_test.asm` for the permanent regression test. The
+  CDB debugger was also compiled successfully (`CDB.COM`, uncrunched from
+  the real distribution's `CDEBUG.LBR`) but not made fully operational:
+  it requires a binary `.CDB` symbol-file format that `L2 -d` doesn't
+  actually produce (that flag writes a plain-text `.SYM` symbol listing
+  instead, a different and unrelated format), and this project doesn't
+  have grounded primary-source documentation for the real `.CDB` binary
+  layout to implement or reproduce it correctly - left for a future
+  session with access to the actual BDS C User's Guide's CDB chapter
+  rather than guessed at. RED's own source has a separate copyright
+  (`Copyright (C) 1986 by Enteleki, Inc.`) from Leor Zolman's
+  public-domain BDS C compiler it's bundled with, so - unlike
+  `CC.COM`/`CLINK.COM`/`DBASE.COM` - it isn't committed to this repo.
 
 ## Phase 4: Beyond CP/M (exploratory)
 
