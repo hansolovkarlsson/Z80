@@ -887,8 +887,27 @@ there surfaced and fixed several real dialect gaps, documented below.
   the permanent regression test. (With this fixed, `L2.C` compiles
   cleanly under this project's own emulator - the RED editor and CDB
   debugger, both distributed only as C source plus `.LBR` library
-  archives needing `LBREXT.COM`/`UNCRUNCH.COM` to unpack, are still being
-  validated as a follow-up.)
+  archives needing `LBREXT.COM`/`UNCRUNCH.COM` to unpack, were the
+  follow-up that found the next bug below.)
+- [x] **`main.c` wrote the default FCBs *after* the command tail, backwards
+  from real CCP** - every command tested here up to this point only ever
+  passed one real CP/M argument (`CC.COM HELLO.C`, `CLINK.COM L2`, ...),
+  so this never surfaced. Found linking BDS C's freshly-built `L2.COM`
+  with two arguments (`l2 t -d`): the tail came back completely empty (a
+  single argument, `l2 t`, worked fine). Root cause: FCB2
+  (`0x006C`-`0x008F`) physically overlaps the tail buffer (`0x0080`
+  onward) - a real, well-documented CP/M memory-map quirk, not a bug in
+  itself - and `main.c` wrote the tail *first*, then FCB2 *second*,
+  letting FCB2's write clobber the tail's length byte and first 15
+  characters the moment a second argument existed (FCB2 is only written
+  at all past one argument, which is why the single-argument case never
+  hit this). Confirmed against the real CCP source rather than guessed:
+  `resources/ccp/upstream/ccp.asm`'s actual instruction sequence (`move0`
+  copying the FCB(s), then `bmove0`-`bmove3` copying the raw line into
+  `buff`, immediately before its `tran` call to the loaded program) does
+  it in the opposite order - FCBs first, tail last - so on real hardware
+  the tail always wins the overlap. Fixed by reordering `main.c` to
+  match. See `CLAUDE.md`'s Build & Run section.
 
 ## Phase 4: Beyond CP/M (exploratory)
 

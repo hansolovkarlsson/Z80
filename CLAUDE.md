@@ -88,7 +88,20 @@ reported "No (matching) members found" for every library, since it reads
 the pattern out of the FCB looking for `?` wildcards — any program that
 reads a raw FCB instead of the text tail is entitled to assume a real
 CCP already expanded `*` before it got there, and a literal `*` byte
-doesn't match anything.
+doesn't match anything. `main.c` writes the default FCBs *before* the
+raw tail, not after — FCB2 (`0x006C`-`0x008F`) physically overlaps the
+tail buffer (`0x0080` onward), a well-documented real CP/M memory-map
+quirk, and whichever gets written last wins that overlap. Real CCP
+(`ccp.asm`'s `move0`-then-`bmove0..3` sequence right before its `tran`
+call) builds the FCBs first and writes the tail last, so a real command
+line is always intact no matter how many arguments it had — FCB2's own
+meaningful fields (`DR`/name/type, `0x006C`-`0x0077`) don't reach into
+the overlap at all, so real programs relying on FCB2 lose nothing. An
+earlier version of this function had the order backwards (tail first,
+FCBs second), which silently truncated the tail to nothing the moment a
+*second* real argument existed — invisible until `l2 t -d` (BDS C's
+alternate linker, two arguments) needed it; `l2 t` (one argument) worked
+fine, since FCB2 is only written at all when a second argument exists.
 
 The zexdoc variant checks only documented flag behavior; zexall also
 checks the undocumented flags (bits 3 and 5, `FLAG_X`/`FLAG_Y`). Passing

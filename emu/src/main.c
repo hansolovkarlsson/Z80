@@ -165,12 +165,26 @@ int main(int argc, char *argv[]) {
     // itself (see write_command_tail()'s own comment), so there's
     // nothing to seed here.
     if (!ccp_boot) {
-        write_command_tail(ram, argc, argv, 2);
         // Real CCP also auto-parses up to the first two command-line
         // filename arguments into the default FCBs at 0x005C/0x006C -
-        // see write_default_fcb()'s own comment.
+        // see write_default_fcb()'s own comment. FCB2 (0x006C-0x008F)
+        // physically overlaps the command tail buffer (0x0080 onward) -
+        // a well-documented real CP/M memory-map quirk, not a bug here -
+        // so which one gets written LAST wins that overlap. Real CCP
+        // (resources/ccp/upstream/ccp.asm, the `move0`-then-`bmove0..3`
+        // sequence around its `tran` call) builds the FCBs first and
+        // writes the raw tail last, so a real command line is always
+        // intact regardless of argument count; FCB2's own meaningful
+        // fields (DR/name/type, 0x006C-0x0077) don't reach into the
+        // overlap at all, so nothing real programs use is lost. Getting
+        // this order backwards (tail first, FCBs second, as an earlier
+        // version of this function did) silently truncated the tail to
+        // nothing the moment a second real argument existed - found
+        // compiling BDS C's L2 linker: `l2 t -d` (two arguments) produced
+        // an empty tail, while `l2 t` (one argument) worked fine.
         if (argc > 2) write_default_fcb(ram, 0x005C, argv[2]);
         if (argc > 3) write_default_fcb(ram, 0x006C, argv[3]);
+        write_command_tail(ram, argc, argv, 2);
     }
 
     // 3. Set initial registers according to CP/M standard
