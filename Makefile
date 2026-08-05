@@ -31,16 +31,23 @@ GTK_CFLAGS := $(shell pkg-config --cflags $(GTK_PKGS) 2>/dev/null)
 GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 
 # Opt-in only (never part of `all`/`test`), same reasoning as GTK above
-# but for a different reason: this is Phase 1 of a brand new, separate
-# emulator (see docs/GAMEBOY_ROADMAP.md) with no regression gate wired
-# up yet, not something with an external dependency to isolate - revisit
-# once it has a ZEXALL-equivalent correctness gate of its own.
+# but for a different reason: this is a brand new, separate emulator
+# (see docs/GAMEBOY_ROADMAP.md), still too early to fold into the
+# default build/test - revisit once it can run real games end to end.
 GAMEBOY_SRC_DIR := gameboy/src
 GAMEBOY_SRCS := $(wildcard $(GAMEBOY_SRC_DIR)/*.c)
 GAMEBOY_OBJS := $(GAMEBOY_SRCS:.c=.o)
 GAMEBOY_TARGET := $(BIN_DIR)/gameboy
 
-.PHONY: all emulator assembler disassembler gtk gameboy run test clean
+# cart.c's own unit tests (gameboy/tests/test_cart.c) - unlike Blargg's
+# cpu_instrs (fetched locally, never committed - see
+# docs/GAMEBOY_ROADMAP.md's licensing note), this is this project's own
+# code with no licensing question, so it's a real `make`-able regression
+# gate for the MBC1/MBC3/MBC5 banking logic despite no real MBC test ROM
+# being available to commit.
+GAMEBOY_TEST_TARGET := $(BIN_DIR)/gameboy-test-cart
+
+.PHONY: all emulator assembler disassembler gtk gameboy gameboy-test run test clean
 
 all: emulator assembler disassembler
 
@@ -53,6 +60,9 @@ disassembler: $(DASM_TARGET)
 gtk: $(GTK_TARGET)
 
 gameboy: $(GAMEBOY_TARGET)
+
+gameboy-test: $(GAMEBOY_TEST_TARGET)
+	./$(GAMEBOY_TEST_TARGET)
 
 $(EMU_TARGET): $(EMU_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(EMU_OBJS)
@@ -68,6 +78,9 @@ $(GTK_TARGET): $(GTK_OBJS) | $(BIN_DIR)
 
 $(GAMEBOY_TARGET): $(GAMEBOY_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(GAMEBOY_OBJS)
+
+$(GAMEBOY_TEST_TARGET): gameboy/tests/test_cart.c $(GAMEBOY_SRC_DIR)/cart.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ gameboy/tests/test_cart.c $(GAMEBOY_SRC_DIR)/cart.c
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
@@ -85,4 +98,4 @@ test: emulator assembler
 	./tests/run_tests.sh
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET)

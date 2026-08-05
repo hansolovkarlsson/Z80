@@ -43,7 +43,18 @@ typedef struct {
     // to record "HALT just underflowed PC" once that lands.
     uint8_t halt_bug;
 
+    // VRAM/WRAM/OAM/I-O-registers/HRAM only as of Phase 2 - 0x0000-0x7FFF
+    // (ROM) and 0xA000-0xBFFF (external cartridge RAM) are no longer part
+    // of this flat array, routed through `cart` instead. See mmu.c.
     uint8_t *memory;
+
+    // Forward-declared rather than #include "cart.h" here - cpu.h
+    // shouldn't need to know GBCart's internals, only that mmu.c can
+    // reach one through a GBCpu. NULL is valid (Phase 1's old flat-ROM
+    // behavior no longer applies once this is wired up in main.c, but
+    // the field itself doesn't require a cart to exist for the struct
+    // to be well-formed).
+    struct GBCart *cart;
 } GBCpu;
 
 uint8_t gb_read_byte(GBCpu *cpu, uint16_t addr);

@@ -1,4 +1,5 @@
 #include "mmu.h"
+#include "cart.h"
 #include <stddef.h>
 
 void (*gb_serial_output_hook)(uint8_t byte) = NULL;
@@ -9,13 +10,17 @@ void (*gb_serial_output_hook)(uint8_t byte) = NULL;
 // reads/writes in the echo range onto the real WRAM storage rather than
 // giving echo RAM its own backing bytes, so writes through either
 // address are visible through both without needing to keep two copies
-// in sync.
+// in sync. Never touches the cartridge-routed ranges below (0x0000-
+// 0x7FFF, 0xA000-0xBFFF are both under 0xE000), so no interaction there.
 static uint16_t redirect_echo(uint16_t addr) {
     if (addr >= 0xE000 && addr <= 0xFDFF) return (uint16_t)(addr - 0x2000);
     return addr;
 }
 
 uint8_t gb_read_byte(GBCpu *cpu, uint16_t addr) {
+    if (addr < 0x8000) return gb_cart_read(cpu->cart, addr);
+    if (addr >= 0xA000 && addr < 0xC000) return gb_cart_read_ram(cpu->cart, addr);
+
     addr = redirect_echo(addr);
     if (addr >= 0xFEA0 && addr <= 0xFEFF) {
         // "Not usable" - real hardware's behavior here depends on PPU
@@ -28,14 +33,10 @@ uint8_t gb_read_byte(GBCpu *cpu, uint16_t addr) {
 }
 
 void gb_write_byte(GBCpu *cpu, uint16_t addr, uint8_t val) {
+    if (addr < 0x8000) { gb_cart_write_ctrl(cpu->cart, addr, val); return; }
+    if (addr >= 0xA000 && addr < 0xC000) { gb_cart_write_ram(cpu->cart, addr, val); return; }
+
     addr = redirect_echo(addr);
-    if (addr < 0x8000) {
-        // ROM area. Real hardware routes writes here to MBC bank-switch
-        // logic - Phase 2's job. A flat, unbanked ROM (everything this
-        // phase's test ROMs are) never relies on this, so silently
-        // discarding is correct for now, not a shortcut being taken.
-        return;
-    }
     if (addr >= 0xFEA0 && addr <= 0xFEFF) {
         return; // "not usable" - see the read-side comment above
     }

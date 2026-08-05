@@ -186,5 +186,48 @@ correctness gate - deferred rather than pursued now since it ships as
 assembly source needing `rgbds` to build, not prebuilt ROMs, which is
 real additional setup work of its own.
 
-**Next**: Phase 2 (memory map and cartridge/MBC support) - needed
-before any real ROM larger than a bare 32KB bank can load at all.
+**Phase 2 (memory map and cartridge/MBC support): done.**
+`gameboy/src/cart.{c,h}` parses a real cartridge header (`0x0134`-
+`0x014F` - title area, cartridge-type byte, ROM/RAM size codes, header
+checksum) and implements MBC-less, MBC1, MBC3 (with its RTC latch
+register set), and MBC5 bank switching - the scope this phase's own
+plan set out, covering the overwhelming majority of real cartridges.
+Every register layout and banking quirk (MBC1's "bank 0 reads as bank
+1" translation and its simple-vs-advanced mode secondary register that
+either extends ROM addressing *or* selects a RAM bank depending on
+cartridge size; MBC3's RTC register-select-vs-RAM-bank overlap and its
+0x00-then-0x01 latch sequence; MBC5's clean 9-bit ROM bank number with
+no bank-0 translation quirk at all) is grounded against pandocs'
+`MBC1.md`/`MBC3.md`/`MBC5.md`/`nombc.md`/`The_Cartridge_Header.md`
+(fetched during this phase), not guessed. `gameboy/src/mmu.c` now
+routes `0x0000`-`0x7FFF` and `0xA000`-`0xBFFF` through `cart.c`;
+`cpu->memory` (see `cpu.h`) is VRAM/WRAM/OAM/I-O-registers/HRAM only, no
+longer the whole address space. `gb_cpu_reset()`'s F-register
+simplification from Phase 1 (hardcoding the "nonzero header checksum"
+case) is gone - it now reads the cartridge's real header-checksum byte,
+per a pandocs footnote whose exact condition (is the checksum *byte*
+zero, not whether it *validates* - a real Game Boy refuses to run a
+cartridge whose checksum doesn't validate at all, so by the time code
+is running the two almost always agree, but they're different
+questions) was easy to get subtly wrong and worth citing precisely.
+
+**Correctness gate**: none of Blargg's `cpu_instrs` ROMs use banking at
+all (they're all plain 32 KiB MBC-less), so they don't exercise any of
+this phase's actual work, and no real MBC1/MBC3/MBC5 test ROM was
+available to fetch and commit (same licensing situation as `cpu_instrs`
+- see above). Instead, `gameboy/tests/test_cart.c` (`make gameboy-test`,
+26 checks) unit-tests `cart.c` directly against the exact scenarios in
+pandocs' own addressing diagrams - MBC1 basic and large-ROM/advanced-
+mode banking, MBC1 RAM banking (both banking modes), RAM-disabled
+behavior, MBC3 ROM banking and its RTC latch sequence, MBC5's 9-bit
+banking, and `gb_cart_load()`'s real file-header-parsing path (the one
+integration point `main.c` actually depends on, not exercised by the
+struct-construction tests above it). This is this project's own code
+testing its own code, so - unlike the ROM-based gates - it has no
+licensing question and could be `make`-invoked directly; it's simply
+not part of the top-level `all`/`test` yet, matching the rest of this
+still-early subproject.
+
+**Next**: Phase 3 (PPU) - needed before there's anything to look at.
+Phase 2 makes it possible to load real, full-size games; there's
+nothing yet to render them.

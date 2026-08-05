@@ -1,5 +1,6 @@
 #include "cpu.h"
 #include "alu.h"
+#include "cart.h"
 #include <stddef.h>
 
 // Table-driven dispatch, same *shape* as emu/src/z80.c's
@@ -595,16 +596,20 @@ void gb_cpu_init_tables(void) {
 
 // Real DMG post-boot-ROM register values (what the Nintendo logo boot
 // ROM leaves behind at PC=0x0100, before cartridge code ever runs) -
-// fetched from pandocs' Power-Up Sequence page during this phase, not
+// fetched from pandocs' Power-Up Sequence page during Phase 1, not
 // guessed, since Blargg's test ROMs (and most real games) are written
 // assuming this exact starting state. The F register's H/C bits
-// genuinely depend on the cartridge header checksum at 0x014D (clear if
-// it's zero, set otherwise) - Phase 2's cartridge/header-parsing work
-// will make that conditional; hardcoding the far-more-common "nonzero
-// checksum" case (F=0xB0) is a deliberate, documented simplification
-// until then, not an oversight.
+// genuinely depend on whether the cartridge header checksum byte at
+// 0x014D is exactly zero (clear if so, set otherwise - a real, if
+// obscure, hardware behavior straight from pandocs' own footnote, not
+// about whether the checksum *validates*: a real Game Boy would refuse
+// to run the cartridge at all if it didn't). cart is optional - Phase 1
+// test binaries with no attached cartridge, or a NULL cart during unit
+// testing, still get a sensible default (the far more common "nonzero
+// checksum" case).
 void gb_cpu_reset(GBCpu *cpu) {
-    cpu->af = 0x01B0;
+    uint8_t checksum_byte = cpu->cart ? cpu->cart->header_checksum_byte : 0xFF;
+    cpu->af = 0x0100 | (checksum_byte == 0 ? 0x80 : 0xB0);
     cpu->bc = 0x0013;
     cpu->de = 0x00D8;
     cpu->hl = 0x014D;
