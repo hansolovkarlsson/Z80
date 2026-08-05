@@ -3,6 +3,7 @@
 #include "ppu.h"
 #include "timer.h"
 #include "joypad.h"
+#include "apu.h"
 #include <stddef.h>
 
 void (*gb_serial_output_hook)(uint8_t byte) = NULL;
@@ -25,6 +26,15 @@ uint8_t gb_read_byte(GBCpu *cpu, uint16_t addr) {
     if (addr >= 0xA000 && addr < 0xC000) return gb_cart_read_ram(cpu->cart, addr);
     if (addr == 0xFF00) return gb_joypad_read(cpu->joypad);
     if (addr >= 0xFF04 && addr <= 0xFF07) return gb_timer_read(cpu->timer, addr);
+    // The full 0xFF10-0xFF3F span, not just the individually-named
+    // register addresses within it - 0xFF15, 0xFF1F, and 0xFF27-0xFF2F
+    // are real, unconnected gaps in the register map that still need to
+    // read back as $FF/ignore writes (apu.c's own default cases handle
+    // that). Originally routed as two narrower ranges split around
+    // NR52/Wave RAM, which silently let 0xFF27-0xFF2F fall through to
+    // plain flat memory instead - found via Blargg's dmg_sound
+    // 01-registers.gb, whose register r/w test walks this entire span.
+    if (addr >= 0xFF10 && addr <= 0xFF3F) return gb_apu_read(cpu->apu, addr);
     if (addr >= 0xFF40 && addr <= 0xFF4B) return gb_ppu_read_reg(cpu->ppu, addr);
 
     addr = redirect_echo(addr);
@@ -42,6 +52,7 @@ void gb_write_byte(GBCpu *cpu, uint16_t addr, uint8_t val) {
     if (addr >= 0xA000 && addr < 0xC000) { gb_cart_write_ram(cpu->cart, addr, val); return; }
     if (addr == 0xFF00) { gb_joypad_write(cpu->joypad, val); return; }
     if (addr >= 0xFF04 && addr <= 0xFF07) { gb_timer_write(cpu->timer, cpu, addr, val); return; }
+    if (addr >= 0xFF10 && addr <= 0xFF3F) { gb_apu_write(cpu->apu, addr, val); return; }
     if (addr >= 0xFF40 && addr <= 0xFF4B) { gb_ppu_write_reg(cpu->ppu, cpu, addr, val); return; }
 
     addr = redirect_echo(addr);

@@ -62,6 +62,10 @@ typedef struct GBCpu {
     // reset it exactly as a DIV write would - see cpu.c's gb_op_stop().
     struct GBTimer *timer;
     struct GBJoypad *joypad;
+
+    // Added Phase 5 - reached only through mmu.c's routing (the full
+    // 0xFF10-0xFF3F span), unlike timer above.
+    struct GBApu *apu;
 } GBCpu;
 
 uint8_t gb_read_byte(GBCpu *cpu, uint16_t addr);
