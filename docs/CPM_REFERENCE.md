@@ -330,7 +330,15 @@ uppercased, trailing spaces trimmed). Concretely, this means:
   `EX`/`S1`/`S2` fields, which an `F_CLOSE` doesn't erase, so a program
   reusing an already-closed FCB for random access without an intervening
   `F_OPEN` is relying on real (if informally documented) CP/M behavior —
-  see the dBASE entry below.
+  see the dBASE entry below. Sequential read/write (`F_READ`/`F_WRITE`,
+  20/21) go through `find_or_reopen_file()` too, for the identical
+  reason: found via a real BDS C `CC.COM` compile, whose `#include`
+  handling reuses a single FCB for both the main source file and each
+  included header, closing it after the header and resuming the outer
+  file's read afterward with no intervening `F_OPEN` — before this,
+  `F_READ` on that FCB failed with error 9 ("unopened FCB") the moment a
+  source file needed more than one `#include`, which `CC.COM` surfaced to
+  the user as `Disk read error`.
 - The open-file table (`open_files[]` in `cpm.c`) is keyed by the FCB's
   own memory address, not a separate handle — matching how CP/M programs
   themselves have no notion of a file descriptor beyond the FCB they
@@ -367,7 +375,9 @@ uppercased, trailing spaces trimmed). Concretely, this means:
 `F_RENAME`/`F_OPEN`/`F_READ`/`F_SFIRST`/`F_DELETE` end to end (create,
 rename, read back, wildcard-search, delete, confirm gone), plus
 `F_WRITERAND`/`F_READRAND` on a closed FCB with no intervening `F_OPEN`
-(check 6 — the dBASE regression case above).
+(check 6 — the dBASE regression case above), plus `F_READ` resuming a
+closed FCB with no intervening `F_OPEN` (check 7 — the BDS C `CC.COM`
+`#include` regression case above).
 
 What this design can't do: express CP/M's actual drive-switching or
 per-user file areas (two programs on "different drives" see the same

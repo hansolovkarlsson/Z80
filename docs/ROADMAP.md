@@ -864,6 +864,31 @@ there surfaced and fixed several real dialect gaps, documented below.
   now lists all 20 members correctly, `make test` and
   `resources/bdsc/derive.sh` both still pass. See `CLAUDE.md`'s Build &
   Run section.
+- [x] **`find_or_reopen_file()` extended to sequential `F_READ`/`F_WRITE`**,
+  found compiling BDS C's `L2.C` (the alternate linker, ~25K of source,
+  fetched the same way as `LDIR.COM` above from the full `bdsc-all.zip`
+  distribution, along with the CDB debugger and RED editor sources -
+  none previously kept in this repo). `CC.COM`'s own `#include` handling
+  reuses a single FCB for both the main source file and each included
+  header: it `F_CLOSE`s that FCB after reading a header, then resumes
+  reading the outer source file from its saved `EX`/`CR` with *no*
+  intervening `F_OPEN` - the identical FCB-reuse pattern the dBASE fix
+  above already established for random I/O, just hitting sequential read
+  instead. Traced by tracing every BDOS call `CC.COM` made while
+  compiling `L2.C`: it read 23 records of `L2.C`, opened and fully read
+  `STDIO.H` (13 records) through the *same* FCB, closed it, then called
+  `F_READ` again on that FCB with no `F_OPEN` - which failed with error 9
+  ("unopened FCB") since sequential read still required a live
+  `open_files[]` entry, unlike random I/O. `CC.COM` surfaced this to the
+  user as `Disk read error`, aborting the compile the moment a source
+  file needed more than one `#include`. Fixed by routing `F_READ`/
+  `F_WRITE` (functions 20/21) through `find_or_reopen_file()` too. See
+  `CLAUDE.md`'s File I/O section; `asm/examples/file_test.asm` check 7 is
+  the permanent regression test. (With this fixed, `L2.C` compiles
+  cleanly under this project's own emulator - the RED editor and CDB
+  debugger, both distributed only as C source plus `.LBR` library
+  archives needing `LBREXT.COM`/`UNCRUNCH.COM` to unpack, are still being
+  validated as a follow-up.)
 
 ## Phase 4: Beyond CP/M (exploratory)
 

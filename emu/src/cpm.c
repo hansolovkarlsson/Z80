@@ -908,7 +908,22 @@ void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
         }
         else if (cpu->c == 20) {
             // Function 20: Sequential read, one 128-byte record at a time.
-            OpenFile *of = find_open_file(cpu->de);
+            // Goes through find_or_reopen_file() rather than requiring an
+            // open_files[] entry to already exist, the same real-CP/M-
+            // behavior reasoning documented on find_or_reopen_file() itself
+            // (originally added for random I/O) - found via a real BDS C
+            // CC.COM compile: its #include handling reuses a single FCB
+            // (0x005C) for both the main source file and each included
+            // header, closing it after the header and resuming the outer
+            // file's read from its saved EX/CR *without* an intervening
+            // F_OPEN. Real BDOS's sequential read works directly off the
+            // FCB's own fields the same as random I/O does - Close doesn't
+            // erase them - so this is the identical FCB-reuse pattern, not
+            // a new one; before this, CC.COM got error 9 ("unopened FCB")
+            // partway through any source file needing more than one
+            // #include, which it surfaced to the user as "Disk read
+            // error".
+            OpenFile *of = find_or_reopen_file(cpu, cpu->de);
             if (!of) {
                 cpu->a = 9; // unopened FCB
             } else {
@@ -927,7 +942,10 @@ void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
         }
         else if (cpu->c == 21) {
             // Function 21: Sequential write, one 128-byte record at a time.
-            OpenFile *of = find_open_file(cpu->de);
+            // See the Function 20 comment above for why this goes through
+            // find_or_reopen_file() instead of requiring a live
+            // open_files[] entry.
+            OpenFile *of = find_or_reopen_file(cpu, cpu->de);
             if (!of) {
                 cpu->a = 9; // unopened FCB
             } else {

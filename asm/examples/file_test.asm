@@ -1,7 +1,8 @@
 ; Exercises the BDOS file functions added to emu/src/cpm.c per
 ; docs/CPM_REFERENCE.md: F_MAKE (22), F_WRITE (21), F_CLOSE (16),
 ; F_RENAME (23), F_OPEN (15), F_READ (20), F_SFIRST (17), F_DELETE (19),
-; F_WRITERAND (34), F_READRAND (33). Every drive/user is mapped onto a
+; F_WRITERAND (34), F_READRAND (33), plus F_READ (20) resuming on a
+; closed FCB. Every drive/user is mapped onto a
 ; single host directory (cpm_disk/, created next to wherever bin/z80 is
 ; run from) - see cpm.c's File I/O comment. Same "OK n"/"FAIL n"
 ; convention as selftest.asm/gaps_test.asm.
@@ -227,8 +228,114 @@ cmploop6:
 
         ld de, ok6
         call print
-        jp done
+        jp check7
 fail6:  ld de, bad6
+        call print
+
+check7:
+        ; --- Check 7: F_READ (20) resumes correctly on an FCB that's been
+        ; F_CLOSEd mid-file, with no F_OPEN in between. Real BDOS's
+        ; sequential read works directly off the FCB's own EX/CR fields,
+        ; which a Close doesn't erase - the same real-hardware reasoning
+        ; already established for random I/O (check 6 above). A real BDS C
+        ; CC.COM compile relies on exactly this: its #include handling
+        ; reuses a single FCB for both the main source file and each
+        ; included header, closing it after the header and resuming the
+        ; outer file's read afterward without reopening; before
+        ; find_or_reopen_file() covered sequential read too, this failed
+        ; with error 9 ("unopened FCB"), which CC.COM surfaced to the user
+        ; as "Disk read error".
+        ld a, 'A'
+        ld hl, dmabuf
+        ld b, 128
+fillA7: ld (hl), a
+        inc hl
+        djnz fillA7
+
+        ld a, 'B'
+        ld hl, dmabuf2
+        ld b, 128
+fillB7: ld (hl), a
+        inc hl
+        djnz fillB7
+
+        ld de, dmabuf
+        ld c, 26                  ; F_DMAOFF
+        call BDOS
+
+        ld de, fcb7
+        ld c, 22                  ; F_MAKE
+        call BDOS
+        or a
+        jp nz, fail7
+
+        ld de, fcb7
+        ld c, 21                  ; F_WRITE record 0 ('A's)
+        call BDOS
+        or a
+        jp nz, fail7
+
+        ld de, dmabuf2
+        ld c, 26                  ; F_DMAOFF
+        call BDOS
+
+        ld de, fcb7
+        ld c, 21                  ; F_WRITE record 1 ('B's)
+        call BDOS
+        or a
+        jp nz, fail7
+
+        ld de, fcb7
+        ld c, 16                  ; F_CLOSE
+        call BDOS
+
+        ld de, fcb7
+        ld c, 15                  ; F_OPEN
+        call BDOS
+        or a
+        jp nz, fail7
+
+        ld de, dmabuf
+        ld c, 26                  ; F_DMAOFF
+        call BDOS
+
+        ld de, fcb7
+        ld c, 20                  ; F_READ record 0
+        call BDOS
+        or a
+        jp nz, fail7
+
+        ld de, fcb7
+        ld c, 16                  ; F_CLOSE - record 1 never read; CR=1
+        call BDOS                 ; is left sitting in the FCB
+
+        ld de, dmabuf2
+        ld c, 26                  ; F_DMAOFF
+        call BDOS
+
+        ld de, fcb7
+        ld c, 20                  ; F_READ record 1 - no F_OPEN in between
+        call BDOS
+        or a
+        jp nz, fail7
+
+        ld hl, dmabuf2
+        ld b, 128
+cmploop7:
+        ld a, (hl)
+        cp 'B'
+        jp nz, fail7
+        inc hl
+        djnz cmploop7
+
+        ld de, fcb7
+        ld c, 19                  ; F_DELETE (cleanup)
+        call BDOS
+
+        ld de, ok7
+        call print
+        jp done
+fail7:  ld de, bad7
         call print
 
 done:   jp 0
@@ -267,6 +374,10 @@ fcb6:   db 0,'RANDIO  ','TXT',0,0,0,0
         ds 16
         db 0,0,0,0
 
+fcb7:   db 0,'SEQRESUM','TXT',0,0,0,0
+        ds 16
+        db 0,0,0,0
+
 ok1:    db 'OK 1 F_MAKE / F_WRITE / F_CLOSE$'
 bad1:   db 'FAIL 1 F_MAKE / F_WRITE / F_CLOSE$'
 ok2:    db 'OK 2 F_RENAME$'
@@ -279,6 +390,8 @@ ok5:    db 'OK 5 F_DELETE$'
 bad5:   db 'FAIL 5 F_DELETE$'
 ok6:    db 'OK 6 F_WRITERAND / F_READRAND on a closed FCB$'
 bad6:   db 'FAIL 6 F_WRITERAND / F_READRAND on a closed FCB$'
+ok7:    db 'OK 7 F_READ resuming on a closed FCB$'
+bad7:   db 'FAIL 7 F_READ resuming on a closed FCB$'
 crlf:   db 13, 10, '$'
 
 msg6:   db 'Random I/O on a closed FCB'

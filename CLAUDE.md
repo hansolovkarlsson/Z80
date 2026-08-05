@@ -320,7 +320,18 @@ re-reads a just-written `.DBF`'s header via random I/O through an FCB it
 had already closed during `CREATE`, without reopening), not two separate
 bugs, and not a disk-space or DPB issue at all despite dBASE's own
 wording; both messages are gone with `find_or_reopen_file()` in place.
-`asm/examples/file_test.asm`'s check 6 is the regression test.
+`asm/examples/file_test.asm`'s check 6 is the regression test. Sequential
+`F_READ`/`F_WRITE` (functions 20/21) go through `find_or_reopen_file()`
+too, for the identical reason applied to a different BDOS function: found
+validating BDS C's own `CC.COM` on a source file large enough to need a
+`#include` — its `#include` handling reuses a single FCB (`0x005C`) for
+both the main source file and each included header, `F_CLOSE`ing it
+after the header and resuming the outer file's `F_READ` from its saved
+`EX`/`CR` with no intervening `F_OPEN`. Before this, that second
+`F_READ` failed with error 9 ("unopened FCB"), which `CC.COM` surfaced to
+the user as `Disk read error` partway through any file needing more than
+one `#include`. `asm/examples/file_test.asm`'s check 7 is the regression
+test.
 
 **A fake Disk Parameter Block** (`DPH_BASE`/`DPB_BASE`/`DIRBUF_BASE`/
 `ALV_BASE` in `cpm.c`, written once by `cpm_bios_init()`) backs BDOS
