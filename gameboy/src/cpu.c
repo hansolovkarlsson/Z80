@@ -4,7 +4,7 @@
 #include "timer.h"
 #include <stddef.h>
 
-// Table-driven dispatch, same *shape* as emu/src/z80.c's
+// Table-driven dispatch, same *shape* as cpm/emu/src/z80.c's
 // main_opcode_table/z80_op_ld_r_r/z80_op_alu_group pattern - see
 // docs/GAMEBOY_ROADMAP.md's "Architecture decision" for why this is an
 // independent implementation rather than shared code. Every opcode's
@@ -41,7 +41,7 @@ static uint16_t gb_pop16(GBCpu *cpu) {
 
 // 8-bit register index, shared by every opcode range that encodes one:
 // 0=B 1=C 2=D 3=E 4=H 5=L 6=(HL) 7=A - identical convention to the Z80's
-// own get_cb_reg/set_cb_reg (emu/src/z80.c), inherited unchanged since
+// own get_cb_reg/set_cb_reg (cpm/emu/src/z80.c), inherited unchanged since
 // this part of the encoding genuinely didn't change between the two CPUs.
 static uint8_t get_reg8(GBCpu *cpu, uint8_t idx) {
     switch (idx) {
@@ -262,7 +262,7 @@ static int gb_op_illegal(GBCpu *cpu) { (void)cpu; return -1; }
 
 // --- Fully regular blocks: one handler each, decoding the actual
 // opcode byte out of cpu->pc-1 the same way z80_op_ld_r_r does
-// (emu/src/z80.c) ---
+// (cpm/emu/src/z80.c) ---
 
 static int gb_op_ld_rr_d16(GBCpu *cpu) {
     uint8_t opcode = gb_read_byte(cpu, (uint16_t)(cpu->pc - 1));

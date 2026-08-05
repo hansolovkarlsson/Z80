@@ -5,7 +5,7 @@
 // against a full 512-entry dump, cross-checked bit-for-bit against the
 // gaps in the unprefixed table matching the 11 real invalid SM83
 // opcodes) during this phase - see docs/GAMEBOY_ROADMAP.md. Nothing
-// here is carried over from emu/src/alu.c's Z80 flag math; the SM83's
+// here is carried over from cpm/emu/src/alu.c's Z80 flag math; the SM83's
 // F register only has Z/N/H/C (no X/Y undocumented bits), and several
 // of these operations (DAA, ADD SP,e8/LD HL,SP+e8, the accumulator-vs-
 // CB rotate distinction) have real, confirmed-different behavior from

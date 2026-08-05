@@ -7,23 +7,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A Z80 CPU emulator written in C, built to run CP/M-80 programs. Phase 1 (a
 complete Z80 core passing ZEXALL/ZEXDOC cleanly) is done; Phase 2 (a Z80
 assembler, including macros/`include`, plus a disassembler) is far along
-too — see `docs/ROADMAP.md` for exact status, what's next (a full CP/M
+too — see `cpm/docs/ROADMAP.md` for exact status, what's next (a full CP/M
 BDOS/BIOS), and known gaps (I/O ports, interrupts). This directory is a
 git repository (initialized after the first working ZEXALL/ZEXDOC pass).
+The CP/M side (emulator, assembler, disassembler, GTK launcher, sample
+disk, and third-party reference software/docs) all live under `cpm/`,
+kept separate from the unrelated `gameboy/` subproject (a standalone
+Game Boy emulator sharing this repo, see `docs/GAMEBOY_ROADMAP.md`) —
+only `bin/` (the shared build output for both) and `scripts/`
+(general-purpose tooling used by both) stay at the true repo root.
 
-Three reference docs live in `docs/` alongside the roadmap: `Z80_REFERENCE.md`
-(the Z80 instruction set, including undocumented opcodes/flag behavior,
-plus which of those this emulator can actually execute today), `ASSEMBLER.md`
-(the `z80asm` syntax — directives, expressions, macros), and `CPM_REFERENCE.md`
-(the CP/M 2.2 BDOS/BIOS call spec — function numbers, FCB layout, BIOS
-jump table — that Phase 3's `cpm.c` work targets). This file (`CLAUDE.md`)
-instead covers *code* architecture — how the dispatch/encoding is actually
-implemented, not the ISA, syntax, or OS spec itself.
+Three reference docs live in `cpm/docs/` alongside the roadmap:
+`Z80_REFERENCE.md` (the Z80 instruction set, including undocumented
+opcodes/flag behavior, plus which of those this emulator can actually
+execute today), `ASSEMBLER.md` (the `z80asm` syntax — directives,
+expressions, macros), and `CPM_REFERENCE.md` (the CP/M 2.2 BDOS/BIOS
+call spec — function numbers, FCB layout, BIOS jump table — that Phase
+3's `cpm.c` work targets). This file (`CLAUDE.md`) instead covers *code*
+architecture — how the dispatch/encoding is actually implemented, not
+the ISA, syntax, or OS spec itself.
 
 ## Build & Run
 
-The emulator lives in `emu/src/`, the assembler in `asm/src/`, the
-disassembler in `disasm/src/`; the Makefile builds all three into `bin/`.
+The emulator lives in `cpm/emu/src/`, the assembler in `cpm/asm/src/`, the
+disassembler in `cpm/disasm/src/`; the Makefile builds all three into `bin/`
+(at the repo root, shared with the `gameboy/` subproject's own binary).
 
 ```
 make               # builds bin/z80, bin/z80asm, and bin/z80dasm
@@ -31,44 +39,47 @@ make emulator      # just the emulator
 make assembler     # just the assembler
 make disassembler  # just the disassembler
 make run           # build the emulator, then run zexall.com through it | less
-make test          # build, then run tests/run_tests.sh (see below)
+make test          # build, then run cpm/tests/run_tests.sh (see below)
 make clean         # remove object files and all three binaries
 ```
 
 Correctness is primarily verified by running the ZEXALL exerciser and
 reading its console output for per-opcode `ERROR` reports vs. `OK` lines.
-ZEXALL/ZEXDOC (`emu/zexall/ZEXALL-main/`) are third-party, downloaded
+ZEXALL/ZEXDOC (`cpm/emu/zexall/ZEXALL-main/`) are third-party, downloaded
 pre-built CP/M test binaries (by Frank D. Cringle, via YAZE-AG, GPLv2) —
 not code belonging to this project, and not meant to be edited. They're the
 correctness oracle: if the emulator is right, every opcode reports "OK"; a
 wrong flag or result shows up as an "ERROR" line naming the instruction. As
 of the last full run, both `zexall.com` and `zexdoc.com` pass cleanly
 (67/67 OK, 0 errors, 0 unimplemented opcodes). `make test`
-(`tests/run_tests.sh`) turns that "eyeball the output" check into an exit
+(`cpm/tests/run_tests.sh`) turns that "eyeball the output" check into an exit
 code: it runs both exercisers and fails on any `ERROR`/`Unimplemented
 opcode` line or a missing `Tests complete`, then assembles and runs every
-`asm/examples/*.asm` program and fails on any `FAIL` line (the `OK n`/
+`cpm/asm/examples/*.asm` program and fails on any `FAIL` line (the `OK n`/
 `FAIL n` convention `selftest.asm`/`gaps_test.asm` use). ZEXALL/ZEXDOC
 don't exercise I/O ports, `IM`, `RETI`/`RETN`, or `LD A,I`/`LD A,R`/`LD
-I,A`/`LD R,A` — `asm/examples/gaps_test.asm` is the only regression
+I,A`/`LD R,A` — `cpm/asm/examples/gaps_test.asm` is the only regression
 coverage for those.
 
 `bin/z80` takes the `.com` file to run as argv[1] (paths are resolved
 relative to the working directory you invoke the binary from, typically
-the repo root) — there's no default program; running it with no
-arguments (or `-h`/`--help`) just prints usage instead:
+`cpm/` — `bin/` itself stays at the true repo root, shared with the
+`gameboy/` subproject, so run these as `../bin/z80` from inside `cpm/`,
+or `bin/z80` from the repo root with a `cpm/`-prefixed argument) —
+there's no default program; running it with no arguments (or
+`-h`/`--help`) just prints usage instead:
 
 ```
-./bin/z80 emu/zexall/ZEXALL-main/zexdoc.com
+../bin/z80 emu/zexall/ZEXALL-main/zexdoc.com
 ```
 
 Any further argv entries become the program's own CP/M command-line
-arguments — `./bin/z80 cpm_disk/CC.COM HELLO.C` compiles `HELLO.C` the
+arguments — `../bin/z80 cpm_disk/CC.COM HELLO.C` compiles `HELLO.C` the
 way a real CCP-launched `CC HELLO.C` would. `write_command_tail()`
 (`main.c`) seeds the raw tail at `0x0080` (length byte) /`0x0081`
 onward — space-prefixed, uppercased, *not* null-terminated, confirmed
 against this project's own real CCP source
-(`resources/ccp/upstream/ccp.asm`'s `bmove0`/`bmove1`/`bmove2`) rather
+(`cpm/resources/ccp/upstream/ccp.asm`'s `bmove0`/`bmove1`/`bmove2`) rather
 than guessed. `write_default_fcb()` additionally auto-parses the first
 two arguments into the default FCBs at `0x005C`/`0x006C`, matching what
 a real CCP also does before running a program — command-line CP/M
@@ -79,11 +90,11 @@ dBASE, Tasty Basic, MBASIC) and never took an argument this way.
 `write_default_fcb()` also expands a bare `*` into `?` for every
 remaining position in whichever field (name or type) it appears in,
 rather than storing it literally — confirmed against
-`resources/ccp/upstream/ccp.asm`'s own `setname`/`setnam0` and `setty`/
+`cpm/resources/ccp/upstream/ccp.asm`'s own `setname`/`setnam0` and `setty`/
 `setty0` routines (the "must be ?'s" comment there), not guessed. Found
 via BDS C's own `LDIR.COM` (a real utility for listing `.LBR` library
 archives, part of the full `bdsc-all.zip` distribution — see
-`resources/bdsc/upstream/README.md`): given a `*.*` pattern, it silently
+`cpm/resources/bdsc/upstream/README.md`): given a `*.*` pattern, it silently
 reported "No (matching) members found" for every library, since it reads
 the pattern out of the FCB looking for `?` wildcards — any program that
 reads a raw FCB instead of the text tail is entitled to assume a real
@@ -107,13 +118,13 @@ The zexdoc variant checks only documented flag behavior; zexall also
 checks the undocumented flags (bits 3 and 5, `FLAG_X`/`FLAG_Y`). Passing
 `--ccp [ccp.com]` instead of a plain `.com` path boots a CP/M CCP shell
 (default `cpm_disk/ccp.com`) rather than running a single program — see
-this file's own BIOS section below and `docs/CPM_REFERENCE.md`'s CCP
+this file's own BIOS section below and `cpm/docs/CPM_REFERENCE.md`'s CCP
 section for how that works.
 
 ## Architecture
 
 (For the Z80 instruction set itself — mnemonics, addressing modes,
-undocumented opcodes/flags — see `docs/Z80_REFERENCE.md`. This section is
+undocumented opcodes/flags — see `cpm/docs/Z80_REFERENCE.md`. This section is
 about how the dispatch code is structured, not the ISA.)
 
 **Table-driven dispatch.** `z80_init_tables()` (in `z80.c`) populates
@@ -168,7 +179,7 @@ attached, so a port read just returns whatever was last written there.
 
 **CP/M BDOS emulation (`cpm.c`)**: `check_cpm_bdos()` runs at the top of
 every `z80_step()` and, when `PC == 0x0005` (or `PC == BDOS_ENTRY`, see
-below), handles the BDOS functions `docs/CPM_REFERENCE.md` documents —
+below), handles the BDOS functions `cpm/docs/CPM_REFERENCE.md` documents —
 `P_TERMCPM` (0), console output (2, 9), console input (1, 6, 10, 11),
 `S_BDOSVER` (12), file I/O (15–23, 26, 33–35, 40), and drive/user
 bookkeeping stubs (13, 14, 25, 32) — then manually pops the return
@@ -197,14 +208,14 @@ already set `L` by hand before this existed, presumably because each
 one's own real-software bug already surfaced the need; the generic
 mirror at the end covers every other function instead of requiring each
 future one to remember it individually. Found getting BDS C's own CDB
-debugger operational (`resources/bdsc/upstream/README.md`'s "not
+debugger operational (`cpm/resources/bdsc/upstream/README.md`'s "not
 included" list) — CDB2's target-loading loop's compiled
 `if (bdos(20,fcb)) break;` broke on the very first record despite
 `F_READ` genuinely succeeding (`A=0`), because `HL` still held whatever
 was left over from earlier in CDB2's own code, truncating every debugged
 program to its first 128 bytes; assembly-level callers checking `A`
 directly (every program validated before this one) never hit it.
-`asm/examples/file_test.asm` check 8 is the permanent regression test.
+`cpm/asm/examples/file_test.asm` check 8 is the permanent regression test.
 
 **BIOS emulation (`cpm.c`)**: `check_cpm_bios()` runs alongside
 `check_cpm_bdos()` and handles direct BIOS calls — some real software
@@ -223,7 +234,7 @@ both land on the identical address, so `check_cpm_bios()` intercepts
 either path identically. It gives real behavior to `WBOOT`/`CONST`/
 `CONIN`/`CONOUT` (reusing the same console plumbing as the BDOS
 functions) and fixed, sensible responses for the rest; see
-`docs/CPM_REFERENCE.md`'s BIOS section for the full vector-by-vector
+`cpm/docs/CPM_REFERENCE.md`'s BIOS section for the full vector-by-vector
 rundown.
 
 Console *input* needs the host terminal in raw mode
@@ -267,7 +278,7 @@ accented/Greek/math glyphs) to the equivalent Unicode codepoint and
 emitted as UTF-8, via `cp437_high[]` + `putchar_utf8()`. Real CP/M-era
 software targeting a graphical terminal commonly emits CP437 bytes for
 exactly this kind of output (SARGON's ANSI-enhanced port,
-`resources/sargon/sargon78.com`, is a concrete example — its own README
+`cpm/resources/sargon/sargon78.com`, is a concrete example — its own README
 tells PuTTY users to explicitly set "Code Page 437"). VT100/ANSI cursor-
 positioning and color (`SGR`) escape codes need no translation at all —
 they're plain ASCII bytes the host terminal already interprets correctly
@@ -279,7 +290,7 @@ that translates two other, older protocols, each found the same way: a
 real full-screen CP/M program behaving correctly in line mode but
 printing garbage the moment it drew a form or editing screen.
 
-Real Ashton-Tate dBASE II (`cpm_disk/DBASE.COM`) was hardcoded, at
+Real Ashton-Tate dBASE II (`cpm/cpm_disk/DBASE.COM`) was hardcoded, at
 whatever terminal type it was originally installed for, to a
 Lear-Siegler ADM-3A-class terminal — shared by several CP/M machines'
 own built-in terminals (Kaypro among them) — rather than VT100/ANSI:
@@ -322,10 +333,10 @@ control (or is otherwise a real, already-supported bare code like
 `ESC M`), so this translation is a pure superset of the old
 plain-passthrough behavior: an unrecognized byte after `ESC` (including
 `[`) is replayed through untouched, so any other program's real ANSI
-escape codes are unaffected. `asm/examples/term_test.asm` is the
+escape codes are unaffected. `cpm/asm/examples/term_test.asm` is the
 permanent regression test — unlike the file-I/O checks, there's no
 CP/M-visible way for a program to read back its own translated console
-output, so `tests/run_tests.sh`'s own dedicated check greps the raw byte
+output, so `cpm/tests/run_tests.sh`'s own dedicated check greps the raw byte
 stream this program produces for the expected ANSI translation instead
 of relying on an in-program OK-n/FAIL-n self-check.
 
@@ -335,7 +346,7 @@ wherever `bin/z80` is invoked from) rather than emulating real disk
 geometry — the simplest of the options weighed for how FCB-addressed
 files should map onto the host filesystem, at the cost of not being able
 to express real drive-switching or boot an actual CP/M disk image (see
-`docs/CPM_REFERENCE.md`'s Implementation status section for the trade-off
+`cpm/docs/CPM_REFERENCE.md`'s Implementation status section for the trade-off
 in full). `build_host_path()` converts an FCB's name/type fields straight
 into a host path; `fcb_pattern()`/`fcb_pattern_match()` implement `'?'`
 wildcard matching for `F_SFIRST`/`F_SNEXT`/`F_DELETE`. Since there's no
@@ -383,7 +394,7 @@ re-reads a just-written `.DBF`'s header via random I/O through an FCB it
 had already closed during `CREATE`, without reopening), not two separate
 bugs, and not a disk-space or DPB issue at all despite dBASE's own
 wording; both messages are gone with `find_or_reopen_file()` in place.
-`asm/examples/file_test.asm`'s check 6 is the regression test. Sequential
+`cpm/asm/examples/file_test.asm`'s check 6 is the regression test. Sequential
 `F_READ`/`F_WRITE` (functions 20/21) go through `find_or_reopen_file()`
 too, for the identical reason applied to a different BDOS function: found
 validating BDS C's own `CC.COM` on a source file large enough to need a
@@ -393,7 +404,7 @@ after the header and resuming the outer file's `F_READ` from its saved
 `EX`/`CR` with no intervening `F_OPEN`. Before this, that second
 `F_READ` failed with error 9 ("unopened FCB"), which `CC.COM` surfaced to
 the user as `Disk read error` partway through any file needing more than
-one `#include`. `asm/examples/file_test.asm`'s check 7 is the regression
+one `#include`. `cpm/asm/examples/file_test.asm`'s check 7 is the regression
 test.
 
 **A fake Disk Parameter Block** (`DPH_BASE`/`DPB_BASE`/`DIRBUF_BASE`/
@@ -402,7 +413,7 @@ functions `DRV_DPB` (31) and `DRV_ALLOCVEC` (27), plus BIOS `SELDSK` —
 previously unhandled, so a caller got back whatever `HL` already
 contained rather than a real DPB address. Found via Turbo Pascal's `D`ir
 command showing `Bytes Remaining On A: 0k` despite writes succeeding
-(now reports a plausible `8160k`) — see `docs/CPM_REFERENCE.md`'s File
+(now reports a plausible `8160k`) — see `cpm/docs/CPM_REFERENCE.md`'s File
 I/O Implementation status section for the exact values (an ~8MB fixed
 disk, computed per the real CP/M 2.2 Alteration Guide's DPB formulas)
 and the full story, including a real Ashton-Tate dBASE II binary whose
@@ -410,7 +421,7 @@ own `Disk is full` message looked like the same bug but turned out to
 have a different, still-open cause.
 
 **Booting a CCP (`main.c`, `cpm.c`)**: `bin/z80 --ccp <path>` loads a CP/M
-Console Command Processor (the `A>` shell — see `resources/ccp/`) at
+Console Command Processor (the `A>` shell — see `cpm/resources/ccp/`) at
 `CCP_BASE` (`0xE400`) instead of loading a single program at `0x100`, and
 calls `cpm_set_ccp_mode(1)`. With CCP mode on, `check_cpm_bios()`'s
 `WBOOT` handling — normally "set PC to 0, which the run loop treats as
@@ -429,7 +440,7 @@ and a second, separate guard inside `z80_step()` itself (also skipped in
 CCP mode — without that, `PC` would never advance off of `0x0000` at all,
 since `main.c` no longer breaks its loop there either).
 
-## Assembler (`asm/src/`)
+## Assembler (`cpm/asm/src/`)
 
 A conventional two-pass design, no lexer/token-stream stage — each source
 line is parsed directly as a string:
@@ -490,16 +501,16 @@ pure text substitution. One preprocessing-level wrinkle `REPT` introduces:
 `ENDM`, so capturing a macro body that contains a nested `REPT` block (as
 `zexall.mac`'s own `dss` macro does) needs `preprocess.c` to track that
 nesting explicitly — otherwise the inner block's `ENDM` would be mistaken
-for the end of the macro itself. See `docs/ASSEMBLER.md` for the syntax
-this all produces/consumes, and `docs/ROADMAP.md` for exact project
+for the end of the macro itself. See `cpm/docs/ASSEMBLER.md` for the syntax
+this all produces/consumes, and `cpm/docs/ROADMAP.md` for exact project
 status — as of the last update, `bin/z80asm` assembles the real,
 unmodified ZSM4 sources `zexall.mac`/`zexdoc.mac` (not just the
 Perl-generated `zexall.z80`/`zexdoc.z80`) with zero errors, and the result
 runs cleanly through `bin/z80`.
 
-## Disassembler (`disasm/src/`)
+## Disassembler (`cpm/disasm/src/`)
 
-The inverse of `asm/src/encode.c`, in a separate binary rather than a
+The inverse of `cpm/asm/src/encode.c`, in a separate binary rather than a
 `z80asm` mode flag — reading is a different shape of problem than writing
 (no expression evaluator or symbol table, but does need to re-derive
 labels).
@@ -530,26 +541,26 @@ labels).
   re-formatting step). A label definition line (`Lxxxx:`) is emitted
   before any instruction whose address appears in the table.
 
-**Known limitation** (see `docs/ROADMAP.md` for the fuller writeup): this
+**Known limitation** (see `cpm/docs/ROADMAP.md` for the fuller writeup): this
 is purely linear decoding, address by address, with no code/data
 separation — fed a data region (e.g. embedded message strings), it
 decodes those bytes as instructions too, which is correct behavior for
 what linear disassembly *is*, not a bug, but does mean output quality
 depends on the input being (close to) all code, or on the caller using
-`-l` to bound the range. `docs/Z80_REFERENCE.md` documents the opcode
+`-l` to bound the range. `cpm/docs/Z80_REFERENCE.md` documents the opcode
 coverage in detail — this disassembler targets real Z80 machine code
 generally, not just this project's own emulator's current capability (the
 two are now aligned, since `IN`/`OUT`, `IM`, `RETI`/`RETN`, `LD A,I` etc.
 are implemented on the emulator side too, but that wasn't always true and
 isn't a given for any future gap).
 
-## GTK terminal (`gtk/src/`, work in progress)
+## GTK terminal (`cpm/gtk/src/`, work in progress)
 
 `bin/z80-gtk` (built via the opt-in `make gtk`, never part of
 `make`/`make test`) is a thin GTK4 launcher, not a terminal emulator of
 its own: it spawns the real, unmodified `bin/z80` attached to a pty and
 hands that pty to a `VteTerminal` widget, which does the actual
-VT100/ANSI interpretation — `z80.c`/`cpm.c`/`emu/src/main.c` needed zero
+VT100/ANSI interpretation — `z80.c`/`cpm.c`/`cpm/emu/src/main.c` needed zero
 changes for this, since `console_emit()`/`console_read_char()` already
 just talk to stdin/stdout, and a pty's slave side *is* stdin/stdout from
 the child's point of view. `main()` calls `lower_fd_limit()` before
@@ -568,6 +579,6 @@ this project's own code runs — a confirmed macOS 26 OS bug (see Apple
 Developer Forums thread 821081, "Sporadic crash in
 xzm_main_malloc_zone_init_range_groups when spawning large binaries"),
 not a Homebrew bottle mismatch as first suspected and not fixable from
-application code — see `gtk/README.md` for the full diagnostic writeup
-and `docs/ROADMAP.md`'s Phase 4 for status.
+application code — see `cpm/gtk/README.md` for the full diagnostic writeup
+and `cpm/docs/ROADMAP.md`'s Phase 4 for status.
 

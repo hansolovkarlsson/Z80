@@ -8,13 +8,13 @@ under `gameboy/` - see `gameboy/README.md` for the directory layout
 and why cartridge ROMs are split into `roms/` (your own dumps, never
 committed) vs `test_roms/` (open-source test suites, safe to commit).
 Not started yet: this document exists to scope the work before writing
-code, the same way `docs/ROADMAP.md` tracked the Z80 core before it was
+code, the same way `cpm/docs/ROADMAP.md` tracked the Z80 core before it was
 built.
 
 ## The CPU: Sharp SM83 (commonly called "LR35902")
 
 Z80-*derived*, not a Z80. The real, confirmed differences from the
-Z80 core already in `emu/src/z80.c`:
+Z80 core already in `cpm/emu/src/z80.c`:
 
 - No `IX`/`IY` index registers, and therefore none of the `DD`/`FD`-
   prefixed instructions or `(IX+d)`/`(IY+d)` addressing.
@@ -39,17 +39,17 @@ community-maintained definitive Game Boy hardware reference; the
 [gbdev.io](https://gbdev.io/) "Awesome Game Boy Development" list
 rounds up the rest (opcode tables, timing docs, test ROM sources).
 Cite the specific page/section when a behavior is implemented from
-one of these, the same way `resources/ccp/upstream/ccp.asm` gets
+one of these, the same way `cpm/resources/ccp/upstream/ccp.asm` gets
 cited for real CCP behavior rather than "CP/M documentation summaries"
 per `CLAUDE.md`'s own stated preference.
 
 ## Architecture decision: standalone core, not shared with `z80.c`
 
-A previous session's notes (`docs/ROADMAP.md`'s old Phase 4 entry)
+A previous session's notes (`cpm/docs/ROADMAP.md`'s old Phase 4 entry)
 sketched extracting `z80.c`/`alu.c` into a shared `core/` and
 parameterizing the opcode table for the SM83's differences. Starting
 this project standalone instead: `gameboy/src/` gets its own CPU core,
-own opcode table, own ALU code, no dependency on `emu/src/`. Reasoning:
+own opcode table, own ALU code, no dependency on `cpm/emu/src/`. Reasoning:
 the ISA differences above are real and pervasive enough (missing
 register files, a materially different instruction set, different
 addressing modes) that a single parameterized dispatch table would
@@ -126,7 +126,7 @@ found against Pan Docs/hardware test results rather than guessing.
   own documented differences, not guessed.
 - **Save states / battery-backed cartridge RAM persistence.**
 - **A real graphical front end.** The Game Boy's output is a pixel
-  framebuffer, not text - the `gtk/` subproject's approach (spawn the
+  framebuffer, not text - the `cpm/gtk/` subproject's approach (spawn the
   real, unmodified core binary attached to a pty, let a `VteTerminal`
   widget do the interpretation) doesn't transfer directly, since there's
   no terminal escape-code stream to interpret. A GTK+Cairo (or SDL2)
@@ -138,7 +138,7 @@ found against Pan Docs/hardware test results rather than guessing.
 **Phase 1 (CPU core): functionally complete and passing its gate.**
 `gameboy/src/cpu.c`/`alu.c` implement the full SM83 instruction set -
 every opcode in both the unprefixed and CB-prefixed tables, table-driven
-in the same spirit as `emu/src/z80.c` (generic decode for the four fully
+in the same spirit as `cpm/emu/src/z80.c` (generic decode for the four fully
 regular blocks: `LD r,r`, the r8 and d8 ALU groups, and the whole
 CB-prefixed table; individually-named handlers for everything else).
 `gameboy/src/mmu.c` is a deliberately temporary flat-memory harness
@@ -175,7 +175,7 @@ which doesn't exist until Phase 4 - not a CPU-core correctness bug.
 **Licensing note - why `gameboy/test_roms/` is still empty**: Blargg's
 test ROMs (fetched from `retrio/gb-test-roms` to validate the above,
 not committed) carry no explicit license, unlike ZEXALL/ZEXDOC
-(GPLv2, committed at `emu/zexall/`) - the same cautious call already
+(GPLv2, committed at `cpm/emu/zexall/`) - the same cautious call already
 documented in `gameboy/README.md`. This also means Blargg's ROMs can't
 be wired into `make test` the way ZEXALL is, since that would need
 either committing them anyway or a network fetch at test time (neither

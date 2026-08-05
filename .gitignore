@@ -1,10 +1,10 @@
 bin/
-emu/src/*.o
-asm/src/*.o
-disasm/src/*.o
-gtk/src/*.o
+cpm/emu/src/*.o
+cpm/asm/src/*.o
+cpm/disasm/src/*.o
+cpm/gtk/src/*.o
 gameboy/src/*.o
 gameboy/tests/__pycache__/
 .claude/
 cpm_disk/
-!/cpm_disk/
+!/cpm/cpm_disk/

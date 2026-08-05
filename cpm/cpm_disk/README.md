@@ -1,0 +1,162 @@
+# cpm_disk
+
+A ready-to-run collection of `.com` programs, built from this repo's own
+source (`cpm/asm/examples/`, `cpm/resources/tastybasic/`, `cpm/resources/sargon/`)
+plus prebuilt third-party binaries (`cpm/resources/Mbasic.com`,
+`cpm/resources/adventure/`) that have no assembleable source. Every filename
+here fits CP/M's real 8.3 limit (8-character base name, 3-character
+extension) specifically so `DIR` at the CCP shell (see below) can list
+and run every single one of them — no name here is the same as its
+`cpm/asm/examples/`/`resources/` source's own filename for that reason. Run
+any of them from inside **`cpm/`** (`bin/` itself stays at the repo root,
+shared with the `gameboy/` subproject - see `CLAUDE.md`'s top-level
+layout):
+
+```
+../bin/z80 cpm_disk/hello.com
+../bin/z80 cpm_disk/tastybas.com
+../bin/z80 cpm_disk/sargon.com
+../bin/z80 cpm_disk/mbasic.com
+../bin/z80 cpm_disk/adventur.com
+../bin/z80 cpm_disk/turbo.com
+../bin/z80 cpm_disk/hanoi.com
+../bin/z80 cpm_disk/queens.com
+../bin/z80 cpm_disk/bdshello.com
+../bin/z80 cpm_disk/bdsfib.com
+```
+
+Or boot a real CP/M shell instead of a single program — a genuine `A>`
+prompt, `DIR`/`TYPE`/`ERA`/`REN`/etc., and the ability to run any program
+above just by typing its name:
+
+```
+../bin/z80 --ccp cpm_disk/ccp.com
+```
+
+`adventur.com` needs its data file `Phrogz.din`, also in this directory
+— `bin/z80`'s own file I/O maps every drive/user onto a `cpm_disk/`
+relative to wherever it's invoked from (see `CLAUDE.md`'s File I/O
+section), so running from inside `cpm/` as shown above means this
+directory *is* that mapped disk, and it just works.
+
+**Careful**: that also means any file I/O a program here actually does —
+`SAVE` in Tasty Basic or MBASIC, `filetest.com`'s create/rename/delete
+checks — writes into this same tracked directory. `cpm/tests/run_tests.sh`
+deliberately runs from an isolated throwaway directory instead of here
+for exactly that reason (see `CLAUDE.md`). Check `git status` before
+committing after playing around, and revert anything that shouldn't be
+tracked.
+
+## What's here
+
+- `hello.com`, `selftest.com`, `macrotst.com`, `incltest.com`,
+  `repttest.com`, `gapstest.com`, `console.com`, `filetest.com` — this
+  project's own `cpm/asm/examples/*.asm` regression-test programs (`hello`,
+  `selftest`, `macro_test`, `include_test`, `rept_test`, `gaps_test`,
+  `console_test`, `file_test` respectively), assembled with `bin/z80asm`.
+  Most print `OK`/`FAIL` lines and exit; `console.com` and `filetest.com`
+  need specific input (see each source `.asm` file's header comment, or
+  `cpm/tests/run_tests.sh` for exactly what to pipe in).
+- `tastybas.com` — Tasty Basic, assembled from
+  `cpm/resources/tastybasic/tastybasic_cpm.asm`. See
+  `cpm/docs/TASTYBASIC_REFERENCE.md`.
+- `sargon.com` — SARGON chess, assembled from
+  `cpm/resources/sargon/sargon_cpm.asm`.
+- `mbasic.com` — Microsoft BASIC-80, a prebuilt binary (no source
+  available). See `cpm/docs/MBASIC_REFERENCE.md`.
+- `adventur.com` + `Phrogz.din` — Colossal Cave Adventure, a prebuilt
+  binary + its data file (no source available; `adventur.com` is this
+  upstream binary's own original 8.3-safe filename, unchanged). See
+  `cpm/resources/adventure/README.md`.
+- `ccp.com` — Digital Research's CP/M 2.2 CCP (shell), assembled from
+  `cpm/resources/ccp/ccp_cpm.asm`, run with `--ccp` rather than as a plain
+  program (see above). See `cpm/docs/CCP_REFERENCE.md` for its built-in
+  commands (`DIR`/`ERA`/`TYPE`/`SAVE`/`REN`/`USER`).
+- `turbo.com` + `turbo.msg` + `turbo.ovr` — Borland's Turbo Pascal 3.01A,
+  a prebuilt binary (no source available), reconfigured for a real ANSI
+  terminal via `cpm/resources/turbopascal/derive.sh` (it ships defaulting to
+  a "Microbee VDU" terminal profile otherwise). A genuine integrated
+  environment — full-screen editor, compiler, and compile-and-run, all
+  in one program, not just a compiler. See
+  `cpm/docs/TURBOPASCAL_REFERENCE.md` for the editor's keyboard commands and
+  the language itself.
+- `hanoi.com` — Francesco Sblendorio's Towers of Hanoi (GPLv2), a genuine
+  third-party Turbo Pascal 3.01A program (not written for this project),
+  compiled from `cpm/resources/hanoi/upstream/hanoi-p.pas` by
+  `cpm/resources/hanoi/derive.sh` running the real `TURBO.COM` above as the
+  build tool. First real program that needed more than a trivial amount
+  of source to load — see `cpm/docs/TURBOPASCAL_REFERENCE.md`'s Known
+  limitations for the FCB-reuse bug this surfaced and fixed in `cpm.c`.
+- `queens.com` + `queens.dat` — Francesco Sblendorio's Eight Queens
+  (GPLv2), another genuine third-party Turbo Pascal 3.01A program from
+  the same author. Unlike `hanoi.com`, this is the upstream project's
+  own prebuilt binary, not compiled by this project — its source
+  (`cpm/resources/queens/upstream/queens.pas`) hits a genuine Turbo Pascal
+  3.01A compiler resource limit (`Error 99: Compiler overflow`) that
+  this project's own memory map can't work around; see
+  `cpm/resources/queens/upstream/README.md` and
+  `cpm/docs/TURBOPASCAL_REFERENCE.md`'s Known limitations for the full
+  story. The binary itself runs correctly, including reading
+  `queens.dat`'s saved solutions (the `F)ound solutions` menu option).
+- `CC.COM`/`CC2.COM`/`CLINK.COM`/`CLIB.COM`/`DEFF.CRL`/`DEFF2.CRL`/`C.CCC`
+  — Leor Zolman's BDS C v1.60, a real 8080/Z80 C compiler and linker for
+  CP/M-80, **public domain** since 2002 (see
+  `cpm/resources/bdsc/upstream/README.md`). Compile and link your own C
+  programs interactively (from inside `cpm/`, same convention as above):
+  `../bin/z80 cpm_disk/CC.COM YOURPROG.C` then
+  `../bin/z80 cpm_disk/CLINK.COM YOURPROG`. First real program tested here
+  that needed command-line arguments (a filename, not menu-driven input)
+  — surfaced two real gaps, both now fixed: `bin/z80` never populated
+  the CP/M command-tail/default-FCB a real CCP would set up (see
+  `CLAUDE.md`'s File I/O section), and `console_char_ready()` couldn't
+  tell "a real key is waiting" apart from "stdin is at EOF," so BDS C's
+  own per-character Ctrl-C-abort check injected a stray `^Z` into every
+  program's output when run non-interactively (see
+  `cpm/docs/CPM_REFERENCE.md`'s Implementation status).
+- `bdshello.com`/`bdsfib.com` — compiled and linked from
+  `cpm/resources/bdsc/examples/hello.c`/`fib.c` by `cpm/resources/bdsc/derive.sh`
+  running the real `CC.COM`/`CLINK.COM` above as the build tool (named
+  `bds*` here since plain `hello.com` is already taken by this project's
+  own `cpm/asm/examples/hello.asm`). `fib.c` exercises recursion, a loop,
+  and multi-argument `printf`, not just "does it boot."
+
+Regenerate the assembled ones (after any assembler/source change) with,
+again from inside `cpm/`:
+
+```
+../bin/z80asm asm/examples/hello.asm -o cpm_disk/hello.com
+../bin/z80asm asm/examples/selftest.asm -o cpm_disk/selftest.com
+../bin/z80asm asm/examples/macro_test.asm -o cpm_disk/macrotst.com
+../bin/z80asm asm/examples/include_test.asm -o cpm_disk/incltest.com
+../bin/z80asm asm/examples/rept_test.asm -o cpm_disk/repttest.com
+../bin/z80asm asm/examples/gaps_test.asm -o cpm_disk/gapstest.com
+../bin/z80asm asm/examples/console_test.asm -o cpm_disk/console.com
+../bin/z80asm asm/examples/file_test.asm -o cpm_disk/filetest.com
+../bin/z80asm resources/tastybasic/tastybasic_cpm.asm -o cpm_disk/tastybas.com
+../bin/z80asm resources/sargon/sargon_cpm.asm -o cpm_disk/sargon.com
+../bin/z80asm resources/ccp/ccp_cpm.asm -o cpm_disk/ccp.com
+```
+
+`turbo.com`/`turbo.msg`/`turbo.ovr` aren't assembled from source (no
+source available) — regenerate them by re-running
+`cpm/resources/turbopascal/derive.sh` (which patches
+`cpm/resources/turbopascal/upstream/TURBO.COM` for an ANSI terminal) and
+copying its output into `cpm_disk/`.
+
+`hanoi.com` is compiled (not assembled) from real Pascal source — after
+regenerating `turbo.com` above if needed, regenerate it with
+`cpm/resources/hanoi/derive.sh` (which runs the real `TURBO.COM` under this
+project's own emulator to compile `cpm/resources/hanoi/upstream/hanoi-p.pas`)
+and copy `cpm/resources/hanoi/hanoi.com` here.
+
+`queens.com`/`queens.dat` are copies of `cpm/resources/queens/upstream/`'s
+own prebuilt binary/data file, not built by this project — see
+`cpm/resources/queens/upstream/README.md` for why.
+
+`CC.COM`/`CC2.COM`/`CLINK.COM`/`CLIB.COM`/`DEFF.CRL`/`DEFF2.CRL`/`C.CCC`
+are copies of `cpm/resources/bdsc/upstream/`'s own real BDS C distribution
+files, not built by this project. `bdshello.com`/`bdsfib.com` regenerate
+with `cpm/resources/bdsc/derive.sh` (which compiles and links
+`cpm/resources/bdsc/examples/*.c` via those same toolchain files, running
+under this project's own emulator) — copy `cpm/resources/bdsc/hello.com`/
+`fib.com` here afterward.

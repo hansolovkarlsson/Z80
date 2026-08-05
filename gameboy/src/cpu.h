@@ -5,7 +5,7 @@
 
 // See docs/GAMEBOY_ROADMAP.md's "Architecture decision" section for why
 // this is a standalone core rather than sharing code/structs with
-// emu/src/z80.h - the two CPUs are related but not identical, and this
+// cpm/emu/src/z80.h - the two CPUs are related but not identical, and this
 // struct reflects the SM83's own real register file: no IX/IY, no
 // alternate register set (both are Z80-only), no I/O ports (the SM83 has
 // none - all device access is memory-mapped).
@@ -71,7 +71,7 @@ typedef struct GBCpu {
 uint8_t gb_read_byte(GBCpu *cpu, uint16_t addr);
 void gb_write_byte(GBCpu *cpu, uint16_t addr, uint8_t val);
 
-// Unlike Z80OpcodeHandler (emu/src/z80.h), no separate ram parameter -
+// Unlike Z80OpcodeHandler (cpm/emu/src/z80.h), no separate ram parameter -
 // GBCpu carries its own memory pointer and every handler goes through
 // gb_read_byte/gb_write_byte, so there's nothing a second parameter
 // would add.
@@ -81,7 +81,7 @@ typedef int (*GBOpcodeHandler)(GBCpu *cpu);
 // "M-cycles" = T-cycles/4 some references count in) the executed
 // instruction took, or a negative value for a genuinely unimplemented
 // opcode (the 11 official gaps in the unprefixed table, or a dispatch
-// bug), mirroring z80_step()'s own convention in emu/src/z80.h.
+// bug), mirroring z80_step()'s own convention in cpm/emu/src/z80.h.
 int gb_cpu_step(GBCpu *cpu);
 
 void gb_cpu_init_tables(void);

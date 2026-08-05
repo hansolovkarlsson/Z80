@@ -3,26 +3,26 @@ CFLAGS := -Wall -Wextra -O2
 
 BIN_DIR := bin
 
-EMU_SRC_DIR := emu/src
+EMU_SRC_DIR := cpm/emu/src
 EMU_SRCS := $(wildcard $(EMU_SRC_DIR)/*.c)
 EMU_OBJS := $(EMU_SRCS:.c=.o)
 EMU_TARGET := $(BIN_DIR)/z80
 
-ASM_SRC_DIR := asm/src
+ASM_SRC_DIR := cpm/asm/src
 ASM_SRCS := $(wildcard $(ASM_SRC_DIR)/*.c)
 ASM_OBJS := $(ASM_SRCS:.c=.o)
 ASM_TARGET := $(BIN_DIR)/z80asm
 
-DASM_SRC_DIR := disasm/src
+DASM_SRC_DIR := cpm/disasm/src
 DASM_SRCS := $(wildcard $(DASM_SRC_DIR)/*.c)
 DASM_OBJS := $(DASM_SRCS:.c=.o)
 DASM_TARGET := $(BIN_DIR)/z80dasm
 
 # Opt-in only (never part of `all`/`test`) - the only build target with an
 # external dependency beyond a bare C compiler. A thin GTK4+VTE launcher
-# for the real bin/z80, not a separate emulator - see gtk/src/main.c's
+# for the real bin/z80, not a separate emulator - see cpm/gtk/src/main.c's
 # own comment for why.
-GTK_SRC_DIR := gtk/src
+GTK_SRC_DIR := cpm/gtk/src
 GTK_SRCS := $(wildcard $(GTK_SRC_DIR)/*.c)
 GTK_OBJS := $(GTK_SRCS:.c=.o)
 GTK_TARGET := $(BIN_DIR)/z80-gtk
@@ -119,10 +119,10 @@ $(GTK_SRC_DIR)/%.o: $(GTK_SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 run: emulator
-	./$(EMU_TARGET) emu/zexall/ZEXALL-main/zexall.com | less
+	./$(EMU_TARGET) cpm/emu/zexall/ZEXALL-main/zexall.com | less
 
 test: emulator assembler
-	./tests/run_tests.sh
+	./cpm/tests/run_tests.sh
 
 clean:
 	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_VISUAL_OUT)

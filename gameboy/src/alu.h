@@ -7,7 +7,7 @@
 // are always 0 (both when read directly and, per pandocs, when POP AF
 // restores F from the stack: real hardware masks the low nibble to 0
 // regardless of what was pushed). No X/Y undocumented-flag bits exist
-// here the way they do on a real Z80 (emu/src/alu.h's FLAG_X/FLAG_Y) -
+// here the way they do on a real Z80 (cpm/emu/src/alu.h's FLAG_X/FLAG_Y) -
 // this is a genuine hardware difference, not an oversight.
 #define GB_FLAG_C (1 << 4) // Carry
 #define GB_FLAG_H (1 << 5) // Half-Carry

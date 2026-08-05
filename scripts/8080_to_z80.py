@@ -5,7 +5,7 @@ z80asm (this project's assembler) speaks Z80 mnemonics only - real CP/M
 source predates the Z80 and is written against the 8080 instruction set.
 This is a general-purpose line-level translator (not specific to the
 CCP), built because we've now hit this same 8080-vs-Z80 gap three times
-(a hand-translated resources/user_prompt.txt, 3 stray lines in SARGON,
+(a hand-translated cpm/resources/user_prompt.txt, 3 stray lines in SARGON,
 and now this entire ~1300-line CCP) - worth doing properly once.
 
 Approach: for each line, find the first whitespace-separated word that's
@@ -22,7 +22,7 @@ left untouched - only real 8080 opcodes are ever touched.
 
 Deliberately NOT general enough to handle every 8080 assembler's syntax
 quirks (this is a derive.sh-style one-off tool, not a shipped feature) -
-see docs/ROADMAP.md for what specifically needed hand-fixing beyond this
+see cpm/docs/ROADMAP.md for what specifically needed hand-fixing beyond this
 script for ccp.asm itself.
 """
 import re
