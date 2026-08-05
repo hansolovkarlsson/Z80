@@ -1,8 +1,0 @@
-
-
-Later have some kind of debug/monitor tool, tracing the execution and such. Register printout, stack dump, ...
-
-At some point perhaps ABC80 and GameBoy emulators.
-
-
-
