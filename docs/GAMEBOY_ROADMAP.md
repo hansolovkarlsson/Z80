@@ -228,6 +228,63 @@ licensing question and could be `make`-invoked directly; it's simply
 not part of the top-level `all`/`test` yet, matching the rest of this
 still-early subproject.
 
-**Next**: Phase 3 (PPU) - needed before there's anything to look at.
-Phase 2 makes it possible to load real, full-size games; there's
-nothing yet to render them.
+**Phase 3 (PPU): done, with a documented, evidenced gap.**
+`gameboy/src/ppu.{c,h}` implements the LCD controller: all twelve
+registers (`0xFF40`-`0xFF4B`), the mode/timing state machine (OAM
+scan/Drawing/HBlank/VBlank, 456 dots/scanline, 154 scanlines/frame),
+and a scanline-at-a-time renderer covering background, window, and
+objects (both 8x8 and 8x16, correct selection/drawing priority, X/Y
+flip, the two tile-addressing modes and their signed-vs-unsigned
+quirk, DMG palette translation). `gameboy/src/mmu.c` now routes
+`0xFF40`-`0xFF4B` through it and triggers OAM DMA transfers. Every
+register layout, addressing mode, and priority rule is grounded
+against pandocs' `LCDC.md`/`STAT.md`/`Tile_Data.md`/`Tile_Maps.md`/
+`OAM.md`/`Rendering.md`/`Palettes.md`/`OAM_DMA_Transfer.md` (fetched
+during this phase - see `ppu.c`'s own comments for which page backs
+which rule), not guessed. Two deliberate simplifications, both
+documented in `ppu.c` at the exact line they apply: Mode 3 is always
+172 dots (the real minimum) rather than the real hardware's variable
+172-289 (SCX/window/object timing penalties aren't modeled - affects
+STAT-interrupt timing precision, not rendered pixel content); OAM DMA
+is an instant 160-byte copy rather than the real timed 160 M-cycle
+transfer (correct for any program that follows the universal
+busy-wait-in-HRAM convention real hardware requires anyway).
+
+**Correctness gate**: [dmg-acid2](https://github.com/mattcurrie/dmg-acid2)
+(Matt Currie, MIT-licensed - committed at `gameboy/test_roms/dmg-acid2/`,
+unlike Blargg's ROMs) is the standard PPU correctness test in the Game
+Boy dev community, with a known-correct reference image to compare
+against pixel-for-pixel - exactly the gate this phase's own original
+plan called for. `make gameboy-visual-test` renders a frame and runs
+`gameboy/tests/compare_frame.py` (a small dependency-free PNG decoder +
+comparator, since there's no image library in this project) against it:
+**21037/23040 pixels match (91.31%)**.
+
+The remaining ~9% has a specific, evidenced cause, not a mystery: dmg-acid2's
+own README states it "uses `LY`=`LYC` coincidence interrupts to perform
+register writes on specific rows of the screen during mode 2" - nearly
+every interesting visual feature (the window being toggled on/off for
+the eyes and chin, `LCDC` bit 0 toggling to hide hair, the tile map
+switching for the footer) is implemented as a mid-frame raster effect
+driven by a STAT interrupt actually firing and being *handled*. This
+project has interrupt *requests* (the PPU already sets `IF` bits on
+VBlank/STAT events - see `ppu.c`) but not interrupt *dispatch* (jumping
+to a handler when `IME`/`IE`/`IF` allow it), which is explicitly Phase
+4, not built yet. A side-by-side comparison confirms this precisely:
+the static parts (overall face shape, mouth, general background
+structure - whatever was set up once before any interrupt would have
+fired) render correctly, while every interrupt-gated detail is visibly
+wrong or missing exactly as predicted - the footer text ("dmg-acid2 by
+Matt Currie") is entirely blank (the window never gets disabled to
+reveal it), the eyes render differently (their two-stage window/object
+overlay never gets its mid-frame update), and the "HELLO WORLD!" text's
+exclamation mark handling is affected (the row it's on is exactly where
+`gameboy/tests/compare_frame.py`'s pixel diff concentrates). Re-run this
+gate once Phase 4 lands - a rate meaningfully *below* 91.31% at that
+point would flag a real regression, which is why `compare_frame.py`
+treats its baseline as a floor to check against, not a fixed target.
+
+**Next**: Phase 4 (interrupts, timer, joypad input) - both to let
+dmg-acid2 actually pass, and because it's a real prerequisite for
+essentially any game being playable at all, not just "boots to a
+logo."

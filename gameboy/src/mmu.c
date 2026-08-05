@@ -1,5 +1,6 @@
 #include "mmu.h"
 #include "cart.h"
+#include "ppu.h"
 #include <stddef.h>
 
 void (*gb_serial_output_hook)(uint8_t byte) = NULL;
@@ -20,13 +21,13 @@ static uint16_t redirect_echo(uint16_t addr) {
 uint8_t gb_read_byte(GBCpu *cpu, uint16_t addr) {
     if (addr < 0x8000) return gb_cart_read(cpu->cart, addr);
     if (addr >= 0xA000 && addr < 0xC000) return gb_cart_read_ram(cpu->cart, addr);
+    if (addr >= 0xFF40 && addr <= 0xFF4B) return gb_ppu_read_reg(cpu->ppu, addr);
 
     addr = redirect_echo(addr);
     if (addr >= 0xFEA0 && addr <= 0xFEFF) {
         // "Not usable" - real hardware's behavior here depends on PPU
-        // state and hardware revision (see pandocs); no PPU exists yet
-        // in this phase, so this fixed 0xFF is a placeholder, not a
-        // grounded model of the real quirk. Revisit alongside Phase 3.
+        // state and hardware revision (see pandocs); this fixed 0xFF is
+        // a placeholder, not a grounded model of the real quirk.
         return 0xFF;
     }
     return cpu->memory[addr];
@@ -35,6 +36,7 @@ uint8_t gb_read_byte(GBCpu *cpu, uint16_t addr) {
 void gb_write_byte(GBCpu *cpu, uint16_t addr, uint8_t val) {
     if (addr < 0x8000) { gb_cart_write_ctrl(cpu->cart, addr, val); return; }
     if (addr >= 0xA000 && addr < 0xC000) { gb_cart_write_ram(cpu->cart, addr, val); return; }
+    if (addr >= 0xFF40 && addr <= 0xFF4B) { gb_ppu_write_reg(cpu->ppu, cpu, addr, val); return; }
 
     addr = redirect_echo(addr);
     if (addr >= 0xFEA0 && addr <= 0xFEFF) {

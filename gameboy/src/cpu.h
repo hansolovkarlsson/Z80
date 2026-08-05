@@ -9,7 +9,7 @@
 // struct reflects the SM83's own real register file: no IX/IY, no
 // alternate register set (both are Z80-only), no I/O ports (the SM83 has
 // none - all device access is memory-mapped).
-typedef struct {
+typedef struct GBCpu {
     union { struct { uint8_t f, a; }; uint16_t af; };
     union { struct { uint8_t c, b; }; uint16_t bc; };
     union { struct { uint8_t e, d; }; uint16_t de; };
@@ -55,6 +55,9 @@ typedef struct {
     // the field itself doesn't require a cart to exist for the struct
     // to be well-formed).
     struct GBCart *cart;
+
+    // Same forward-declaration reasoning as `cart` above, added Phase 3.
+    struct GBPpu *ppu;
 } GBCpu;
 
 uint8_t gb_read_byte(GBCpu *cpu, uint16_t addr);
