@@ -1016,20 +1016,13 @@ Aspirational, not yet scoped:
   launches, same allocator, same symptom - see `gtk/README.md` for the
   citation). Not fixable from application code; just retry the launch
   when it happens, and revisit if/when Apple ships a fix.
-- **A future GameBoy emulator** (discussed, not started) - the Sharp
-  LR35902 CPU is Z80-*derived*, not identical (no `IX`/`IY`, no
-  alternate register set, no block instructions; it adds its own
-  opcodes), so "sharing the Z80 code" means the table-driven dispatch/
-  ALU *pattern* in `z80.c`/`alu.c` is reusable, not a drop-in reuse of
-  the opcode table as-is. `cpm.c` (BDOS/BIOS) is already 100% CP/M-
-  specific and wouldn't apply at all - that boundary already exists.
-  Plan, deferred until this actually starts rather than guessed now:
-  extract `z80.c`/`alu.c` into a shared location (e.g. `core/`),
-  parameterize the opcode table for the LR35902's real differences, and
-  build a new `gameboy/` sibling to `emu/`/`asm/`/`disasm/`/`gtk/` with
-  its own GTK+Cairo pixel-framebuffer window (a GameBoy screen is
-  graphics, not text, so this would *not* reuse the VTE-based approach
-  above).
+- **A Game Boy emulator - now underway** (`gameboy/`) - see
+  `docs/GAMEBOY_ROADMAP.md` for the full phase plan, CPU-difference
+  rationale, and directory layout (`gameboy/src/`, `gameboy/roms/`,
+  `gameboy/test_roms/`). Superseded the earlier "extract a shared
+  `core/`" idea sketched here in favor of a standalone
+  `gameboy/src/` core - see that document's own "Architecture
+  decision" section for why.
 - A custom ROM/OS on top of it — open design questions include a stack VM
   and whether Logo-style prefix notation could combine with a stack machine
   model.
