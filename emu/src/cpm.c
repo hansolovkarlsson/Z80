@@ -1091,6 +1091,29 @@ void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
             cpu->a = 0;
         }
 
+        // Real CP/M BDOS mirrors the A-register result into L (with H=0)
+        // for every function except the handful (here, 27/31) that return
+        // a genuine 16-bit pointer in HL instead of an 8-bit status code -
+        // this is documented BDOS behavior, not an emulator invention, and
+        // it matters because BDS C's own bdos() library wrapper returns
+        // its result via HL (the standard 8080 int-return-value register
+        // pair), not A. A handful of functions above (1, 6, 11, 12) already
+        // set L by hand for this exact reason; doing it once, generically,
+        // here covers the rest instead of requiring every future function
+        // to remember it individually. Found via BDS C's own CDB debugger
+        // (part of the full bdsc-all.zip distribution's CDEBUG.LBR, not
+        // previously exercised in this repo): CDB2.OVL's target-loading
+        // loop reads T.COM correctly (F_READ genuinely returns success,
+        // A=0) but its compiled `if (bdos(20,fcb)) break;` immediately
+        // breaks anyway, since bdos()'s HL-based return value was still
+        // whatever random data HL held from earlier in CDB2's own code -
+        // never actually 0 - which looked like an immediate, spurious EOF
+        // and truncated every debugged program to its first 128 bytes.
+        if (cpu->c != 27 && cpu->c != 31) {
+            cpu->l = cpu->a;
+            cpu->h = 0;
+        }
+
         // Simulate RET: Pop return address off the stack into PC
         uint8_t low = ram[cpu->sp++];
         uint8_t high = ram[cpu->sp++];

@@ -334,8 +334,80 @@ cmploop7:
 
         ld de, ok7
         call print
-        jp done
+        jp check8
 fail7:  ld de, bad7
+        call print
+
+check8:
+        ; --- Check 8: BDOS mirrors A into L (H=0) on F_WRITE/F_READ,
+        ; not just A alone. Real CP/M BDOS convention (documented in the
+        ; CP/M 2.2 Programmer's Reference); BDS C's own bdos() library
+        ; wrapper returns its result via HL - the standard 8080 int
+        ; return-value register pair - not A, so C code that checks
+        ; `if (bdos(...))` reads a stale/garbage HL if this mirroring is
+        ; missing. Found via BDS C's own CDB debugger (CDB2.OVL): its
+        ; target-loading loop's `if (bdos(20,fcb)) break;` broke on the
+        ; very first record despite F_READ genuinely succeeding (A=0),
+        ; because HL still held leftover data - truncating every debugged
+        ; program to 128 bytes.
+        ld de, dmabuf
+        ld c, 26                  ; F_DMAOFF
+        call BDOS
+
+        ld de, fcb8
+        ld c, 22                  ; F_MAKE
+        call BDOS
+        or a
+        jp nz, fail8
+
+        ld de, fcb8
+        ld c, 21                  ; F_WRITE record 0 - expect A=0, HL=0000
+        call BDOS
+        or a
+        jp nz, fail8
+        ld a, h
+        or l
+        jp nz, fail8
+
+        ld de, fcb8
+        ld c, 16                  ; F_CLOSE
+        call BDOS
+
+        ld de, fcb8
+        ld c, 15                  ; F_OPEN
+        call BDOS
+        or a
+        jp nz, fail8
+
+        ld de, fcb8
+        ld c, 20                  ; F_READ record 0 - expect A=0, HL=0000
+        call BDOS
+        or a
+        jp nz, fail8
+        ld a, h
+        or l
+        jp nz, fail8
+
+        ld de, fcb8
+        ld c, 20                  ; F_READ past EOF - expect A=1, HL=0001
+        call BDOS
+        cp 1
+        jp nz, fail8
+        ld a, h
+        or a
+        jp nz, fail8
+        ld a, l
+        cp 1
+        jp nz, fail8
+
+        ld de, fcb8
+        ld c, 19                  ; F_DELETE (cleanup)
+        call BDOS
+
+        ld de, ok8
+        call print
+        jp done
+fail8:  ld de, bad8
         call print
 
 done:   jp 0
@@ -378,6 +450,10 @@ fcb7:   db 0,'SEQRESUM','TXT',0,0,0,0
         ds 16
         db 0,0,0,0
 
+fcb8:   db 0,'HLMIRROR','TXT',0,0,0,0
+        ds 16
+        db 0,0,0,0
+
 ok1:    db 'OK 1 F_MAKE / F_WRITE / F_CLOSE$'
 bad1:   db 'FAIL 1 F_MAKE / F_WRITE / F_CLOSE$'
 ok2:    db 'OK 2 F_RENAME$'
@@ -392,6 +468,8 @@ ok6:    db 'OK 6 F_WRITERAND / F_READRAND on a closed FCB$'
 bad6:   db 'FAIL 6 F_WRITERAND / F_READRAND on a closed FCB$'
 ok7:    db 'OK 7 F_READ resuming on a closed FCB$'
 bad7:   db 'FAIL 7 F_READ resuming on a closed FCB$'
+ok8:    db 'OK 8 BDOS mirrors A into HL on F_WRITE/F_READ$'
+bad8:   db 'FAIL 8 BDOS mirrors A into HL on F_WRITE/F_READ$'
 crlf:   db 13, 10, '$'
 
 msg6:   db 'Random I/O on a closed FCB'

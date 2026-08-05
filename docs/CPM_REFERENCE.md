@@ -33,7 +33,12 @@ to agree with.
 `main.c`/`cpm.c` in this project intercept `PC == 0x0005` directly in
 `z80_step()` rather than actually executing a jump through BDOS code that
 doesn't exist in this emulator's memory image — see [Implementation
-status](#implementation-status).
+status](#implementation-status). `check_cpm_bdos()` mirrors `A` into `L`
+(`H=0`) for every function except the two (27, 31) that return a genuine
+16-bit pointer instead of a status code, matching the "`A` is always the
+low byte of `HL`" rule above — this wasn't generically true until a real
+bug (BDS C's CDB debugger; see `docs/ROADMAP.md`) surfaced that only four
+functions did it by hand.
 
 ## BDOS function reference (0–40)
 

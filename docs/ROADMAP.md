@@ -936,6 +936,54 @@ there surfaced and fixed several real dialect gaps, documented below.
   (`Copyright (C) 1986 by Enteleki, Inc.`) from Leor Zolman's
   public-domain BDS C compiler it's bundled with, so - unlike
   `CC.COM`/`CLINK.COM`/`DBASE.COM` - it isn't committed to this repo.
+- [x] **BDOS results weren't mirrored from A into HL, breaking BDS C's own
+  `if (bdos(...))` idiom** (`emu/src/cpm.c`) - found getting the CDB
+  debugger (`resources/bdsc/upstream/README.md`'s "not included" list;
+  fetched fresh from the full `bdsc-all.zip` distribution's `CDEBUG.LBR`,
+  same as `L2.C`/RED above) actually operational, the loose end the RED
+  entry above left open. The real blocker was never `.CDB`'s binary
+  format - that turned out to be a total non-issue once the real BDS C
+  User's Guide (`CDB.CDB` chapter) was read: `.CDB` files are produced by
+  `CC.COM` itself via its `-k` flag (`cc target.c -k`), not by `L2 -d`
+  (`L2 -d` only adds RST-6 breakpoint instructions to the linked `.COM`;
+  its `.SYM` output the previous session chased is a separate, unrelated
+  file). `cc target.c -k` / `l2 target -d` / `cdb target` all worked
+  immediately once tried in that order - CDB.COM correctly parsed the
+  real `.CDB` symbol table `-k` produced and loaded `CDB2.OVL`
+  successfully - but the debugger silently exited moments after loading
+  the target `.COM` file, with no error printed. Traced with a temporary
+  PC/BDOS-call trace (not committed) to `CDB2.OVL`'s own target-loading
+  loop (`cdb2()` in `CDB2.C`): `bdos(20,fcb)` (`F_READ`) was called
+  exactly once, on a fresh, correctly-opened FCB, and it genuinely
+  succeeded (`A=0`, a full 128-byte record read) - yet the compiled
+  `if (bdos(20,fcb)) break;` broke out of the load loop anyway,
+  truncating every debugged program to its first 128 bytes and (since
+  `call(ORIGIN+0x0100)` then jumped into that truncated - actually still
+  CDB.COM's own leftover - code) ending in an unrelated, silent `exit()`.
+  Root cause: BDS C's `bdos()` library wrapper returns its result via HL
+  (the standard 8080 C int-return-value register pair), and real CP/M
+  BDOS mirrors the A-register status into L (H=0) for exactly this
+  reason - documented behavior in the CP/M 2.2 Programmer's Reference,
+  not an emulator invention. `check_cpm_bdos()` already did this by hand
+  for four functions (1, 6, 11, 12 - console I/O and version-check, each
+  presumably added when *that* function's own real-software bug
+  surfaced) but never generically, so every other function (`F_OPEN`,
+  `F_READ`, `F_WRITE`, etc.) left L holding whatever was there before the
+  call - assembly-level BDOS callers that only ever check A (every
+  program validated before this one) never noticed. Fixed by mirroring
+  A into L (H=0) once, generically, at the end of `check_cpm_bdos()`,
+  skipping only the two functions (27, 31) that genuinely return a
+  16-bit pointer in HL instead of a status code. `asm/examples/
+  file_test.asm` check 8 is the permanent regression test (write/open/
+  read/read-past-EOF via BDOS, asserting HL == A after each). With this
+  fixed, `cdb target` runs a complete real debugging session end-to-end
+  under this project's own emulator: breakpoint at `MAIN` entry, `trace`,
+  `dump x` (showing the correct value both before and after the
+  variable's assignment), `list locals`, and `quit`. CDB's own source
+  carries a separate copyright (`Copyright (c) 1982-1986 by J. David
+  Kirkland, Jr.`) from Zolman's public-domain BDS C compiler, the same
+  situation as RED above, so - like RED - neither its source nor the
+  compiled `CDB.COM`/`CDB2.OVL`/`L2.COM` are committed to this repo.
 
 ## Phase 4: Beyond CP/M (exploratory)
 

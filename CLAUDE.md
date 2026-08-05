@@ -185,6 +185,26 @@ refused to start at all). `check_cpm_bdos()` intercepts `BDOS_ENTRY`
 itself identically to `0x0005`, the same self-referencing-target
 reasoning as the BIOS vectors below, in case software calls that address
 directly having read it back rather than always using `CALL 5`.
+Immediately before that simulated `RET`, `check_cpm_bdos()` mirrors
+whatever it put in `A` into `L` too (`H` set to `0`) — real CP/M BDOS
+does this for every function except the couple (27, 31) that return a
+genuine 16-bit pointer in `HL` instead of a status code (documented
+behavior in the CP/M 2.2 Programmer's Reference, not an emulator
+invention), and it matters here because BDS C's own `bdos()` library
+wrapper returns its result via `HL` — the standard 8080 C
+int-return-value register pair — not `A`. Four functions (1, 6, 11, 12)
+already set `L` by hand before this existed, presumably because each
+one's own real-software bug already surfaced the need; the generic
+mirror at the end covers every other function instead of requiring each
+future one to remember it individually. Found getting BDS C's own CDB
+debugger operational (`resources/bdsc/upstream/README.md`'s "not
+included" list) — CDB2's target-loading loop's compiled
+`if (bdos(20,fcb)) break;` broke on the very first record despite
+`F_READ` genuinely succeeding (`A=0`), because `HL` still held whatever
+was left over from earlier in CDB2's own code, truncating every debugged
+program to its first 128 bytes; assembly-level callers checking `A`
+directly (every program validated before this one) never hit it.
+`asm/examples/file_test.asm` check 8 is the permanent regression test.
 
 **BIOS emulation (`cpm.c`)**: `check_cpm_bios()` runs alongside
 `check_cpm_bdos()` and handles direct BIOS calls — some real software
