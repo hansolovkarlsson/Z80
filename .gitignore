@@ -3,6 +3,7 @@ emu/src/*.o
 asm/src/*.o
 disasm/src/*.o
 gtk/src/*.o
+gameboy/src/*.o
 .claude/
 cpm_disk/
 !/cpm_disk/

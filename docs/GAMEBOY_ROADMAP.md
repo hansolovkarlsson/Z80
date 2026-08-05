@@ -135,5 +135,56 @@ found against Pan Docs/hardware test results rather than guessing.
 
 ## Status
 
-Not started. `gameboy/src/`, `gameboy/roms/`, `gameboy/test_roms/`
-exist; no code written yet.
+**Phase 1 (CPU core): functionally complete and passing its gate.**
+`gameboy/src/cpu.c`/`alu.c` implement the full SM83 instruction set -
+every opcode in both the unprefixed and CB-prefixed tables, table-driven
+in the same spirit as `emu/src/z80.c` (generic decode for the four fully
+regular blocks: `LD r,r`, the r8 and d8 ALU groups, and the whole
+CB-prefixed table; individually-named handlers for everything else).
+`gameboy/src/mmu.c` is a deliberately temporary flat-memory harness
+(echo RAM, a "not usable" stub, a serial-port capture hook) - just
+enough to run a real, unbanked ROM, not a real MMU (Phase 2's job).
+`make gameboy` builds `bin/gameboy`, opt-in like `make gtk` (not part of
+`all`/`test` yet - see the Makefile comment for why).
+
+Every opcode's bytes/cycles/flags were checked against the official
+gbdev.io opcode table
+(<https://gbdev.io/gb-opcodes/optables/>, data at
+`https://gbdev.io/gb-opcodes/Opcodes.json`) rather than trusted from
+memory - this caught one real erratum in passing: a commonly-mirrored
+community JSON dataset (`lmmendes/game-boy-opcodes`) lists `BIT b,(HL)`
+as 16 cycles; the official table (and this emulator) has it at 12, since
+`BIT` never writes anything back the way the other CB read-modify-write
+ops do. DAA, the accumulator-vs-CB-prefixed rotate distinction, and
+`ADD SP,e8`/`LD HL,SP+e8`'s flag quirks were all grounded the same way.
+The HALT bug (pandocs' dedicated `halt.md` page, fetched during this
+phase) is documented and has a field reserved for it in `GBCpu`, but
+isn't implemented yet - it needs a real `IE`/`IF` (Phase 4) to detect
+the "interrupt already pending" condition that triggers it.
+
+**Correctness gate**: Blargg's `cpu_instrs` individual sub-tests
+(fetched locally for testing - see the licensing note below) pass
+10 of 11: `01-special`, `03-op sp,hl`, `04-op r,imm`, `05-op rp`,
+`06-ld r,r`, `07-jr,jp,call,ret,rst`, `08-misc instrs`, `09-op r,r`,
+`10-bit ops`, `11-op a,(hl)` all print `Passed`. The 11th,
+`02-interrupts`, and the separate `instr_timing.gb` (which needs the
+`DIV` register incrementing to measure elapsed cycles) both fail in
+exactly the way expected: both need a real timer/interrupt controller,
+which doesn't exist until Phase 4 - not a CPU-core correctness bug.
+
+**Licensing note - why `gameboy/test_roms/` is still empty**: Blargg's
+test ROMs (fetched from `retrio/gb-test-roms` to validate the above,
+not committed) carry no explicit license, unlike ZEXALL/ZEXDOC
+(GPLv2, committed at `emu/zexall/`) - the same cautious call already
+documented in `gameboy/README.md`. This also means Blargg's ROMs can't
+be wired into `make test` the way ZEXALL is, since that would need
+either committing them anyway or a network fetch at test time (neither
+matches this project's reproducible-test convention). The Mooneye GB
+test suite (`Gekkio/mooneye-test-suite`, confirmed MIT-licensed) is the
+recommended path to a real, committable, `make test`-integrated
+correctness gate - deferred rather than pursued now since it ships as
+assembly source needing `rgbds` to build, not prebuilt ROMs, which is
+real additional setup work of its own.
+
+**Next**: Phase 2 (memory map and cartridge/MBC support) - needed
+before any real ROM larger than a bare 32KB bank can load at all.

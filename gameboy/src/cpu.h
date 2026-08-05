@@ -1,0 +1,68 @@
+#ifndef _GB_CPU_H
+#define _GB_CPU_H
+
+#include <stdint.h>
+
+// See docs/GAMEBOY_ROADMAP.md's "Architecture decision" section for why
+// this is a standalone core rather than sharing code/structs with
+// emu/src/z80.h - the two CPUs are related but not identical, and this
+// struct reflects the SM83's own real register file: no IX/IY, no
+// alternate register set (both are Z80-only), no I/O ports (the SM83 has
+// none - all device access is memory-mapped).
+typedef struct {
+    union { struct { uint8_t f, a; }; uint16_t af; };
+    union { struct { uint8_t c, b; }; uint16_t bc; };
+    union { struct { uint8_t e, d; }; uint16_t de; };
+    union { struct { uint8_t l, h; }; uint16_t hl; };
+
+    uint16_t sp;
+    uint16_t pc;
+
+    // Interrupt Master Enable - set/cleared by EI/DI/RETI, and by the
+    // interrupt dispatch logic itself. EI's real hardware behavior
+    // delays the actual enable by one instruction (see pandocs'
+    // Interrupts page) - ime_pending/ei_delay implement that.
+    uint8_t ime;
+    uint8_t ime_pending; // EI was just executed; take effect after the *next* instruction
+
+    // HALT: true once a HALT instruction has been executed. The run loop
+    // is expected to stop advancing PC (just burn cycles) while this is
+    // set, until an interrupt becomes pending. STOP is similar but also
+    // real hardware requires a subsequent input/reset to leave it (not
+    // modeled yet - no interrupt controller/joypad exists until Phase 4).
+    uint8_t halted;
+    uint8_t stopped;
+
+    // The "HALT bug": a real hardware quirk where HALT executed with
+    // IME=0 and a pending interrupt already latched (IE & IF != 0)
+    // fails to advance PC afterward, causing the next opcode byte to be
+    // fetched (and executed) twice. See docs/GAMEBOY_ROADMAP.md and
+    // https://gbdev.io/pandocs/halt.html (fetched and grounded against
+    // during this phase, not guessed). Modeling this fully needs a real
+    // IE/IF (Phase 4); the flag exists now so cpu_step() has somewhere
+    // to record "HALT just underflowed PC" once that lands.
+    uint8_t halt_bug;
+
+    uint8_t *memory;
+} GBCpu;
+
+uint8_t gb_read_byte(GBCpu *cpu, uint16_t addr);
+void gb_write_byte(GBCpu *cpu, uint16_t addr, uint8_t val);
+
+// Unlike Z80OpcodeHandler (emu/src/z80.h), no separate ram parameter -
+// GBCpu carries its own memory pointer and every handler goes through
+// gb_read_byte/gb_write_byte, so there's nothing a second parameter
+// would add.
+typedef int (*GBOpcodeHandler)(GBCpu *cpu);
+
+// Returns the number of T-cycles (4.194304 MHz ticks - not the
+// "M-cycles" = T-cycles/4 some references count in) the executed
+// instruction took, or a negative value for a genuinely unimplemented
+// opcode (the 11 official gaps in the unprefixed table, or a dispatch
+// bug), mirroring z80_step()'s own convention in emu/src/z80.h.
+int gb_cpu_step(GBCpu *cpu);
+
+void gb_cpu_init_tables(void);
+void gb_cpu_reset(GBCpu *cpu);
+
+#endif

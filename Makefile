@@ -30,7 +30,17 @@ GTK_PKGS := gtk4 vte-2.91-gtk4
 GTK_CFLAGS := $(shell pkg-config --cflags $(GTK_PKGS) 2>/dev/null)
 GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 
-.PHONY: all emulator assembler disassembler gtk run test clean
+# Opt-in only (never part of `all`/`test`), same reasoning as GTK above
+# but for a different reason: this is Phase 1 of a brand new, separate
+# emulator (see docs/GAMEBOY_ROADMAP.md) with no regression gate wired
+# up yet, not something with an external dependency to isolate - revisit
+# once it has a ZEXALL-equivalent correctness gate of its own.
+GAMEBOY_SRC_DIR := gameboy/src
+GAMEBOY_SRCS := $(wildcard $(GAMEBOY_SRC_DIR)/*.c)
+GAMEBOY_OBJS := $(GAMEBOY_SRCS:.c=.o)
+GAMEBOY_TARGET := $(BIN_DIR)/gameboy
+
+.PHONY: all emulator assembler disassembler gtk gameboy run test clean
 
 all: emulator assembler disassembler
 
@@ -41,6 +51,8 @@ assembler: $(ASM_TARGET)
 disassembler: $(DASM_TARGET)
 
 gtk: $(GTK_TARGET)
+
+gameboy: $(GAMEBOY_TARGET)
 
 $(EMU_TARGET): $(EMU_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(EMU_OBJS)
@@ -53,6 +65,9 @@ $(DASM_TARGET): $(DASM_OBJS) | $(BIN_DIR)
 
 $(GTK_TARGET): $(GTK_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(GTK_OBJS) $(GTK_LIBS)
+
+$(GAMEBOY_TARGET): $(GAMEBOY_OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $(GAMEBOY_OBJS)
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
@@ -70,4 +85,4 @@ test: emulator assembler
 	./tests/run_tests.sh
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET)
