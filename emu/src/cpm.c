@@ -165,15 +165,88 @@ static void putchar_utf8(uint16_t cp) {
     }
 }
 
+// Some real CP/M-80 software's full-screen editing (dBASE II's own
+// APPEND/EDIT/BROWSE among them - see the real Ashton-Tate binary this
+// was traced against, resources/... and docs/CPM_REFERENCE.md) was
+// hardcoded, at whatever terminal type it was originally installed for,
+// to an ADM-3A-class protocol - the Lear-Siegler ADM-3A's own convention,
+// also shared by several CP/M machines' built-in terminals (Kaypro among
+// them) - rather than VT100/ANSI: direct cursor addressing is
+// `ESC = <row+32> <col+32>` (not VT100's `ESC [ row ; col H`), and ^Z
+// (0x1A) clears the screen (not VT100's `ESC [ 2 J`). Confirmed by
+// capturing dBASE II's actual raw output byte-for-byte while driving it
+// through a pty with paced keystrokes (the same technique
+// find_or_reopen_file()'s investigation used) - on a plain xterm/VT100,
+// neither sequence means anything, so it prints as literal garbage
+// ("RECORD # 00001" preceded by a stray "1", stray "!"/"@" where a
+// cursor-address landed, etc.) instead of moving the cursor.
+// `ESC B <n>` / `ESC C <n>` bracket some video attribute (almost
+// certainly reverse-video/underline for field highlighting - `ESC B 1`
+// wraps the "RECORD # 00001" header, `ESC B 0`/`ESC C 0` bracket
+// everything else) whose exact ADM-3A-variant mapping isn't confirmed
+// from primary-source documentation, so rather than guess at an SGR code
+// this only strips the 3-byte sequence - that alone removes the stray
+// digits from the screen even without reproducing the highlight itself.
+// None of ESC = / ESC B / ESC C collide with real VT100/ANSI, which
+// always follows ESC with '[' (CSI) for cursor/color control - so this
+// translation is a pure superset of the old plain-passthrough behavior:
+// any other program's real ANSI escape codes still flow through
+// untouched via the "unrecognized ESC" fallback below.
+static enum { ADM3A_NORMAL, ADM3A_ESC, ADM3A_EQ_ROW, ADM3A_EQ_COL, ADM3A_ATTR } console_adm3a_state = ADM3A_NORMAL;
+static uint8_t console_adm3a_row;
+
+static void console_emit_raw(uint8_t c) {
+    if (c < 0x80) {
+        putchar(c);
+    } else {
+        putchar_utf8(cp437_high[c - 0x80]);
+    }
+}
+
 // Every console-output BDOS/BIOS function should emit a program-supplied
 // byte through this instead of calling putchar() directly - console
 // *input* echo (typed keystrokes) skips it, since that's always plain
 // ASCII from the keyboard.
 static void console_emit(uint8_t c) {
-    if (c < 0x80) {
-        putchar(c);
+    switch (console_adm3a_state) {
+    case ADM3A_ESC:
+        if (c == '=') {
+            console_adm3a_state = ADM3A_EQ_ROW;
+        } else if (c == 'B' || c == 'C') {
+            console_adm3a_state = ADM3A_ATTR;
+        } else {
+            console_adm3a_state = ADM3A_NORMAL;
+            console_emit_raw(0x1B);
+            console_emit(c); // not one of ours - replay untouched, e.g. a real ESC [ ... CSI sequence
+        }
+        return;
+    case ADM3A_EQ_ROW:
+        console_adm3a_row = c;
+        console_adm3a_state = ADM3A_EQ_COL;
+        return;
+    case ADM3A_EQ_COL: {
+        int row = (int)console_adm3a_row - 0x20;
+        int col = (int)c - 0x20;
+        if (row < 0) row = 0;
+        if (col < 0) col = 0;
+        printf("\x1B[%d;%dH", row + 1, col + 1);
+        console_adm3a_state = ADM3A_NORMAL;
+        return;
+    }
+    case ADM3A_ATTR:
+        console_adm3a_state = ADM3A_NORMAL; // discard the attribute-class digit too
+        return;
+    case ADM3A_NORMAL:
+    default:
+        break;
+    }
+
+    if (c == 0x1A) {
+        fputs("\x1B[2J\x1B[H", stdout);
+    } else if (c == 0x1B) {
+        console_adm3a_state = ADM3A_ESC;
     } else {
-        putchar_utf8(cp437_high[c - 0x80]);
+        console_emit_raw(c);
     }
 }
 

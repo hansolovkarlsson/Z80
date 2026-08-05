@@ -225,9 +225,33 @@ exactly this kind of output (SARGON's ANSI-enhanced port,
 tells PuTTY users to explicitly set "Code Page 437"). VT100/ANSI cursor-
 positioning and color (`SGR`) escape codes need no translation at all —
 they're plain ASCII bytes the host terminal already interprets correctly
-on its own, so `console_emit()` only ever touches the CP437 byte range,
-not control sequences. Console *input* echo (typed keystrokes) skips
-this entirely, since that's always plain ASCII from the keyboard.
+on its own. Console *input* echo (typed keystrokes) skips `console_emit()`
+entirely, since that's always plain ASCII from the keyboard.
+
+`console_emit()` also runs a small state machine (`console_adm3a_state`)
+that translates one other, older protocol: real Ashton-Tate dBASE II
+(`cpm_disk/DBASE.COM`) was hardcoded, at whatever terminal type it was
+originally installed for, to a Lear-Siegler ADM-3A-class terminal —
+shared by several CP/M machines' own built-in terminals (Kaypro among
+them) — rather than VT100/ANSI: direct cursor addressing is `ESC =
+<row+32> <col+32>` (not VT100's `ESC [ row ; col H`), and `^Z` (0x1A)
+clears the screen (not VT100's `ESC [ 2 J`). Confirmed by capturing
+dBASE II's own raw output byte-for-byte while driving it through a pty
+with paced keystrokes (the same pty/paced-keystroke technique the
+`find_or_reopen_file()` investigation above used) — on a plain xterm,
+neither sequence means anything, so it printed as literal garbage
+("RECORD # 00001" preceded by a stray "1", stray "!"/"@" where a
+cursor-address landed, etc.) instead of moving the cursor. `ESC B <n>` /
+`ESC C <n>` bracket some video attribute (almost certainly reverse-video/
+underline for field highlighting) whose exact ADM-3A-variant mapping
+isn't confirmed from primary-source documentation, so rather than guess
+at an SGR code, `console_emit()` only strips those 3-byte sequences —
+that alone removes the stray digits from the screen even without
+reproducing the highlight itself. None of `ESC =`/`ESC B`/`ESC C` collide
+with real VT100/ANSI, which always follows `ESC` with `[` (CSI), so this
+translation is a pure superset of the old plain-passthrough behavior: an
+unrecognized byte after `ESC` (including `[`) is replayed through
+untouched, so any other program's real ANSI escape codes are unaffected.
 
 **File I/O** maps every drive/user number onto one host directory
 (`CPM_DISK_DIR`/`cpm_disk/`, created by `cpm_fileio_init()` relative to

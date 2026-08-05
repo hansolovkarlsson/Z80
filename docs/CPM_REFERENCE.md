@@ -343,8 +343,8 @@ uppercased, trailing spaces trimmed). Concretely, this means:
   Found live-testing two independent real programs: Turbo Pascal's `D`ir
   command showed `Bytes Remaining On A: 0k` despite writes succeeding
   (see `docs/TURBOPASCAL_REFERENCE.md`) — **confirmed fixed**, now
-  reports a plausible `8160k`. dBASE II (a real Ashton-Tate 2.43 binary,
-  not yet otherwise documented in this project) printed `Disk is full`
+  reports a plausible `8160k`. dBASE II (`cpm_disk/DBASE.COM`, a real
+  Ashton-Tate 2.43 binary) printed `Disk is full`
   on `QUIT` for a database it had just written correctly, which looked
   like the same symptom and prompted this fix — but turned out to have a
   *different* root cause, since traced and fixed: `find_or_reopen_file()`

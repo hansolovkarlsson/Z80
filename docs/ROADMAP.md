@@ -768,12 +768,34 @@ there surfaced and fixed several real dialect gaps, documented below.
   `find_or_reopen_file()` in `cpm.c`, the same real-hardware reasoning
   `alloc_open_file()` already applies one paragraph up for sequential
   I/O's FCB-reuse case. Both messages are gone with the fix in place;
-  `asm/examples/file_test.asm` check 6 is the permanent regression test
-  (dBASE itself isn't committed to this repo, unlike this project's other
-  validated third-party software, given its much more restrictive
-  "unpublished... proprietary" license text). See `CLAUDE.md`'s File I/O
-  section and `docs/CPM_REFERENCE.md`'s Implementation status for the
-  full writeup.
+  `asm/examples/file_test.asm` check 6 is the permanent, dBASE-independent
+  regression test. The real Ashton-Tate dBASE II 2.43 binary itself
+  (`cpm_disk/DBASE.COM`/`DBASEOVR.COM`/`DBASEMSG.TXT`) was added to the
+  repo afterward — its "unpublished... proprietary" license text is more
+  restrictive than this project's other validated third-party software,
+  but this repo is currently private (see `docs/CPM_REFERENCE.md`'s
+  Implementation status for the trade-off). See `CLAUDE.md`'s File I/O
+  section for the full writeup.
+- [x] **ADM-3A terminal-protocol translation in `console_emit()`, fixing
+  garbled screens during dBASE II's full-screen APPEND/EDIT/BROWSE.** The
+  user noticed editing a record on a plain terminal came out "a bit
+  funny" — stray digits and punctuation scattered through the screen.
+  Traced by capturing dBASE II's own raw output byte-for-byte (same
+  pty/paced-keystroke technique as the `find_or_reopen_file()`
+  investigation above): this binary was hardcoded, at whatever terminal
+  it was originally installed for, to a Lear-Siegler ADM-3A-class
+  protocol — direct cursor addressing as `ESC = <row+32> <col+32>`
+  (not VT100's `ESC [ row ; col H`) and `^Z` (0x1A) as clear-screen (not
+  VT100's `ESC [ 2 J`) — rather than VT100/ANSI, which is all a plain
+  xterm understands; neither sequence means anything to it, so it printed
+  literally instead of moving the cursor. Fixed with a small state
+  machine in `console_emit()` (`emu/src/cpm.c`) that translates both to
+  real ANSI on the fly; `ESC B <n>`/`ESC C <n>` (a video attribute whose
+  exact visual mapping isn't confirmed from primary-source documentation)
+  are stripped rather than guessed at. Verified by re-capturing dBASE
+  II's raw output after the fix — clean ANSI (`\x1B[2;1H` etc.), no stray
+  bytes — and confirming `make test` still passes. See `CLAUDE.md`'s
+  Console output section for the full writeup.
 - [x] **Real-world validation: BDS C, and the first program tested here
   that needed command-line arguments** (`resources/bdsc/`) — Leor
   Zolman's BDS C v1.60, a real 8080/Z80 C compiler and linker for
