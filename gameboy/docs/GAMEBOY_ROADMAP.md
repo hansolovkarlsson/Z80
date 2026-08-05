@@ -9,7 +9,11 @@ and why cartridge ROMs are split into `roms/` (your own dumps, never
 committed) vs `test_roms/` (open-source test suites, safe to commit).
 Not started yet: this document exists to scope the work before writing
 code, the same way `cpm/docs/ROADMAP.md` tracked the Z80 core before it was
-built.
+built. This document tracks *status* - for the actual SM83 instruction
+set and DMG hardware behavior (memory map, PPU, APU, timer, joypad),
+see `gameboy/docs/CPU_REFERENCE.md` and `gameboy/docs/HARDWARE_REFERENCE.md`
+instead, the same split `cpm/docs/ROADMAP.md`/`cpm/docs/Z80_REFERENCE.md`/
+`cpm/docs/CPM_REFERENCE.md` already establish on the CP/M side.
 
 ## The CPU: Sharp SM83 (commonly called "LR35902")
 

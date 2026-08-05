@@ -1,7 +1,11 @@
 # Game Boy emulator - directory layout
 
-See `gameboy/docs/GAMEBOY_ROADMAP.md` for project status and phases. This file
-just covers the two ROM directories and why they're treated differently.
+See `gameboy/docs/GAMEBOY_ROADMAP.md` for project status and phases,
+[`CPU_REFERENCE.md`](docs/CPU_REFERENCE.md) for the SM83 instruction
+set, and [`HARDWARE_REFERENCE.md`](docs/HARDWARE_REFERENCE.md) for the
+memory map, cartridge/MBC banking, PPU (graphics), APU (sound), timer,
+and joypad. This file just covers the two ROM directories and why
+they're treated differently.
 
 - `src/` - the emulator source itself, completely separate from
   `cpm/emu/src/` (the Z80/CP-M emulator elsewhere in this repo, kept
