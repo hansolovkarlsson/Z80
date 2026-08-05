@@ -91,15 +91,39 @@ static void write_default_fcb(uint8_t *ram, uint16_t fcb_addr, const char *arg) 
         if (drive >= 'A' && drive <= 'P') ram[fcb_addr] = (uint8_t)(drive - 'A' + 1);
         arg += 2;
     }
+    // A real CCP expands a bare '*' into '?' for every remaining position
+    // in whichever field (name or type) it appears in, rather than storing
+    // it literally - confirmed against resources/ccp/upstream/ccp.asm's
+    // own setname/setnam0 and setty/setty0 routines (the "must be ?'s"
+    // comment there). The '*' itself consumes exactly one input character
+    // no matter how many '?'s it expands to. Found via a real BDS C
+    // utility, LDIR.COM, silently reporting "No (matching) members found"
+    // for every library when given a "*.*" pattern - it reads the pattern
+    // out of this FCB looking for '?' wildcards (as any program that reads
+    // a raw FCB instead of the text tail is entitled to assume, since a
+    // real CCP would already have expanded '*' before it got here), and
+    // a literal '*' byte doesn't match anything.
     int i = 0;
-    for (; arg[0] && arg[0] != '.' && i < 8; arg++, i++) {
+    for (; arg[0] && arg[0] != '.' && i < 8; i++) {
+        if (arg[0] == '*') {
+            for (; i < 8; i++) ram[fcb_addr + 1 + i] = '?';
+            arg++;
+            break;
+        }
         ram[fcb_addr + 1 + i] = (uint8_t)toupper((unsigned char)arg[0]);
+        arg++;
     }
     while (arg[0] && arg[0] != '.') arg++; // skip any name chars past 8
     if (arg[0] == '.') {
         arg++;
-        for (i = 0; arg[0] && i < 3; arg++, i++) {
+        for (i = 0; arg[0] && i < 3; i++) {
+            if (arg[0] == '*') {
+                for (; i < 3; i++) ram[fcb_addr + 9 + i] = '?';
+                arg++;
+                break;
+            }
             ram[fcb_addr + 9 + i] = (uint8_t)toupper((unsigned char)arg[0]);
+            arg++;
         }
     }
 }

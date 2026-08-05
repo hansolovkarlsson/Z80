@@ -847,6 +847,23 @@ there surfaced and fixed several real dialect gaps, documented below.
   `CC.COM`/`CLINK.COM` under this project's own emulator, runs each
   resulting `.com`, and checks its output - a real, reproducible build
   *and* correctness check for the toolchain itself.
+- [x] **`write_default_fcb()`'s missing `*`→`?` wildcard expansion**,
+  found validating more of BDS C's own auxiliary tools (`LDIR.COM`, the
+  real library-archive lister from the full `bdsc-all.zip` distribution -
+  not previously kept in this repo; see `resources/bdsc/upstream/
+  README.md`). Given a `SOURCES.LBR *.*` command line, `LDIR.COM` silently
+  reported "No (matching) members found" for a library that genuinely had
+  20 members - `write_default_fcb()` was storing the `*` byte literally
+  into the FCB's name/type fields instead of expanding it into a run of
+  `?`s the way a real CCP does before a program ever sees the FCB (any
+  program reading a raw FCB, rather than the text tail, is entitled to
+  assume that expansion already happened), so `LDIR.COM`'s own `?`-based
+  matcher never matched anything. Confirmed against
+  `resources/ccp/upstream/ccp.asm`'s `setname`/`setty` routines rather
+  than guessed. Fixed in `main.c`; verified `LDIR.COM SOURCES.LBR *.*`
+  now lists all 20 members correctly, `make test` and
+  `resources/bdsc/derive.sh` both still pass. See `CLAUDE.md`'s Build &
+  Run section.
 
 ## Phase 4: Beyond CP/M (exploratory)
 

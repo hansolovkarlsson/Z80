@@ -76,6 +76,19 @@ utilities of this era commonly read one or the other (or both). Neither
 existed before BDS C's `CC.COM`/`CLINK.COM` needed it: every program
 tested here up to that point was menu-driven (Turbo Pascal, WordStar,
 dBASE, Tasty Basic, MBASIC) and never took an argument this way.
+`write_default_fcb()` also expands a bare `*` into `?` for every
+remaining position in whichever field (name or type) it appears in,
+rather than storing it literally — confirmed against
+`resources/ccp/upstream/ccp.asm`'s own `setname`/`setnam0` and `setty`/
+`setty0` routines (the "must be ?'s" comment there), not guessed. Found
+via BDS C's own `LDIR.COM` (a real utility for listing `.LBR` library
+archives, part of the full `bdsc-all.zip` distribution — see
+`resources/bdsc/upstream/README.md`): given a `*.*` pattern, it silently
+reported "No (matching) members found" for every library, since it reads
+the pattern out of the FCB looking for `?` wildcards — any program that
+reads a raw FCB instead of the text tail is entitled to assume a real
+CCP already expanded `*` before it got there, and a literal `*` byte
+doesn't match anything.
 
 The zexdoc variant checks only documented flag behavior; zexall also
 checks the undocumented flags (bits 3 and 5, `FLAG_X`/`FLAG_Y`). Passing
