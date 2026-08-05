@@ -1,6 +1,8 @@
 #include "mmu.h"
 #include "cart.h"
 #include "ppu.h"
+#include "timer.h"
+#include "joypad.h"
 #include <stddef.h>
 
 void (*gb_serial_output_hook)(uint8_t byte) = NULL;
@@ -21,6 +23,8 @@ static uint16_t redirect_echo(uint16_t addr) {
 uint8_t gb_read_byte(GBCpu *cpu, uint16_t addr) {
     if (addr < 0x8000) return gb_cart_read(cpu->cart, addr);
     if (addr >= 0xA000 && addr < 0xC000) return gb_cart_read_ram(cpu->cart, addr);
+    if (addr == 0xFF00) return gb_joypad_read(cpu->joypad);
+    if (addr >= 0xFF04 && addr <= 0xFF07) return gb_timer_read(cpu->timer, addr);
     if (addr >= 0xFF40 && addr <= 0xFF4B) return gb_ppu_read_reg(cpu->ppu, addr);
 
     addr = redirect_echo(addr);
@@ -36,6 +40,8 @@ uint8_t gb_read_byte(GBCpu *cpu, uint16_t addr) {
 void gb_write_byte(GBCpu *cpu, uint16_t addr, uint8_t val) {
     if (addr < 0x8000) { gb_cart_write_ctrl(cpu->cart, addr, val); return; }
     if (addr >= 0xA000 && addr < 0xC000) { gb_cart_write_ram(cpu->cart, addr, val); return; }
+    if (addr == 0xFF00) { gb_joypad_write(cpu->joypad, val); return; }
+    if (addr >= 0xFF04 && addr <= 0xFF07) { gb_timer_write(cpu->timer, cpu, addr, val); return; }
     if (addr >= 0xFF40 && addr <= 0xFF4B) { gb_ppu_write_reg(cpu->ppu, cpu, addr, val); return; }
 
     addr = redirect_echo(addr);

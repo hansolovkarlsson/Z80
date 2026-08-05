@@ -36,11 +36,9 @@ typedef struct GBCpu {
     // The "HALT bug": a real hardware quirk where HALT executed with
     // IME=0 and a pending interrupt already latched (IE & IF != 0)
     // fails to advance PC afterward, causing the next opcode byte to be
-    // fetched (and executed) twice. See docs/GAMEBOY_ROADMAP.md and
-    // https://gbdev.io/pandocs/halt.html (fetched and grounded against
-    // during this phase, not guessed). Modeling this fully needs a real
-    // IE/IF (Phase 4); the flag exists now so cpu_step() has somewhere
-    // to record "HALT just underflowed PC" once that lands.
+    // fetched (and executed) twice. Implemented as of Phase 4 - see
+    // cpu.c's gb_cpu_step() and pandocs' halt.md (fetched during
+    // Phase 1, when this field was first added but left unused).
     uint8_t halt_bug;
 
     // VRAM/WRAM/OAM/I-O-registers/HRAM only as of Phase 2 - 0x0000-0x7FFF
@@ -58,6 +56,12 @@ typedef struct GBCpu {
 
     // Same forward-declaration reasoning as `cart` above, added Phase 3.
     struct GBPpu *ppu;
+
+    // Added Phase 4. `timer` is reached directly (not just through
+    // mmu.c's routing) because the STOP instruction's handler needs to
+    // reset it exactly as a DIV write would - see cpu.c's gb_op_stop().
+    struct GBTimer *timer;
+    struct GBJoypad *joypad;
 } GBCpu;
 
 uint8_t gb_read_byte(GBCpu *cpu, uint16_t addr);

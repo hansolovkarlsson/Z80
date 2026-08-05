@@ -5,16 +5,19 @@
 #include "mmu.h"
 #include "cart.h"
 #include "ppu.h"
+#include "timer.h"
+#include "joypad.h"
 
-// Phase 3 bring-up driver: load a real cartridge, run it, tick the PPU
-// alongside the CPU (see gb_ppu_step()'s own comment on why - same
-// clock, same call site), and either print serial output (Blargg-style
-// text tests, unaffected by this phase) or dump a rendered frame as a
-// PPM image (--ppm) once enough VBlanks have passed - there's still no
-// real display (Phase 7), so a raster dump plus an external pixel
-// comparison (see docs/GAMEBOY_ROADMAP.md's dmg-acid2 citation) is this
-// phase's actual correctness gate, the same role serial-port text
-// output played for Phase 1/2's Blargg-based testing.
+// Phase 4 bring-up driver: load a real cartridge, run it, ticking the
+// PPU and timer alongside the CPU each step (same clock, same call
+// site - see gb_ppu_step()'s own comment), and either print serial
+// output (Blargg-style text tests) or dump a rendered frame as a PPM
+// image (--ppm) once enough VBlanks have passed. Interrupts now
+// dispatch for real (cpu.c), so dmg-acid2's mid-frame raster effects
+// and Blargg's 02-interrupts.gb/instr_timing.gb are all in scope this
+// phase - see docs/GAMEBOY_ROADMAP.md's Phase 4 status for results.
+// No real input source exists yet (Phase 7's job) - the joypad reports
+// "nothing pressed" for the whole run.
 
 static void serial_putc(uint8_t byte) {
     putchar(byte);
@@ -87,6 +90,14 @@ int main(int argc, char **argv) {
     cpu.ppu = &ppu;
     gb_ppu_reset(&ppu);
 
+    GBTimer timer;
+    cpu.timer = &timer;
+    gb_timer_reset(&timer);
+
+    GBJoypad joypad;
+    cpu.joypad = &joypad;
+    gb_joypad_reset(&joypad);
+
     gb_cpu_init_tables();
     gb_cpu_reset(&cpu);
     gb_serial_output_hook = serial_putc;
@@ -95,10 +106,9 @@ int main(int argc, char **argv) {
 
     // A generous, fixed instruction budget rather than any kind of
     // completion detection - Blargg's test ROMs spin in an infinite
-    // loop once done (no clean "exit" signal to detect), and Phase 4
-    // doesn't exist yet to make HALT ever legitimately return control
-    // here. 20M instructions is far more than any cpu_instrs sub-test
-    // (or a static test image like dmg-acid2) needs to finish.
+    // loop once done (no clean "exit" signal to detect). 20M
+    // instructions is far more than any cpu_instrs sub-test (or a
+    // static test image like dmg-acid2) needs to finish.
     const long budget = 20000000;
     long executed = 0;
     int frames_seen = 0;
@@ -109,6 +119,7 @@ int main(int argc, char **argv) {
             break;
         }
         gb_ppu_step(&ppu, &cpu, cycles);
+        gb_timer_step(&timer, &cpu, cycles);
 
         if (ppu.frame_ready) {
             ppu.frame_ready = 0;

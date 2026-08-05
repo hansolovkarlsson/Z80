@@ -47,13 +47,21 @@ GAMEBOY_TARGET := $(BIN_DIR)/gameboy
 # being available to commit.
 GAMEBOY_TEST_TARGET := $(BIN_DIR)/gameboy-test-cart
 
+# timer.c's own unit tests (gameboy/tests/test_timer.c), same reasoning
+# as GAMEBOY_TEST_TARGET above but for the DIV/TAC-write "spurious
+# tick" quirks and the TIMA overflow-reload delay - obscure enough to
+# be worth a direct, ROM-independent check even though Blargg's
+# instr_timing.gb (used locally, not committed) already exercises this
+# timer broadly.
+GAMEBOY_TEST_TIMER_TARGET := $(BIN_DIR)/gameboy-test-timer
+
 # dmg-acid2 (gameboy/test_roms/dmg-acid2/ - MIT-licensed, committed
-# unlike Blargg's ROMs) is Phase 3's real correctness gate: render a
+# unlike Blargg's ROMs) is the PPU's real correctness gate: render a
 # frame, compare it pixel-for-pixel against the reference image.
-# Informational rather than a hard pass/fail - see
-# docs/GAMEBOY_ROADMAP.md's Phase 3 status for why 100% isn't possible
-# without Phase 4's interrupt dispatch, and compare_frame.py's own
-# comment for the regression-baseline reasoning.
+# Informational against a regression floor rather than a hard 100%
+# pass/fail - see docs/GAMEBOY_ROADMAP.md's Phase 4 status for the
+# current match rate and its still-open remaining gap, and
+# compare_frame.py's own comment for the regression-baseline reasoning.
 GAMEBOY_VISUAL_ROM := gameboy/test_roms/dmg-acid2/dmg-acid2.gb
 GAMEBOY_VISUAL_REF := gameboy/test_roms/dmg-acid2/reference-dmg.png
 GAMEBOY_VISUAL_OUT := $(BIN_DIR)/dmg-acid2-output.ppm
@@ -72,8 +80,9 @@ gtk: $(GTK_TARGET)
 
 gameboy: $(GAMEBOY_TARGET)
 
-gameboy-test: $(GAMEBOY_TEST_TARGET)
+gameboy-test: $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET)
 	./$(GAMEBOY_TEST_TARGET)
+	./$(GAMEBOY_TEST_TIMER_TARGET)
 
 gameboy-visual-test: $(GAMEBOY_TARGET)
 	./$(GAMEBOY_TARGET) $(GAMEBOY_VISUAL_ROM) --ppm $(GAMEBOY_VISUAL_OUT) --frames 2
@@ -97,6 +106,9 @@ $(GAMEBOY_TARGET): $(GAMEBOY_OBJS) | $(BIN_DIR)
 $(GAMEBOY_TEST_TARGET): gameboy/tests/test_cart.c $(GAMEBOY_SRC_DIR)/cart.c | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ gameboy/tests/test_cart.c $(GAMEBOY_SRC_DIR)/cart.c
 
+$(GAMEBOY_TEST_TIMER_TARGET): gameboy/tests/test_timer.c $(GAMEBOY_SRC_DIR)/timer.c $(GAMEBOY_SRC_DIR)/mmu.c $(GAMEBOY_SRC_DIR)/cart.c $(GAMEBOY_SRC_DIR)/ppu.c $(GAMEBOY_SRC_DIR)/joypad.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ gameboy/tests/test_timer.c $(GAMEBOY_SRC_DIR)/timer.c $(GAMEBOY_SRC_DIR)/mmu.c $(GAMEBOY_SRC_DIR)/cart.c $(GAMEBOY_SRC_DIR)/ppu.c $(GAMEBOY_SRC_DIR)/joypad.c
+
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
@@ -113,4 +125,4 @@ test: emulator assembler
 	./tests/run_tests.sh
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_VISUAL_OUT)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_VISUAL_OUT)

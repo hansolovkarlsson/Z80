@@ -1,6 +1,7 @@
 #include "cpu.h"
 #include "alu.h"
 #include "cart.h"
+#include "timer.h"
 #include <stddef.h>
 
 // Table-driven dispatch, same *shape* as emu/src/z80.c's
@@ -243,13 +244,17 @@ static int gb_op_ei(GBCpu *cpu) { cpu->ime_pending = 1; return 4; }
 
 // STOP is a real 2-byte instruction (opcode + a padding byte, normally
 // 0x00) per the official opcode table, not the 1-byte form some older
-// references list - confirmed during this phase, not guessed. Real
-// hardware's full STOP behavior (low-power mode, exiting via joypad
-// input) needs the interrupt/joypad controller Phase 4 will add; for
-// now this just consumes both bytes and marks the state.
+// references list - confirmed during Phase 1, not guessed. Resets the
+// system counter exactly like a DIV write does (pandocs'
+// Timer_and_Divider_Registers.md). Real hardware's full low-power STOP
+// mode, and exiting it via a joypad press, needs an actual input
+// source to ever trigger - still deferred to Phase 7's real front end,
+// since Phase 4 only adds the joypad *register*, not a way to press a
+// button from outside the emulator.
 static int gb_op_stop(GBCpu *cpu) {
     fetch_byte(cpu);
     cpu->stopped = 1;
+    gb_timer_reset_div(cpu->timer, cpu);
     return 4;
 }
 
@@ -329,7 +334,16 @@ static int gb_op_ld_r_d8(GBCpu *cpu) {
 static int gb_op_ld_r_r(GBCpu *cpu) {
     uint8_t opcode = gb_read_byte(cpu, (uint16_t)(cpu->pc - 1));
     if (opcode == 0x76) {
-        cpu->halted = 1;
+        uint8_t pending = (uint8_t)(gb_read_byte(cpu, 0xFFFF) & gb_read_byte(cpu, 0xFF0F) & 0x1F);
+        if (!cpu->ime && pending) {
+            // The HALT bug (pandocs' halt.md): IME=0 with an interrupt
+            // already pending means HALT doesn't actually halt at all -
+            // see gb_cpu_step()'s own handling of halt_bug for what
+            // this actually does to the next instruction.
+            cpu->halt_bug = 1;
+        } else {
+            cpu->halted = 1;
+        }
         return 4;
     }
     uint8_t dst_idx = (opcode >> 3) & 0x07;
@@ -622,16 +636,54 @@ void gb_cpu_reset(GBCpu *cpu) {
     cpu->halt_bug = 0;
 }
 
+// The five interrupt vectors, indexed by IE/IF bit position - pandocs'
+// Interrupts.md: priority follows bit order too, bit 0 (VBlank)
+// highest, bit 4 (Joypad) lowest, so scanning from bit 0 upward and
+// taking the first set bit is both "find a pending interrupt" and
+// "find the highest-priority one" in the same pass.
+static const uint16_t interrupt_vectors[5] = {0x0040, 0x0048, 0x0050, 0x0058, 0x0060};
+
 int gb_cpu_step(GBCpu *cpu) {
+    uint8_t pending = (uint8_t)(gb_read_byte(cpu, 0xFFFF) & gb_read_byte(cpu, 0xFF0F) & 0x1F);
+
+    // Any pending, enabled interrupt wakes the CPU from HALT even when
+    // IME=0 (pandocs' halt.md: "if no interrupt is pending, halt
+    // executes as normal, and the CPU resumes regular execution as
+    // soon as an interrupt becomes pending" - IME only gates whether
+    // the handler actually runs, not whether HALT itself ends).
+    if (cpu->halted && pending) cpu->halted = 0;
+
+    if (cpu->ime && pending) {
+        // pandocs' Interrupts.md "Interrupt handling": IF's bit and
+        // IME are both cleared, then this behaves exactly like a CALL
+        // to the vector - 5 M-cycles (20 T-states) total.
+        int bit = 0;
+        while (!(pending & (1 << bit))) bit++;
+        cpu->ime = 0;
+        gb_write_byte(cpu, 0xFF0F, (uint8_t)(gb_read_byte(cpu, 0xFF0F) & ~(1 << bit)));
+        gb_push16(cpu, cpu->pc);
+        cpu->pc = interrupt_vectors[bit];
+        return 20;
+    }
+
     if (cpu->halted) {
-        // Phase 4 (interrupt controller) will add real wake-on-interrupt
-        // logic and the HALT bug (see cpu.h's halt_bug field, grounded
-        // against pandocs' halt.md during this phase). Until then, a
-        // halted CPU just burns cycles forever - correct for everything
-        // this phase's test ROMs exercise except Blargg's own
-        // 02-interrupts.gb, a documented, deferred gap (see
-        // docs/GAMEBOY_ROADMAP.md's Status section).
-        return 4;
+        return 4; // still waiting - no enabled interrupt pending yet
+    }
+
+    if (cpu->halt_bug) {
+        // The HALT bug (see gb_op_ld_r_r's 0x76 case and pandocs'
+        // halt.md): PC fails to advance past the instruction
+        // immediately after HALT, so it executes fully now (real side
+        // effects and all - the classic "instruction after HALT runs
+        // twice" is genuine, not just a refetch), then PC is rewound so
+        // the *next* gb_cpu_step() call executes it again for real,
+        // this time advancing normally afterward.
+        cpu->halt_bug = 0;
+        uint16_t start_pc = cpu->pc;
+        uint8_t opcode = fetch_byte(cpu);
+        int cycles = gb_opcode_table[opcode](cpu);
+        cpu->pc = start_pc;
+        return cycles;
     }
 
     // EI's enable takes effect only after the instruction *following*

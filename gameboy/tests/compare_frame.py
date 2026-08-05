@@ -10,11 +10,16 @@ library dependency - a minimal decoder using only the standard library
 project already avoids adding dependencies where a small amount of
 grounded code will do.
 
-100% match isn't expected right now: dmg-acid2 depends on mid-frame
-LY=LYC coincidence interrupts (see its own README, and
-gameboy/test_roms/dmg-acid2/README.md) that need Phase 4's interrupt
-dispatch, not implemented as of Phase 3. This script's job is to catch
-a real *regression* in the PPU itself (a match rate meaningfully below
+100% match isn't expected: as of Phase 4, this emulator gets 98.04%
+(22589/23040) - up from Phase 3's 91.31% once interrupt dispatch made
+dmg-acid2's mid-frame LY=LYC-driven register writes actually happen
+(see its own README, and gameboy/test_roms/dmg-acid2/README.md). The
+remaining gap (row 0's "HELLO WORLD!" text and the tail end of the
+footer text) is a real, open, documented issue - see
+docs/GAMEBOY_ROADMAP.md's Phase 4 status - plausibly related to this
+emulator's scanline-at-once renderer not modeling exact sub-scanline
+interrupt-response timing, but not fully root-caused yet. This script's
+job is to catch a real *regression* (a match rate meaningfully below
 the established baseline), not to gate on a full pass that isn't
 possible yet.
 """
@@ -108,7 +113,7 @@ def main():
         return 2
 
     ppm_path, png_path = sys.argv[1], sys.argv[2]
-    min_pct = float(sys.argv[3]) if len(sys.argv) > 3 else 85.0
+    min_pct = float(sys.argv[3]) if len(sys.argv) > 3 else 95.0
 
     ref_w, ref_h, ref, bit_depth = read_png_grayscale(png_path)
     out_w, out_h, out = read_ppm(ppm_path)
@@ -132,8 +137,8 @@ def main():
         print(f"FAIL: match rate below the {min_pct}% baseline - looks like a real PPU regression")
         return 1
 
-    print("OK (informational gate - 100% isn't expected until Phase 4's interrupt "
-          "dispatch exists; see docs/GAMEBOY_ROADMAP.md's Phase 3 status)")
+    print("OK (informational gate against a 95% floor, not a 100% target - see "
+          "docs/GAMEBOY_ROADMAP.md's Phase 4 status for the still-open remaining gap)")
     return 0
 
 

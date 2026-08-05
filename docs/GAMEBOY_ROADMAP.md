@@ -284,7 +284,85 @@ gate once Phase 4 lands - a rate meaningfully *below* 91.31% at that
 point would flag a real regression, which is why `compare_frame.py`
 treats its baseline as a floor to check against, not a fixed target.
 
-**Next**: Phase 4 (interrupts, timer, joypad input) - both to let
-dmg-acid2 actually pass, and because it's a real prerequisite for
-essentially any game being playable at all, not just "boots to a
-logo."
+**Phase 4 (interrupts, timer, joypad input): done, dmg-acid2 prediction confirmed.**
+`gameboy/src/cpu.c`'s `gb_cpu_step()` now actually dispatches interrupts
+(push `PC`, jump to `0x40`/`0x48`/`0x50`/`0x58`/`0x60`, 20 T-states,
+priority by bit order) instead of just leaving `IF` bits set for no one
+to read - grounded against pandocs' `Interrupts.md` (fetched during
+this phase). The HALT bug (flagged unimplemented back in Phase 1) is
+now real too: `IME=0` with an interrupt already pending at `HALT` time
+sets `halt_bug` instead of actually halting, and `gb_cpu_step()`
+replays the following instruction a second time with its real side
+effects (not just a refetch) before continuing normally - matching
+pandocs' `halt.md` precisely, including *why* it happens (a skipped PC
+increment), not just the visible symptom.
+
+`gameboy/src/timer.{c,h}` (new) implements `DIV`/`TIMA`/`TMA`/`TAC`
+(`0xFF04`-`0xFF07`) as the real hardware does: a free-running 16-bit
+"system counter" (`DIV` is just its visible upper byte) with `TIMA`
+incrementing on a *falling edge* of one specific counter bit (selected
+by `TAC`'s clock-select field), not a naive independent periodic
+counter. That choice isn't pedantry - it's what makes two genuinely
+obscure, easy-to-get-wrong behaviors fall out for free instead of
+needing special-casing: writing `DIV` (or executing `STOP`, which resets
+the same counter) can cause a spurious `TIMA` tick if the monitored bit
+happened to be set; and a `TIMA` overflow doesn't reload from `TMA` and
+request an interrupt until one M-cycle *after* the overflow, reading
+`$00` in between (pandocs' `Timer_Obscure_Behaviour.md`). Both are
+covered by `gameboy/tests/test_timer.c` (`make gameboy-test`, 14
+checks) directly, independent of any ROM.
+
+`gameboy/src/joypad.{c,h}` (new) implements `P1`/`JOYP` (`0xFF00`) -
+the action/direction button multiplexing and its inverted "0 = pressed"
+polarity (pandocs' `Joypad_Input.md`) - and a `gb_joypad_set_action()`/
+`gb_joypad_set_direction()` API for a future front-end or test harness
+to call. No real input source exists yet (still Phase 7's job), so the
+joypad reports "nothing pressed" for the whole run in `main.c` as of
+this phase - the register and interrupt-request logic are real and
+tested (correct multiplexing, correct polarity), just never actually
+driven by anything yet.
+
+**Correctness gate, part 1**: all 12 of Blargg's `cpu_instrs`/
+`instr_timing` sub-tests now pass, including the two that failed back
+in Phase 1/2 specifically *because* interrupts/timer didn't exist yet
+(`02-interrupts`, `instr_timing`) - exactly the predicted outcome, not
+a surprise.
+
+**Correctness gate, part 2**: `make gameboy-visual-test` (dmg-acid2)
+jumped from Phase 3's 91.31% to **22589/23040 (98.04%)** the moment
+interrupt dispatch existed - direct, strong confirmation that the
+Phase 3 diagnosis (nearly every visual detail is gated behind a
+mid-frame `LY`=`LYC` interrupt actually firing and being handled) was
+right, not a guess that happened to sound plausible. A side-by-side
+comparison shows the predicted features now rendering correctly: the
+"HELLO WORLD!" exclamation mark, correct eye rendering, and most of the
+footer text ("dmg-acid2 by Ma..." - see below for what's still off).
+
+**Remaining gap, honestly reported**: 451 pixels still mismatch,
+concentrated in exactly two places - the top row (`LY=0`) of the
+"HELLO WORLD!" banner (66 pixels, *unchanged* from Phase 3's count
+before interrupt dispatch existed - direct proof this specific one
+isn't interrupt-timing-related at all), and the tail end of the footer
+text (`LY=133`-`141`, 385 pixels - the footer is *present* now, just
+cut off partway, consistent with a timing-related issue this time).
+Both are plausibly connected to the same root cause: `gb_ppu_step()`
+still renders each scanline all at once when Mode 3 completes (Phase
+3's documented simplification), rather than progressively pixel-by-
+pixel the way real hardware's pixel FIFO does - dmg-acid2's own README
+says its register writes happen "during mode 2 (OAM scan)" specifically
+*because* real hardware can react within that window, but this
+emulator's CPU/PPU/timer are stepped in sequence once per whole
+instruction rather than interleaved sub-instruction, which can shift
+exactly when an `LY`=`LYC` interrupt actually gets serviced relative to
+when a scanline gets drawn. This is a real, open issue - not silently
+swept under the "documented simplification" umbrella without stating
+plainly that it isn't fully root-caused - see `compare_frame.py`'s own
+95%-floor regression check (set from this 98.04% baseline, not 100%)
+for how future changes get checked against it.
+
+**Next**: Phase 5 (APU/sound) or Phase 6 (real-game validation) - both
+now genuinely possible for the first time, since interrupts/timer are
+what most real games actually need to be playable rather than just
+bootable. The row-0/footer gap above is worth a dedicated debugging
+pass whenever precise Mode-3 pixel timing becomes the active work,
+rather than something to chase down mid-Phase-4.
