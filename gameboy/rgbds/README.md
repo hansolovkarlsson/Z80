@@ -34,8 +34,30 @@ emits `"HELLO GAMEBOY"` one character at a time over the serial port
 convention Blargg's own test ROMs use and `gameboy/src/mmu.c`'s serial
 hook already captures. `make gameboy-rgbds-test` assembles, links,
 fixes, runs it, and greps the output for that exact string - a real
-regression check, not just "the build didn't fail". Opt-in, same
-external-dependency reasoning as `make gtk`/`make gameboy-gtk`: never
-part of `make`/`make test`/`make gameboy-test`, so the default build
-stays free of the RGBDS dependency for anyone who doesn't have it
-installed.
+regression check, not just "the build didn't fail".
+
+**`examples/mbc3_rtc.asm`**: the first real payoff of having RGBDS at
+all - a test ROM built specifically to close a gap
+`gameboy/docs/GAMEBOY_ROADMAP.md`'s Phase 6 status had flagged ("particularly
+ones exercising MBC3's RTC or deeper save-RAM behavior, neither
+meaningfully exercised by 2048-gb"). Drives the real memory-mapped
+MBC3 interface directly (bank-select writes at `$4000`-`$5FFF`, the
+latch sequence at `$6000`-`$7FFF`, the shared `$A000`-`$BFFF` window) -
+a genuinely different, real-hardware-shaped way of exercising the same
+logic `gameboy/tests/test_cart.c`'s synthetic `GBCart`-struct checks
+already cover, not a duplicate of them. Writes distinct sentinel bytes
+into two banked-RAM banks and all five RTC registers, latches, reads
+the latch back, overwrites the *live* registers without re-latching
+(confirming the latch stays frozen), then re-latches and confirms the
+fresh values now show through - proving latch/live isolation and
+banked-RAM isolation both hold, end to end, through real CPU-executed
+code. `make gameboy-rgbds-mbc3-test` checks the exact expected output
+line. Deliberately scoped to what `cart.c`'s own comment says is
+actually implemented: the RTC registers don't yet advance with real
+elapsed time, so this ROM tests write/latch/read fidelity, not "does
+time actually pass".
+
+Both example ROMs are opt-in, same external-dependency reasoning as
+`make gtk`/`make gameboy-gtk`: never part of `make`/`make test`/`make
+gameboy-test`, so the default build stays free of the RGBDS dependency
+for anyone who doesn't have it installed.

@@ -751,3 +751,22 @@ checks its actual output - confirming the whole round-trip works, not
 just that RGBDS itself does. Opt-in (`brew install rgbds`), same
 external-dependency reasoning as `make gtk`/`make gameboy-gtk` - never
 part of the default `make`/`make test`/`make gameboy-test`.
+
+**First real payoff: `gameboy/rgbds/examples/mbc3_rtc.asm`, closing this
+doc's own previously-flagged MBC3 RTC gap.** Drives the real
+memory-mapped MBC3 interface directly (bank-select at `$4000`-`$5FFF`,
+the latch sequence at `$6000`-`$7FFF`, the shared `$A000`-`$BFFF`
+window) - a genuinely different, real-hardware-shaped way of exercising
+the same logic `gameboy/tests/test_cart.c`'s synthetic `GBCart`-struct
+checks already cover, not a duplicate. Writes sentinel bytes into two
+banked-RAM banks and all five RTC registers, latches, reads it back,
+overwrites the *live* registers without re-latching (the latch stays
+frozen), then re-latches (the fresh values show through) - proving
+latch/live isolation and banked-RAM isolation both hold end to end
+through real CPU-executed code, not just direct struct manipulation.
+`make gameboy-rgbds-mbc3-test` passed on the first real run - no bugs
+found this time, a clean confirmation rather than another fix. Scoped
+to what's actually implemented: `cart.c`'s own comment already states
+the RTC registers don't advance with real elapsed time, so this ROM
+tests write/latch/read fidelity, not "does time actually pass". See
+`gameboy/rgbds/README.md` for the full story.

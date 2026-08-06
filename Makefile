@@ -123,6 +123,16 @@ RGBDS_HELLO_SRC := gameboy/rgbds/examples/hello.asm
 RGBDS_HELLO_OBJ := $(BIN_DIR)/rgbds-hello.o
 RGBDS_HELLO_ROM := $(BIN_DIR)/rgbds-hello.gb
 
+# MBC3's real-time clock, driven through the actual memory-mapped
+# interface (bank-select, latch sequence, the shared $A000 window) a
+# real MBC3+RTC game would use - see
+# gameboy/rgbds/examples/mbc3_rtc.asm's own top comment for why this is
+# worth having alongside test_cart.c's synthetic-struct RTC checks, and
+# gameboy/docs/GAMEBOY_ROADMAP.md's Phase 6 status for the gap this closes.
+RGBDS_MBC3_RTC_SRC := gameboy/rgbds/examples/mbc3_rtc.asm
+RGBDS_MBC3_RTC_OBJ := $(BIN_DIR)/rgbds-mbc3-rtc.o
+RGBDS_MBC3_RTC_ROM := $(BIN_DIR)/rgbds-mbc3-rtc.gb
+
 # Phase 7's real front end (gameboy/gtk/src/main.c) - opt-in, same GTK4
 # dependency/reasoning as GTK above, but links the core directly instead
 # of spawning a separate process (see main.c's own top comment for why
@@ -142,7 +152,7 @@ GAMEBOY_GTK_CFLAGS := $(GTK_CFLAGS) -I$(GAMEBOY_SRC_DIR)
 # dependency needed.
 GAMEBOY_GTK_LIBS := $(GTK_LIBS) -framework AudioToolbox
 
-.PHONY: all emulator assembler disassembler gtk gameboy gameboy-test gameboy-visual-test gameboy-2048-test gameboy-droneboy-test gameboy-tobu-test gameboy-rgbds-test gameboy-gtk run test clean
+.PHONY: all emulator assembler disassembler gtk gameboy gameboy-test gameboy-visual-test gameboy-2048-test gameboy-droneboy-test gameboy-tobu-test gameboy-rgbds-test gameboy-rgbds-mbc3-test gameboy-gtk run test clean
 
 all: emulator assembler disassembler
 
@@ -185,6 +195,15 @@ gameboy-rgbds-test: $(GAMEBOY_TARGET) | $(BIN_DIR)
 	./$(GAMEBOY_TARGET) $(RGBDS_HELLO_ROM) 2>&1 | grep -q "HELLO GAMEBOY" \
 		&& echo "gameboy-rgbds-test: OK (RGBDS-built ROM ran correctly)" \
 		|| (echo "gameboy-rgbds-test: FAIL (expected serial output not seen)"; exit 1)
+
+gameboy-rgbds-mbc3-test: $(GAMEBOY_TARGET) | $(BIN_DIR)
+	rgbasm -o $(RGBDS_MBC3_RTC_OBJ) $(RGBDS_MBC3_RTC_SRC)
+	rgblink -o $(RGBDS_MBC3_RTC_ROM) $(RGBDS_MBC3_RTC_OBJ)
+	rgbfix -v -m 0x10 -r 0x03 -p 0xFF $(RGBDS_MBC3_RTC_ROM)
+	./$(GAMEBOY_TARGET) $(RGBDS_MBC3_RTC_ROM) 2>&1 | \
+		grep -q "RAM:Rr RTC1:ABCDE RTC2(unlatched):ABCDE RTC3(relatched):abcde DONE" \
+		&& echo "gameboy-rgbds-mbc3-test: OK (RTC latch/isolation behavior correct)" \
+		|| (echo "gameboy-rgbds-mbc3-test: FAIL (expected serial output not seen)"; exit 1)
 
 gameboy-gtk: $(GAMEBOY_GTK_TARGET)
 
@@ -237,4 +256,4 @@ test: emulator assembler
 	./cpm/tests/run_tests.sh
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(GAMEBOY_GTK_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_TEST_APU_TARGET) $(GAMEBOY_TEST_CPU_TARGET) $(GAMEBOY_VISUAL_OUT) $(GAMEBOY_2048_OUT) $(GAMEBOY_DRONEBOY_OUT) $(GAMEBOY_TOBU_OUT) $(GAMEBOY_GTK_TARGET) $(RGBDS_HELLO_OBJ) $(RGBDS_HELLO_ROM)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(GAMEBOY_GTK_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_TEST_APU_TARGET) $(GAMEBOY_TEST_CPU_TARGET) $(GAMEBOY_VISUAL_OUT) $(GAMEBOY_2048_OUT) $(GAMEBOY_DRONEBOY_OUT) $(GAMEBOY_TOBU_OUT) $(GAMEBOY_GTK_TARGET) $(RGBDS_HELLO_OBJ) $(RGBDS_HELLO_ROM) $(RGBDS_MBC3_RTC_OBJ) $(RGBDS_MBC3_RTC_ROM)
