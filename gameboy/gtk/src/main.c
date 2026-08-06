@@ -44,6 +44,7 @@ typedef struct {
     GBJoypad joypad;
     GBApu apu;
     GtkWidget *drawing_area;
+    guint timeout_id; // step_frame()'s g_timeout_add() id - see on_window_destroy()
 } GameboyApp;
 
 static char *g_rom_path = NULL;
@@ -115,7 +116,11 @@ static gboolean step_frame(gpointer user_data) {
             break;
         }
     }
-    gtk_widget_queue_draw(app->drawing_area);
+    // Belt-and-suspenders alongside on_window_destroy()'s g_source_remove():
+    // that call is what actually stops this timer from firing again once
+    // the window is gone, but checking here too costs nothing and avoids
+    // relying on exact widget-destruction/signal-ordering guarantees.
+    if (app->drawing_area) gtk_widget_queue_draw(app->drawing_area);
     return G_SOURCE_CONTINUE;
 }
 
@@ -163,6 +168,25 @@ static gboolean on_key_released(GtkEventControllerKey *controller, guint keyval,
     return on_key_event(controller, keyval, keycode, state, user_data, 0);
 }
 
+// Without this, step_frame()'s repeating g_timeout_add() outlives the
+// window: GtkApplication only quits (asynchronously, on a later main-loop
+// iteration) once its last window is gone, so there's a real gap where
+// the timer can fire again after gtk_window_set_child()'s drawing area
+// has already been destroyed - gtk_widget_queue_draw() on that dangling
+// pointer is exactly the "assertion 'GTK_IS_WIDGET (widget)' failed"
+// GTK-CRITICAL a real close-the-window test reproduced. Removing the
+// source synchronously on "destroy" (fired as the window and its
+// children are torn down, not after) closes that gap.
+static void on_window_destroy(GtkWidget *window, gpointer user_data) {
+    (void)window;
+    GameboyApp *app = user_data;
+    if (app->timeout_id) {
+        g_source_remove(app->timeout_id);
+        app->timeout_id = 0;
+    }
+    app->drawing_area = NULL;
+}
+
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
     (void)user_data;
 
@@ -191,6 +215,7 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_window_set_title(GTK_WINDOW(window), g_rom_path);
     gtk_window_set_default_size(GTK_WINDOW(window), GB_SCREEN_WIDTH * SCALE, GB_SCREEN_HEIGHT * SCALE);
     gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
+    g_signal_connect(window, "destroy", G_CALLBACK(on_window_destroy), &g_app);
 
     GtkWidget *area = gtk_drawing_area_new();
     gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(area), GB_SCREEN_WIDTH * SCALE);
@@ -211,7 +236,7 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     // and simpler than a higher-resolution timer source for this first
     // pass; a documented approximation in the same spirit as ppu.h's
     // existing "Mode 3 is always 172 dots" simplification.
-    g_timeout_add(16, step_frame, &g_app);
+    g_app.timeout_id = g_timeout_add(16, step_frame, &g_app);
 
     gtk_window_present(GTK_WINDOW(window));
 }
