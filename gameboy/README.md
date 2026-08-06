@@ -28,3 +28,13 @@ they're treated differently.
   meaningfully different risk than 1980s CP/M software whose publishers
   mostly no longer exist or have released it. Keep your own dumps here
   locally; they'll never leave your machine via this repo.
+
+- `gtk/` - Phase 7's real GTK4+Cairo front end (`make gameboy-gtk`,
+  opt-in like `cpm/gtk/`), a live playable window rather than the
+  `--ppm`/`--wav`/`--input` bring-up driver `src/main.c` still provides
+  for testing. Architecturally different from `cpm/gtk/`: it links the
+  core directly instead of spawning a process and driving a terminal
+  widget, since Game Boy output is a pixel framebuffer, not text - see
+  `gtk/src/main.c`'s own top comment and `gameboy/docs/GAMEBOY_ROADMAP.md`'s
+  Phase 7 status for the full reasoning, current key bindings, and
+  what's still deliberately missing (live audio, most notably).

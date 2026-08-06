@@ -4,6 +4,7 @@ cpm/asm/src/*.o
 cpm/disasm/src/*.o
 cpm/gtk/src/*.o
 gameboy/src/*.o
+gameboy/gtk/src/*.o
 gameboy/tests/__pycache__/
 .claude/
 cpm_disk/

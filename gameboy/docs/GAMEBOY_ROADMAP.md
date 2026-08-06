@@ -550,3 +550,38 @@ correctly under scripted input. Trying more real ROMs against
 `--input` scripts (particularly ones exercising MBC3's RTC or deeper
 save-RAM behavior, neither meaningfully exercised by 2048-gb) is also
 worth doing opportunistically, without needing a dedicated phase for it.
+
+**Phase 7 (real graphical front end): started, video + input working,
+audio deliberately deferred.** `gameboy/gtk/src/main.c` (new, opt-in via
+`make gameboy-gtk`, same GTK4-dependency reasoning as `cpm/gtk/`) is a
+real playable front end - a GTK4 window rendering the live framebuffer
+through Cairo (nearest-neighbor-scaled 4x so the real 160x144 pixel
+grid stays sharp) and reading real keyboard input into the joypad
+(arrows = D-pad, Z/X = B/A, Enter = Start, Right Shift = Select - the
+same default layout convention BGB/SameBoy use, not invented here).
+Architecturally different from `cpm/gtk/`'s approach on purpose: that
+one spawns the real `bin/z80` as a child process and hands a pty to a
+`VteTerminal` widget, which works because CP/M output is a text/
+escape-code stream a terminal widget already knows how to interpret.
+The Game Boy's output is a raw pixel framebuffer, so this front end
+links the core (`gameboy/src/*.c`, minus `main.c`'s own competing
+`main()`) directly into one binary instead - no child process, no pty,
+and therefore the macOS `posix_spawn`/xzone crash documented in
+`cpm/gtk/README.md` (triggered by VTE's own child-spawn path) doesn't
+apply here at all. A `g_timeout_add(16, ...)` callback steps the core
+one real video frame (70224 T-states) per tick and queues a redraw;
+stepping itself takes microseconds, so the ~16ms timer interval is what
+actually paces wall-clock speed (a documented, deliberate
+approximation of the real 59.7275 Hz - see `main.c`'s own comment - in
+the same spirit as `ppu.h`'s existing "Mode 3 is always 172 dots"
+simplification). Manually verified stable (steady ~30% CPU, no crash,
+no illegal-opcode stop) running both 2048-gb and dmg-acid2 (an
+MBC-less cart, unlike 2048-gb's MBC1) for extended periods.
+
+**Deliberately not done yet**: live audio output. `gameboy/src/apu.c`
+already generates real samples (`main.c --wav` proves that), but
+playing them back live needs a platform audio API this project has no
+dependency on yet - left as an explicit, flagged gap rather than
+guessed at, exactly this project's stated convention for genuinely
+unimplemented pieces. Also not done: Game Boy Color support and save
+states, the other two Phase 7 items - both still fully unscoped.
