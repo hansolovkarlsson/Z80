@@ -694,3 +694,32 @@ algorithm would be guessing at unconfirmed DMG behavior, not grounding.
 Regression-tested directly (`gameboy/tests/test_apu.c`, new, 12 checks,
 wired into `make gameboy-test`) rather than only through Droneboy
 itself - see `gameboy/test_roms/droneboy/README.md` for the full story.
+
+**A real, standalone CPU bug found and fixed: the "HALT immediately
+after EI" sub-case of the HALT bug.** Found through Tobu Tobu Girl,
+left running idle in the GTK front end past ~12 seconds - a real
+illegal-opcode crash after PC jumped into WRAM, unrelated to anything
+else this phase touched. Root cause: this game's main loop uses the
+classic `ei; halt` idiom to wait for the next interrupt, and this
+emulator was applying the *generic* halt-bug handling (double-fetch
+the byte after HALT) to that case, when pandocs' `halt.md` documents it
+as genuinely different real hardware behavior - HALT is effectively
+canceled outright when it's the delayed instruction right after `ei`;
+the already-pending interrupt dispatches normally on the next step
+using HALT's own (unadvanced) address as its return point, so `RETI`
+naturally re-executes the same HALT once IME has genuinely caught up.
+The generic-case handling instead pushed the wrong interrupt-return
+address and left a stale internal flag that then double-executed the
+interrupt vector's own first instruction on top of that, silently
+corrupting the stack by 2 bytes - invisible until a `RETI` many
+instructions later finally popped garbage. Fixed in `gb_op_ld_r_r()`/
+`gb_cpu_step()` (`cpu.c`), needing one new `GBCpu` field
+(`ei_delay_active`) to let the HALT handler see whether it's executing
+as EI's delayed instruction - deliberately kept separate from
+`ime_pending` itself rather than reusing it, since EI's own opcode
+handler writes that field too. Regression-tested directly and
+precisely (`gameboy/tests/test_cpu.c`, new, 14 checks: exact interrupt-
+return address, exact stack balance, correct re-halt on retry - not
+just "this one ROM stops crashing"), wired into `make gameboy-test`.
+See `gameboy/test_roms/tobutobugirl/README.md` for the full
+root-causing story.

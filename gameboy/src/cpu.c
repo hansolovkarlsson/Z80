@@ -335,11 +335,36 @@ static int gb_op_ld_r_r(GBCpu *cpu) {
     uint8_t opcode = gb_read_byte(cpu, (uint16_t)(cpu->pc - 1));
     if (opcode == 0x76) {
         uint8_t pending = (uint8_t)(gb_read_byte(cpu, 0xFFFF) & gb_read_byte(cpu, 0xFF0F) & 0x1F);
-        if (!cpu->ime && pending) {
-            // The HALT bug (pandocs' halt.md): IME=0 with an interrupt
-            // already pending means HALT doesn't actually halt at all -
-            // see gb_cpu_step()'s own handling of halt_bug for what
-            // this actually does to the next instruction.
+        if (!cpu->ime && pending && cpu->ei_delay_active) {
+            // pandocs' halt.md, the "halt immediately after ei" sub-case:
+            // real hardware doesn't apply the generic halt-bug double-
+            // fetch here. Instead, HALT is effectively canceled outright
+            // (pc rewound back to HALT's own address, no halt_bug, no
+            // halted) - by the *next* gb_cpu_step call, ime_pending's
+            // one-instruction delay (gb_cpu_step's own ime_to_set/
+            // cpu->ime_pending handling) has resolved to ime=1, so the
+            // already-pending interrupt dispatches completely normally
+            // next step, using this now-correct, unadvanced pc as its
+            // return address - meaning RETI naturally resumes execution
+            // back at this same HALT, which by then sees ime=1 for real
+            // and halts properly ("waits for another interrupt", per
+            // pandocs). Found via a real ROM (gameboy/test_roms/tobutobugirl/)
+            // whose main loop's own "ei; halt" idiom hit exactly this:
+            // treating it as the generic halt_bug case instead pushed
+            // the wrong return address (pc *after* HALT, not pc *at*
+            // HALT) when the interrupt fired, and separately left
+            // halt_bug=1 to incorrectly fire again on the interrupt
+            // vector's own first instruction once inside the handler,
+            // double-executing it and corrupting the stack by 2 bytes -
+            // see gameboy/test_roms/tobutobugirl/README.md for the full story.
+            cpu->pc--;
+        } else if (!cpu->ime && pending) {
+            // The generic HALT bug (pandocs' halt.md): IME=0 with an
+            // interrupt already pending means HALT doesn't actually
+            // halt at all - see gb_cpu_step()'s own handling of
+            // halt_bug for what this actually does to the next
+            // instruction. Distinct from the ei-delay sub-case above,
+            // which pandocs documents as behaving differently.
             cpu->halt_bug = 1;
         } else {
             cpu->halted = 1;
@@ -631,6 +656,7 @@ void gb_cpu_reset(GBCpu *cpu) {
     cpu->pc = 0x0100;
     cpu->ime = 0;
     cpu->ime_pending = 0;
+    cpu->ei_delay_active = 0;
     cpu->halted = 0;
     cpu->stopped = 0;
     cpu->halt_bug = 0;
@@ -692,6 +718,7 @@ int gb_cpu_step(GBCpu *cpu) {
     // the instruction after EI, not EI's own step, that's affected.
     uint8_t ime_to_set = cpu->ime_pending;
     cpu->ime_pending = 0;
+    cpu->ei_delay_active = ime_to_set;
 
     uint8_t opcode = fetch_byte(cpu);
     int cycles = gb_opcode_table[opcode](cpu);

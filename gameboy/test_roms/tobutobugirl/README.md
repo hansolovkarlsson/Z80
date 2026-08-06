@@ -24,3 +24,23 @@ byte-for-byte deterministic across repeated runs), diffed with a plain
 `dmg-acid2` already establishes (a static single-frame check, not a
 scripted-gameplay one like `2048-gb`'s tile-merge test - this game's
 actual controls weren't reverse-engineered as part of adding this).
+
+**A real CPU bug found through this ROM**: left running idle (no input)
+past ~12 seconds (frame 720), the CPU crashed on an illegal opcode
+after jumping into WRAM. Root-caused to the "HALT immediately after EI"
+sub-case of the HALT bug (pandocs' `halt.md`) - this game's own main
+loop uses the classic `ei; halt` idiom to wait for the next interrupt,
+and this emulator was treating that combination as the *generic*
+halt-bug case (double-fetching the byte after HALT) instead of the
+documented-different EI-adjacent case (real hardware cancels the HALT
+outright and re-services it after the interrupt returns). That mismatch
+pushed the wrong interrupt-return address and left a stale internal
+flag to double-execute the interrupt vector's own first instruction,
+silently corrupting the stack by 2 bytes on every occurrence until a
+`RETI` finally popped garbage. Fixed in `gb_op_ld_r_r()`/`gb_cpu_step()`
+(`cpu.c`) and covered by a direct, ROM-independent unit test
+(`gameboy/tests/test_cpu.c`, `make gameboy-test`) that exercises the exact
+`ei; halt` sequence and asserts the correct interrupt-return address
+and stack balance - not just "this one ROM stops crashing." Confirmed
+fixed: this ROM now runs well past the previous crash point (1289+
+frames) with no illegal-opcode stop.

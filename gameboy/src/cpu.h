@@ -25,6 +25,18 @@ typedef struct GBCpu {
     uint8_t ime;
     uint8_t ime_pending; // EI was just executed; take effect after the *next* instruction
 
+    // Set by gb_cpu_step() for the single instruction immediately
+    // following an EI whose one-instruction delay hasn't resolved yet
+    // (i.e. this instruction is executing with ime still 0, but ime_pending
+    // is about to turn it on right after) - read only by gb_op_ld_r_r()'s
+    // HALT (0x76) case, which needs to distinguish "HALT right after EI"
+    // from the ordinary halt-bug case (pandocs' halt.md documents these
+    // as genuinely different real-hardware behaviors). Deliberately a
+    // separate field from ime_pending itself, not a reuse of it - EI's
+    // own opcode handler writes ime_pending too, and conflating the two
+    // would risk that write clobbering this one's meaning.
+    uint8_t ei_delay_active;
+
     // HALT: true once a HALT instruction has been executed. The run loop
     // is expected to stop advancing PC (just burn cycles) while this is
     // set, until an interrupt becomes pending. STOP is similar but also

@@ -62,6 +62,13 @@ GAMEBOY_TEST_TIMER_TARGET := $(BIN_DIR)/gameboy-test-timer
 # GAMEBOY_TEST_TARGET/GAMEBOY_TEST_TIMER_TARGET above.
 GAMEBOY_TEST_APU_TARGET := $(BIN_DIR)/gameboy-test-apu
 
+# cpu.c's own unit tests (gameboy/tests/test_cpu.c) - the "HALT
+# immediately after EI" sub-case of the HALT bug, a real gap a real ROM
+# (gameboy/test_roms/tobutobugirl/) found. Needs mmu.c linked (for
+# gb_read_byte/gb_write_byte) but no cart/ppu/timer/joypad/apu, same
+# minimal-dependency reasoning as GAMEBOY_TEST_APU_TARGET above.
+GAMEBOY_TEST_CPU_TARGET := $(BIN_DIR)/gameboy-test-cpu
+
 # dmg-acid2 (gameboy/test_roms/dmg-acid2/ - MIT-licensed, committed
 # unlike Blargg's ROMs) is the PPU's real correctness gate: render a
 # frame, compare it pixel-for-pixel against the reference image.
@@ -134,10 +141,11 @@ gtk: $(GTK_TARGET)
 
 gameboy: $(GAMEBOY_TARGET)
 
-gameboy-test: $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_TEST_APU_TARGET)
+gameboy-test: $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_TEST_APU_TARGET) $(GAMEBOY_TEST_CPU_TARGET)
 	./$(GAMEBOY_TEST_TARGET)
 	./$(GAMEBOY_TEST_TIMER_TARGET)
 	./$(GAMEBOY_TEST_APU_TARGET)
+	./$(GAMEBOY_TEST_CPU_TARGET)
 
 gameboy-visual-test: $(GAMEBOY_TARGET)
 	./$(GAMEBOY_TARGET) $(GAMEBOY_VISUAL_ROM) --ppm $(GAMEBOY_VISUAL_OUT) --frames 2
@@ -184,6 +192,9 @@ $(GAMEBOY_TEST_TIMER_TARGET): gameboy/tests/test_timer.c $(GAMEBOY_SRC_DIR)/time
 $(GAMEBOY_TEST_APU_TARGET): gameboy/tests/test_apu.c $(GAMEBOY_SRC_DIR)/apu.c | $(BIN_DIR)
 	$(CC) $(CFLAGS) -lm -o $@ gameboy/tests/test_apu.c $(GAMEBOY_SRC_DIR)/apu.c
 
+$(GAMEBOY_TEST_CPU_TARGET): gameboy/tests/test_cpu.c $(GAMEBOY_SRC_DIR)/cpu.c $(GAMEBOY_SRC_DIR)/alu.c $(GAMEBOY_SRC_DIR)/mmu.c $(GAMEBOY_SRC_DIR)/cart.c $(GAMEBOY_SRC_DIR)/ppu.c $(GAMEBOY_SRC_DIR)/joypad.c $(GAMEBOY_SRC_DIR)/apu.c $(GAMEBOY_SRC_DIR)/timer.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) -lm -o $@ gameboy/tests/test_cpu.c $(GAMEBOY_SRC_DIR)/cpu.c $(GAMEBOY_SRC_DIR)/alu.c $(GAMEBOY_SRC_DIR)/mmu.c $(GAMEBOY_SRC_DIR)/cart.c $(GAMEBOY_SRC_DIR)/ppu.c $(GAMEBOY_SRC_DIR)/joypad.c $(GAMEBOY_SRC_DIR)/apu.c $(GAMEBOY_SRC_DIR)/timer.c
+
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
@@ -203,4 +214,4 @@ test: emulator assembler
 	./cpm/tests/run_tests.sh
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(GAMEBOY_GTK_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_TEST_APU_TARGET) $(GAMEBOY_VISUAL_OUT) $(GAMEBOY_2048_OUT) $(GAMEBOY_DRONEBOY_OUT) $(GAMEBOY_TOBU_OUT) $(GAMEBOY_GTK_TARGET)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(GAMEBOY_GTK_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_TEST_APU_TARGET) $(GAMEBOY_TEST_CPU_TARGET) $(GAMEBOY_VISUAL_OUT) $(GAMEBOY_2048_OUT) $(GAMEBOY_DRONEBOY_OUT) $(GAMEBOY_TOBU_OUT) $(GAMEBOY_GTK_TARGET)
