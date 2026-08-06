@@ -723,3 +723,31 @@ return address, exact stack balance, correct re-halt on retry - not
 just "this one ROM stops crashing"), wired into `make gameboy-test`.
 See `gameboy/test_roms/tobutobugirl/README.md` for the full
 root-causing story.
+
+**Toolchain decision: RGBDS, not a homegrown Game Boy assembler.**
+Considered extending `z80asm` (`cpm/asm/src/`) with a `CPU Z80`/`CPU GB`
+directive - a real, well-scoped option, since `z80asm`'s macro/
+preprocessing, expression evaluator, symbol table, and generic
+directives are already CPU-agnostic; only its instruction encoder
+(`encode.c`) is Z80-specific, genuinely smaller in scope than the
+CPU-*emulator* sharing this project already declined for the same
+CPU pair (see this doc's own "Architecture decision" section). Went
+with RGBDS instead: it's already the de facto standard the whole real
+Game Boy homebrew scene uses - `2048-gb`, `Tobu Tobu Girl`, and
+`Droneboy` (`gameboy/test_roms/`) are all built with RGBDS or GBDK
+(itself built on RGBDS's assembler) - so adopting it costs nothing
+against real ongoing effort maintaining a second instruction set
+inside `z80asm`, for what's fundamentally a means-to-an-end need
+(test content), not this project's own mission. A C or Pascal
+compiler was also considered and dismissed outright: GBDK (built on
+SDCC) already fills that role and is what real games already
+committed here are written in - a from-scratch compiler is a far
+bigger undertaking than an assembler, poor ROI for generating test
+content. See `gameboy/rgbds/README.md` for the full reasoning and
+`gameboy/rgbds/examples/hello.asm` for a real, working proof: `make
+gameboy-rgbds-test` assembles, links, and fixes a real RGBDS source,
+then runs the result through this project's own `bin/gameboy` and
+checks its actual output - confirming the whole round-trip works, not
+just that RGBDS itself does. Opt-in (`brew install rgbds`), same
+external-dependency reasoning as `make gtk`/`make gameboy-gtk` - never
+part of the default `make`/`make test`/`make gameboy-test`.

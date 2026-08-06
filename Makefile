@@ -108,6 +108,21 @@ GAMEBOY_TOBU_ROM := gameboy/test_roms/tobutobugirl/tobu.gb
 GAMEBOY_TOBU_REF := gameboy/test_roms/tobutobugirl/reference_frame.ppm
 GAMEBOY_TOBU_OUT := $(BIN_DIR)/tobu-output.ppm
 
+# RGBDS (rgbasm/rgblink/rgbfix, `brew install rgbds`) - opt-in, same
+# external-dependency reasoning as GTK4 above. The chosen toolchain for
+# any future custom Game Boy test content, rather than building/
+# extending a homegrown assembler for a second, very different CPU
+# target: RGBDS is already the de facto standard the whole GB homebrew
+# scene uses (2048-gb, Tobu Tobu Girl, and Droneboy - see
+# gameboy/test_roms/ - are all built with RGBDS or GBDK, which itself
+# builds on RGBDS's assembler), so adopting it costs nothing against
+# real effort extending cpm/asm/src for a second instruction set. See
+# gameboy/rgbds/examples/hello.asm and gameboy/docs/GAMEBOY_ROADMAP.md's
+# Phase 7 status for the full reasoning.
+RGBDS_HELLO_SRC := gameboy/rgbds/examples/hello.asm
+RGBDS_HELLO_OBJ := $(BIN_DIR)/rgbds-hello.o
+RGBDS_HELLO_ROM := $(BIN_DIR)/rgbds-hello.gb
+
 # Phase 7's real front end (gameboy/gtk/src/main.c) - opt-in, same GTK4
 # dependency/reasoning as GTK above, but links the core directly instead
 # of spawning a separate process (see main.c's own top comment for why
@@ -127,7 +142,7 @@ GAMEBOY_GTK_CFLAGS := $(GTK_CFLAGS) -I$(GAMEBOY_SRC_DIR)
 # dependency needed.
 GAMEBOY_GTK_LIBS := $(GTK_LIBS) -framework AudioToolbox
 
-.PHONY: all emulator assembler disassembler gtk gameboy gameboy-test gameboy-visual-test gameboy-2048-test gameboy-droneboy-test gameboy-tobu-test gameboy-gtk run test clean
+.PHONY: all emulator assembler disassembler gtk gameboy gameboy-test gameboy-visual-test gameboy-2048-test gameboy-droneboy-test gameboy-tobu-test gameboy-rgbds-test gameboy-gtk run test clean
 
 all: emulator assembler disassembler
 
@@ -162,6 +177,14 @@ gameboy-droneboy-test: $(GAMEBOY_TARGET)
 gameboy-tobu-test: $(GAMEBOY_TARGET)
 	./$(GAMEBOY_TARGET) $(GAMEBOY_TOBU_ROM) --ppm $(GAMEBOY_TOBU_OUT) --frames 60
 	cmp $(GAMEBOY_TOBU_OUT) $(GAMEBOY_TOBU_REF) && echo "gameboy-tobu-test: OK (frame matches known-good reference)"
+
+gameboy-rgbds-test: $(GAMEBOY_TARGET) | $(BIN_DIR)
+	rgbasm -o $(RGBDS_HELLO_OBJ) $(RGBDS_HELLO_SRC)
+	rgblink -o $(RGBDS_HELLO_ROM) $(RGBDS_HELLO_OBJ)
+	rgbfix -v -p 0xFF $(RGBDS_HELLO_ROM)
+	./$(GAMEBOY_TARGET) $(RGBDS_HELLO_ROM) 2>&1 | grep -q "HELLO GAMEBOY" \
+		&& echo "gameboy-rgbds-test: OK (RGBDS-built ROM ran correctly)" \
+		|| (echo "gameboy-rgbds-test: FAIL (expected serial output not seen)"; exit 1)
 
 gameboy-gtk: $(GAMEBOY_GTK_TARGET)
 
@@ -214,4 +237,4 @@ test: emulator assembler
 	./cpm/tests/run_tests.sh
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(GAMEBOY_GTK_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_TEST_APU_TARGET) $(GAMEBOY_TEST_CPU_TARGET) $(GAMEBOY_VISUAL_OUT) $(GAMEBOY_2048_OUT) $(GAMEBOY_DRONEBOY_OUT) $(GAMEBOY_TOBU_OUT) $(GAMEBOY_GTK_TARGET)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(GAMEBOY_GTK_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_TEST_APU_TARGET) $(GAMEBOY_TEST_CPU_TARGET) $(GAMEBOY_VISUAL_OUT) $(GAMEBOY_2048_OUT) $(GAMEBOY_DRONEBOY_OUT) $(GAMEBOY_TOBU_OUT) $(GAMEBOY_GTK_TARGET) $(RGBDS_HELLO_OBJ) $(RGBDS_HELLO_ROM)
