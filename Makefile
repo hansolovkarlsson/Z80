@@ -78,6 +78,22 @@ GAMEBOY_2048_SCRIPT := gameboy/test_roms/2048-gb/input_script.txt
 GAMEBOY_2048_REF := gameboy/test_roms/2048-gb/reference_frame.ppm
 GAMEBOY_2048_OUT := $(BIN_DIR)/2048-gb-output.ppm
 
+# Droneboy (gameboy/test_roms/droneboy/ - MIT-licensed, committed same as
+# 2048-gb) is the live-audio counterpart to dmg-acid2's PPU test: real,
+# sustained multi-channel sound from boot with no input needed, unlike
+# 2048-gb's single startup blip - see gameboy/test_roms/droneboy/README.md.
+GAMEBOY_DRONEBOY_ROM := gameboy/test_roms/droneboy/droneboy.gb
+GAMEBOY_DRONEBOY_REF := gameboy/test_roms/droneboy/reference_audio.wav
+GAMEBOY_DRONEBOY_OUT := $(BIN_DIR)/droneboy-output.wav
+
+# Tobu Tobu Girl (gameboy/test_roms/tobutobugirl/ - MIT-licensed, committed
+# same as 2048-gb) is a second real-game validation target: a well-known
+# action/platformer rather than a puzzle game - see
+# gameboy/test_roms/tobutobugirl/README.md.
+GAMEBOY_TOBU_ROM := gameboy/test_roms/tobutobugirl/tobu.gb
+GAMEBOY_TOBU_REF := gameboy/test_roms/tobutobugirl/reference_frame.ppm
+GAMEBOY_TOBU_OUT := $(BIN_DIR)/tobu-output.ppm
+
 # Phase 7's real front end (gameboy/gtk/src/main.c) - opt-in, same GTK4
 # dependency/reasoning as GTK above, but links the core directly instead
 # of spawning a separate process (see main.c's own top comment for why
@@ -97,7 +113,7 @@ GAMEBOY_GTK_CFLAGS := $(GTK_CFLAGS) -I$(GAMEBOY_SRC_DIR)
 # dependency needed.
 GAMEBOY_GTK_LIBS := $(GTK_LIBS) -framework AudioToolbox
 
-.PHONY: all emulator assembler disassembler gtk gameboy gameboy-test gameboy-visual-test gameboy-2048-test gameboy-gtk run test clean
+.PHONY: all emulator assembler disassembler gtk gameboy gameboy-test gameboy-visual-test gameboy-2048-test gameboy-droneboy-test gameboy-tobu-test gameboy-gtk run test clean
 
 all: emulator assembler disassembler
 
@@ -122,6 +138,14 @@ gameboy-visual-test: $(GAMEBOY_TARGET)
 gameboy-2048-test: $(GAMEBOY_TARGET)
 	./$(GAMEBOY_TARGET) $(GAMEBOY_2048_ROM) --input $(GAMEBOY_2048_SCRIPT) --ppm $(GAMEBOY_2048_OUT) --frames 180
 	cmp $(GAMEBOY_2048_OUT) $(GAMEBOY_2048_REF) && echo "gameboy-2048-test: OK (frame matches known-good reference)"
+
+gameboy-droneboy-test: $(GAMEBOY_TARGET)
+	./$(GAMEBOY_TARGET) $(GAMEBOY_DRONEBOY_ROM) --wav $(GAMEBOY_DRONEBOY_OUT) --seconds 2
+	cmp $(GAMEBOY_DRONEBOY_OUT) $(GAMEBOY_DRONEBOY_REF) && echo "gameboy-droneboy-test: OK (audio matches known-good reference)"
+
+gameboy-tobu-test: $(GAMEBOY_TARGET)
+	./$(GAMEBOY_TARGET) $(GAMEBOY_TOBU_ROM) --ppm $(GAMEBOY_TOBU_OUT) --frames 60
+	cmp $(GAMEBOY_TOBU_OUT) $(GAMEBOY_TOBU_REF) && echo "gameboy-tobu-test: OK (frame matches known-good reference)"
 
 gameboy-gtk: $(GAMEBOY_GTK_TARGET)
 
@@ -168,4 +192,4 @@ test: emulator assembler
 	./cpm/tests/run_tests.sh
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(GAMEBOY_GTK_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_VISUAL_OUT) $(GAMEBOY_2048_OUT) $(GAMEBOY_GTK_TARGET)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(GAMEBOY_GTK_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_VISUAL_OUT) $(GAMEBOY_2048_OUT) $(GAMEBOY_DRONEBOY_OUT) $(GAMEBOY_TOBU_OUT) $(GAMEBOY_GTK_TARGET)

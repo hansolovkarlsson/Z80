@@ -630,3 +630,48 @@ restart pixel injection), not a small `SCX % 8` patch on top of the
 current whole-scanline-at-once renderer - a real, separately-scoped
 rewrite of `render_scanline()`/`gb_ppu_step()`'s Mode 3 handling, not
 attempted here rather than guessed at partially.
+
+**Two more real, permissively-licensed ROMs added**, found via
+<https://hh.gbdev.io/> (backed by <https://github.com/gbdev/database>,
+whose per-entry `game.json` names an explicit SPDX license and, for
+these two, a real linked GitHub repository with its own `LICENSE` file
+independently fetched and checked before committing - the same bar
+`dmg-acid2`/`2048-gb` were already held to):
+
+- **Droneboy** (`gameboy/test_roms/droneboy/`, MIT) - the live-audio
+  counterpart to dmg-acid2's PPU test: real, sustained multi-channel
+  sound from the moment it boots, no scripted input needed, unlike
+  `2048-gb`'s single ~0.05s startup blip. Its own README describes
+  interactive controls (volume/duty/frequency, chords, MIDI via an
+  Arduinoboy) that this project's simple `--input` script format
+  didn't manage to trigger any observable change from in testing -
+  documented honestly as an open, not-deeply-investigated question
+  (plausibly needs a control sequence this format doesn't express, or
+  genuinely expects MIDI/link-cable input) rather than claimed as
+  working interaction. `make gameboy-droneboy-test` locks in a 2-second
+  `--wav` capture as a byte-for-byte regression baseline.
+- **Tobu Tobu Girl** (`gameboy/test_roms/tobutobugirl/`, MIT) - a second
+  real-game validation target alongside `2048-gb`, this time a
+  well-known action/platformer rather than a puzzle game, and a
+  substantially larger ROM (2Mbit vs. 2048-gb's 256Kbit). `make
+  gameboy-tobu-test` locks in the rendered title screen as a
+  byte-for-byte regression baseline, the same boot-stability check
+  `dmg-acid2` already establishes rather than a scripted-gameplay one
+  (this game's actual controls weren't reverse-engineered here).
+
+A third candidate found the same way, a "LoFi Chiptune Beats" music
+ROM, was deliberately **not** committed: the `gbdev/database` entry
+claims a Zlib license but names no repository or license file to check
+it against, and the actual creator's own itch.io page states no
+license at all - doesn't meet the same verification bar, so left out
+rather than guessed at, exactly the same reasoning that already kept
+Blargg's ambiguously-licensed test ROMs out of this repo (Phase 1's
+licensing note).
+
+Along the way, found and fixed a real, separate diagnostic bug in
+`gb_cart_load()` (`cart.c`): its startup message printed `GBMbcType`'s
+raw enum ordinal (`GB_MBC_NONE=0, GB_MBC1=1, GB_MBC3=2, GB_MBC5=3`)
+rather than the real MBC generation number, so any MBC5 cartridge
+printed `mbc=3` - reading exactly like MBC3, which it isn't. The
+banking logic itself was never affected, only the diagnostic text -
+`mbc_type_name()` now prints the real generation number.
