@@ -39,6 +39,24 @@ static int ram_banks_for_code(uint8_t code) {
     }
 }
 
+// GBMbcType's own enum ordinals (GB_MBC_NONE=0, GB_MBC1=1, GB_MBC3=2,
+// GB_MBC5=3) don't match real MBC generation numbers - printing the raw
+// ordinal directly (as this file's own startup message used to) reads
+// as "mbc=3" for a genuine MBC5 cartridge, actively misleading (found
+// testing a real MBC5+RUMBLE+RAM+BATTERY ROM - cart type 0x1E - whose
+// startup message claimed "mbc=3", i.e. what looks like MBC3, while
+// cart.h's own switch above correctly classified and banked it as MBC5
+// the whole time; only the diagnostic text was wrong).
+static const char *mbc_type_name(GBMbcType type) {
+    switch (type) {
+        case GB_MBC_NONE: return "none";
+        case GB_MBC1: return "1";
+        case GB_MBC3: return "3";
+        case GB_MBC5: return "5";
+        default: return "?";
+    }
+}
+
 int gb_cart_load(GBCart *cart, const char *path) {
     memset(cart, 0, sizeof(*cart));
 
@@ -156,8 +174,8 @@ int gb_cart_load(GBCart *cart, const char *path) {
                 path, checksum, rom[0x014D]);
     }
 
-    fprintf(stderr, "Loaded '%s': %d ROM bank(s), %d RAM bank(s), mbc=%d%s%s\n",
-            path, rom_banks, ram_banks, (int)mbc_type,
+    fprintf(stderr, "Loaded '%s': %d ROM bank(s), %d RAM bank(s), mbc=%s%s%s\n",
+            path, rom_banks, ram_banks, mbc_type_name(mbc_type),
             has_battery ? " +battery" : "", has_rtc ? " +rtc" : "");
 
     return 0;
