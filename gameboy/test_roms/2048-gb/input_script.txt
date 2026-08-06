@@ -1,0 +1,8 @@
+60 START down
+61 START up
+90 DOWN down
+91 DOWN up
+120 RIGHT down
+121 RIGHT up
+150 DOWN down
+151 DOWN up

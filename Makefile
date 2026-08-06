@@ -66,7 +66,19 @@ GAMEBOY_VISUAL_ROM := gameboy/test_roms/dmg-acid2/dmg-acid2.gb
 GAMEBOY_VISUAL_REF := gameboy/test_roms/dmg-acid2/reference-dmg.png
 GAMEBOY_VISUAL_OUT := $(BIN_DIR)/dmg-acid2-output.ppm
 
-.PHONY: all emulator assembler disassembler gtk gameboy gameboy-test gameboy-visual-test run test clean
+# 2048-gb (gameboy/test_roms/2048-gb/ - zlib-licensed, committed same as
+# dmg-acid2) is Phase 6's real-game validation target: a genuine,
+# unmodified third-party homebrew game, scripted (via main.c's --input)
+# through starting a game and playing far enough to trigger a real tile
+# merge, then diffed byte-for-byte against a known-good captured frame -
+# see gameboy/test_roms/2048-gb/README.md for the full story, including a
+# real cartridge-loading bug this ROM found and fixed.
+GAMEBOY_2048_ROM := gameboy/test_roms/2048-gb/2048.gb
+GAMEBOY_2048_SCRIPT := gameboy/test_roms/2048-gb/input_script.txt
+GAMEBOY_2048_REF := gameboy/test_roms/2048-gb/reference_frame.ppm
+GAMEBOY_2048_OUT := $(BIN_DIR)/2048-gb-output.ppm
+
+.PHONY: all emulator assembler disassembler gtk gameboy gameboy-test gameboy-visual-test gameboy-2048-test run test clean
 
 all: emulator assembler disassembler
 
@@ -87,6 +99,10 @@ gameboy-test: $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET)
 gameboy-visual-test: $(GAMEBOY_TARGET)
 	./$(GAMEBOY_TARGET) $(GAMEBOY_VISUAL_ROM) --ppm $(GAMEBOY_VISUAL_OUT) --frames 2
 	python3 gameboy/tests/compare_frame.py $(GAMEBOY_VISUAL_OUT) $(GAMEBOY_VISUAL_REF)
+
+gameboy-2048-test: $(GAMEBOY_TARGET)
+	./$(GAMEBOY_TARGET) $(GAMEBOY_2048_ROM) --input $(GAMEBOY_2048_SCRIPT) --ppm $(GAMEBOY_2048_OUT) --frames 180
+	cmp $(GAMEBOY_2048_OUT) $(GAMEBOY_2048_REF) && echo "gameboy-2048-test: OK (frame matches known-good reference)"
 
 $(EMU_TARGET): $(EMU_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(EMU_OBJS)
@@ -125,4 +141,4 @@ test: emulator assembler
 	./cpm/tests/run_tests.sh
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_VISUAL_OUT)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_VISUAL_OUT) $(GAMEBOY_2048_OUT)

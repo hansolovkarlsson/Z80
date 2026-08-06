@@ -13,12 +13,24 @@ static int rom_banks_for_code(uint8_t code) {
     return 2 << code;
 }
 
-// RAM size code -> bank count (8KiB each), same page. 0x01 is a
-// documented-unused code (never used by any real cartridge) - rejected
-// rather than guessed at, same reasoning as the ROM codes above.
+// RAM size code -> bank count (8KiB each), same page. 0x01 is officially
+// "Unused" (pandocs' The_Cartridge_Header.md, "0149 - RAM size" table and
+// its own footnote: "Listed in various unofficial docs as 2 KiB. However,
+// a 2 KiB RAM chip was never used in a cartridge. The source of this
+// value is unknown.") - but pandocs also documents real ROMs using it
+// anyway: "Various 'PD' ROMs... are known to use the $01 RAM Size tag,
+// but this is believed to have been a mistake with early homebrew tools,
+// and the PD ROMs often don't use cartridge RAM at all." Confirmed via a
+// real one - Phase 6's 2048-gb (cart_type 0x03/MBC1+RAM+BATT, ram_code
+// 0x01, see gameboy/test_roms/2048-gb/) failed to load at all before this
+// fix. Treated as 0 banks (no cartridge RAM), matching pandocs'
+// "often don't use cartridge RAM at all" and letting has_ram/ram_size's
+// existing zero-size handling (gb_cart_read/write_ram() below) take over
+// rather than rejecting a real, distributed ROM outright.
 static int ram_banks_for_code(uint8_t code) {
     switch (code) {
         case 0x00: return 0;
+        case 0x01: return 0;
         case 0x02: return 1;
         case 0x03: return 4;
         case 0x04: return 16;

@@ -486,3 +486,67 @@ plausibly run start-to-finish for the first time. The five `dmg_sound`
 gaps above are worth a dedicated pass if audio-accuracy work becomes
 the active focus again, particularly `08`'s remaining one-tick
 discrepancy given how close the current implementation already is.
+
+**Phase 6 (real-game validation): a real, unmodified homebrew game
+boots, plays, and merges tiles correctly.** Same convention this
+project already uses on the CP/M side (`CLAUDE.md`'s stated session
+convention: find a bug via real software, root-cause it against a
+grounded reference, fix, add a regression test) - see
+`gameboy/test_roms/2048-gb/README.md` for the full story. The target was
+[2048-gb](https://github.com/Sanqui/2048-gb) (zlib-licensed, committed
+to `gameboy/test_roms/2048-gb/` same as dmg-acid2), a complete, real
+homebrew Game Boy port of the 2048 sliding-tile puzzle.
+
+**A real bug found immediately, before the ROM would even load**: its
+cartridge header declares RAM size code `0x01`, which
+`gb_cart_load()`'s `ram_banks_for_code()` (`cart.c`) rejected outright -
+the previous phase's own comment there called `0x01` "never used by any
+real cartridge," which pandocs' `The_Cartridge_Header.md` itself
+contradicts once read carefully: `0x01` is officially "Unused," but the
+same page documents that "Various 'PD' ROMs... are known to use the
+`$01` RAM Size tag, but this is believed to have been a mistake with
+early homebrew tools, and the PD ROMs often don't use cartridge RAM at
+all" - exactly this ROM's situation (cart type `0x03`,
+MBC1+RAM+BATTERY, but no actual save-game behavior was ever observed in
+testing). Fixed by treating code `0x01` as 0 RAM banks rather than a
+load error, letting the existing zero-size RAM handling
+(`gb_cart_read_ram`/`gb_cart_write_ram`) take over rather than guessing
+at a nonstandard chip size.
+
+**No real interactive input source existed at all before this
+phase** - `main.c`'s bring-up driver only ever reported "nothing
+pressed" (Phase 7, a real front end reading a host keyboard/controller,
+was always going to be needed eventually, but real-game validation
+needs *some* way to press buttons well before then). Added `--input
+<script>`: a plain text file of `<frame> <BUTTON> <down|up>` lines,
+timed to VBlank frame count (the same granularity a real player's
+presses land on) rather than a raw instruction count, applied via
+`gb_joypad_set_action`/`gb_joypad_set_direction` - the exact API
+`joypad.h` already documented as "the API a future front-end or test
+harness will call," unused until now. This is a scripted test harness,
+not Phase 7's real thing, but it's what made this phase's validation
+possible at all.
+
+**Validation performed**: booted 2048-gb to its title screen (rendered
+frame matches the game's own known title-screen layout - "2048-gb" /
+credits / "Press Start!" - see `gameboy/test_roms/2048-gb/README.md`),
+scripted a Start press to begin a new game (two `2` tiles spawn, Score/
+High score row renders correctly), then scripted `DOWN`/`RIGHT`/`DOWN`
+moves - tiles visibly slid and a new tile spawned after each move, and
+the final move produced a genuine merge (two `2` tiles combining into a
+single `4`, with the score updating from `0` to `4` to match) - real
+game logic, not just a static frame, running correctly start-to-finish
+for the first time. The full run was confirmed byte-for-byte
+deterministic across repeated executions (no host-timing-derived
+randomness anywhere in this emulator's reset path), so `make
+gameboy-2048-test` locks the post-merge frame in as a plain `cmp`
+regression baseline rather than a fuzzy match.
+
+**Next**: Phase 7 (exploratory) - a real interactive front end (GTK+Cairo
+or SDL2, decided when that phase actually starts) is now the main
+remaining gap between this emulator and something actually playable by
+a person in real time, now that a real game has been proven to run
+correctly under scripted input. Trying more real ROMs against
+`--input` scripts (particularly ones exercising MBC3's RTC or deeper
+save-RAM behavior, neither meaningfully exercised by 2048-gb) is also
+worth doing opportunistically, without needing a dedicated phase for it.
