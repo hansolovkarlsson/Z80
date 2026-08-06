@@ -675,3 +675,22 @@ rather than the real MBC generation number, so any MBC5 cartridge
 printed `mbc=3` - reading exactly like MBC3, which it isn't. The
 banking logic itself was never affected, only the diagnostic text -
 `mbc_type_name()` now prints the real generation number.
+
+**"Zombie mode" volume writes: implemented (the narrow, DMG-confirmed
+case), closing a gap `apu.h` had flagged since Phase 5.** Found through
+real interactive use of the Phase 7 GTK front end: Droneboy's
+Sweep/Square volume faders didn't respond, while Wave/Noise did.
+Droneboy's own source (fetched and read directly - `src/volume.c`)
+explains why, citing the technique by name: writing `NRx2` repeatedly
+with the envelope in increase mode and a period of zero nudges a
+channel's *live* volume by 1 each write without needing a retrigger -
+"zombie mode," a real, pandocs-documented `Audio_details.md` "Obscure
+Behavior." Checked pandocs before implementing anything: the *general*
+zombie-mode algorithm is explicitly described as "crazy"/inconsistent
+on real DMG hardware, so only the one specific case pandocs itself
+confirms as reliable "on all units tested" was implemented
+(`apply_zombie_mode_increment()` in `apu.c`) - the fuller CGB-02/04
+algorithm would be guessing at unconfirmed DMG behavior, not grounding.
+Regression-tested directly (`gameboy/tests/test_apu.c`, new, 12 checks,
+wired into `make gameboy-test`) rather than only through Droneboy
+itself - see `gameboy/test_roms/droneboy/README.md` for the full story.

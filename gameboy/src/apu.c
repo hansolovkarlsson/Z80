@@ -425,6 +425,26 @@ static void extra_length_clock_on_enable(GBApu *apu, int ch, uint8_t old_nrx4, u
     }
 }
 
+// "Zombie mode" (pandocs' Audio_details.md, "Obscure Behavior"): writing
+// NRx2 while a channel is already playing can nudge its *live* volume
+// without a retrigger, but the general algorithm is explicitly
+// documented as inconsistent/"crazy" on real DMG hardware - only one
+// narrow case is confirmed reliable across every real unit tested
+// (DMG included): repeatedly writing a value with the envelope in
+// increase mode and a period of zero increments the live volume by 1
+// each time (wrapping mod 16, so 15 repeats decrements by 1) - exactly
+// apu.h's own "Obscure Behavior" comment named as deliberately
+// unimplemented, until a real ROM (Droneboy, gameboy/test_roms/droneboy/)
+// turned out to rely on precisely this technique for its live volume
+// faders. Deliberately narrower than the full CGB-02/04 algorithm
+// pandocs also documents - that one isn't confirmed for DMG, so
+// implementing it here would be guessing rather than grounding.
+static void apply_zombie_mode_increment(GBApuChannel *c, uint8_t new_nrx2) {
+    if (c->enabled && (new_nrx2 & 0x0F) == 0x08) {
+        c->volume = (c->volume + 1) & 0x0F;
+    }
+}
+
 void gb_apu_write(GBApu *apu, uint16_t addr, uint8_t val) {
     // Wave RAM is always accessible (pandocs' NR52 description: "does
     // not affect Wave RAM... which can always be read/written"). This
@@ -494,7 +514,11 @@ void gb_apu_write(GBApu *apu, uint16_t addr, uint8_t val) {
     switch (addr) {
         case 0xFF10: apu->nr10 = val; break;
         case 0xFF11: apu->nr11 = val; apu->ch[0].length_timer = 64 - (val & 0x3F); break;
-        case 0xFF12: apu->nr12 = val; if (!dac_enabled(apu, 0)) apu->ch[0].enabled = 0; break;
+        case 0xFF12:
+            apply_zombie_mode_increment(&apu->ch[0], val);
+            apu->nr12 = val;
+            if (!dac_enabled(apu, 0)) apu->ch[0].enabled = 0;
+            break;
         case 0xFF13: apu->nr13 = val; break;
         case 0xFF14: {
             uint8_t old = apu->nr14;
@@ -505,7 +529,11 @@ void gb_apu_write(GBApu *apu, uint16_t addr, uint8_t val) {
         }
 
         case 0xFF16: apu->nr21 = val; apu->ch[1].length_timer = 64 - (val & 0x3F); break;
-        case 0xFF17: apu->nr22 = val; if (!dac_enabled(apu, 1)) apu->ch[1].enabled = 0; break;
+        case 0xFF17:
+            apply_zombie_mode_increment(&apu->ch[1], val);
+            apu->nr22 = val;
+            if (!dac_enabled(apu, 1)) apu->ch[1].enabled = 0;
+            break;
         case 0xFF18: apu->nr23 = val; break;
         case 0xFF19: {
             uint8_t old = apu->nr24;
@@ -528,7 +556,11 @@ void gb_apu_write(GBApu *apu, uint16_t addr, uint8_t val) {
         }
 
         case 0xFF20: apu->nr41 = val; apu->ch[3].length_timer = 64 - (val & 0x3F); break;
-        case 0xFF21: apu->nr42 = val; if (!dac_enabled(apu, 3)) apu->ch[3].enabled = 0; break;
+        case 0xFF21:
+            apply_zombie_mode_increment(&apu->ch[3], val);
+            apu->nr42 = val;
+            if (!dac_enabled(apu, 3)) apu->ch[3].enabled = 0;
+            break;
         case 0xFF22: apu->nr43 = val; break;
         case 0xFF23: {
             uint8_t old = apu->nr44;

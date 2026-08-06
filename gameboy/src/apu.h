@@ -20,11 +20,16 @@ struct GBCpu;
 // obscure behaviors - see extra_length_clock_on_enable()/
 // trigger_length_reload() in apu.c), DAC on/off, and NR50/51/52 mixing
 // (including the documented DMG high-pass filter). Several genuinely
-// obscure quirks pandocs' own "Obscure Behavior" section lists (zombie-
-// mode volume writes, wave-RAM trigger-time/mid-playback corruption,
-// exiting sweep negate mode disabling the channel, LFSR width-switch
-// lockup) are NOT modeled - deliberately, and documented as such, not
-// silently missing.
+// obscure quirks pandocs' own "Obscure Behavior" section lists (wave-RAM
+// trigger-time/mid-playback corruption, exiting sweep negate mode
+// disabling the channel, LFSR width-switch lockup) are NOT modeled -
+// deliberately, and documented as such, not silently missing. "Zombie
+// mode" volume writes (the fourth quirk this list used to name) *are*
+// now modeled, but only the one narrow case pandocs itself confirms as
+// reliable on real DMG hardware (the general algorithm is explicitly
+// "crazy"/unreliable there) - see apply_zombie_mode_increment() in
+// apu.c, added Phase 7 after a real ROM (Droneboy) turned out to
+// depend on exactly that case for its live volume faders.
 typedef struct GBApuChannel {
     int enabled;         // the channel's own generation circuit is active
     int period_timer;    // T-states until the next duty-step/wave-sample/LFSR-clock advance

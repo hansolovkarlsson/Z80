@@ -450,15 +450,28 @@ channel under the same condition, when length is being reloaded from
 zero, reloads to one below max instead of max.
 
 **Deliberately not modeled** (documented as such in `apu.h`'s own
-comment, not silently missing): zombie-mode volume writes (writing
-`NRx2` while a channel is active can, on real hardware, alter the
-currently-playing volume in a documented-but-bizarre way), wave-RAM
-trigger-time/mid-playback corruption (accessing Wave RAM while CH3 is
-actively reading it doesn't behave like a normal RAM access), exiting
-CH1's sweep negate mode disabling the channel, and LFSR width-switch
-lockup. See `gameboy/docs/GAMEBOY_ROADMAP.md`'s Phase 5 status for the exact
+comment, not silently missing): wave-RAM trigger-time/mid-playback
+corruption (accessing Wave RAM while CH3 is actively reading it doesn't
+behave like a normal RAM access), exiting CH1's sweep negate mode
+disabling the channel, and LFSR width-switch lockup. See
+`gameboy/docs/GAMEBOY_ROADMAP.md`'s Phase 5 status for the exact
 `dmg_sound` sub-test pass/fail breakdown these gaps correspond to (7 of
 12 passing as of that phase).
+
+**"Zombie mode" volume writes** (writing `NRx2` while a channel is
+active can, on real hardware, alter the currently-playing volume
+without a retrigger) *are* now modeled, added Phase 7 - but only the
+one narrow case pandocs' own `Audio_details.md` confirms as reliable
+across every real hardware unit tested including DMG (the fuller
+CGB-02/04 algorithm it also documents is explicitly "crazy"/unreliable
+on DMG, so implementing that would be guessing rather than grounding):
+writing `NRx2` with the envelope in increase mode and a period of zero,
+repeatedly, while the channel is already playing, increments its live
+volume by 1 each write (wrapping mod 16). Found necessary by a real
+ROM - see `gameboy/test_roms/droneboy/README.md` - whose own live volume
+faders rely on exactly this technique, and regression-tested directly
+(`gameboy/tests/test_apu.c`, `make gameboy-test`) rather than only
+through that one ROM.
 
 ## Timer
 

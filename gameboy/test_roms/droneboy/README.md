@@ -17,17 +17,26 @@ from the moment it boots, without needing any scripted input at all -
 a genuinely useful "does live playback actually work" test the way
 `dmg-acid2` is for the PPU.
 
-**Honestly reported, not oversold**: this ROM's own README describes
-interactive control (volume/duty/frequency, chord sequencing, MIDI via
-an Arduinoboy), but scripted joypad presses (`--input`, A/Start/Up at
-various frames) produced *no observable difference* in this project's
-own testing - the rendered audio is identical with or without them,
-and playback goes silent around 5.7 seconds into every run regardless.
-Not deeply investigated further (plausibly the real controls need a
-specific sequence/hold this project's simple `--input` script format
-didn't happen to hit, or genuinely expect the MIDI/Arduinoboy link
-rather than plain joypad input) - if that's ever chased down, this
-note should be updated rather than silently removed.
+**A real emulator gap found through this ROM, not a ROM problem**: a
+user testing the live GTK front end noticed the Sweep/Square (the two
+leftmost) volume faders on Droneboy's own volume page didn't respond
+to input, while Wave/Noise did. Traced to Droneboy's own source
+(`src/volume.c`'s `updateSweepVolume()`/`updateSquareVolume()`) using
+"zombie mode" - a real, pandocs-documented DMG APU quirk (writing
+`NRx2` repeatedly with the envelope in increase mode and a period of
+zero nudges a channel's *live* volume without retriggering) -
+explicitly cited in the ROM's own source comment. This emulator didn't
+implement it at all until this was traced (`apu.h`'s own comment had
+already flagged it as a known, deliberately-deferred gap - this was
+the first time it actually mattered). Now implemented
+(`apply_zombie_mode_increment()` in `apu.c`, regression-tested in
+`gameboy/tests/test_apu.c`) - the earlier scripted-input attempts that
+found "no observable difference" were a separate issue (the `--input`
+script's timing didn't actually reach Droneboy's interactive volume
+page within the test window), not related to the zombie-mode gap
+itself, and still not resolved - scripting real navigation through
+Droneboy's UI (SELECT+direction to change pages, per its own manual)
+would need correct timing this project hasn't worked out yet.
 
 **Regression coverage** (`make gameboy-droneboy-test`): `reference_audio.wav`
 is a 2-second `--wav` capture (comfortably inside the audio window
