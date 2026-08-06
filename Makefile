@@ -91,6 +91,11 @@ GAMEBOY_GTK_SRCS := $(wildcard $(GAMEBOY_GTK_SRC_DIR)/*.c)
 GAMEBOY_GTK_OBJS := $(GAMEBOY_GTK_SRCS:.c=.o)
 GAMEBOY_GTK_TARGET := $(BIN_DIR)/gameboy-gtk
 GAMEBOY_GTK_CFLAGS := $(GTK_CFLAGS) -I$(GAMEBOY_SRC_DIR)
+# -framework AudioToolbox: live audio via CoreAudio's AudioQueue (see
+# gtk/src/main.c's own comment for why CoreAudio specifically, not a
+# portable library) - a macOS system framework, no brew/pkg-config
+# dependency needed.
+GAMEBOY_GTK_LIBS := $(GTK_LIBS) -framework AudioToolbox
 
 .PHONY: all emulator assembler disassembler gtk gameboy gameboy-test gameboy-visual-test gameboy-2048-test gameboy-gtk run test clean
 
@@ -136,7 +141,7 @@ $(GAMEBOY_TARGET): $(GAMEBOY_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(GAMEBOY_OBJS)
 
 $(GAMEBOY_GTK_TARGET): $(GAMEBOY_GTK_OBJS) $(GAMEBOY_CORE_OBJS) | $(BIN_DIR)
-	$(CC) $(CFLAGS) -o $@ $(GAMEBOY_GTK_OBJS) $(GAMEBOY_CORE_OBJS) $(GTK_LIBS)
+	$(CC) $(CFLAGS) -o $@ $(GAMEBOY_GTK_OBJS) $(GAMEBOY_CORE_OBJS) $(GAMEBOY_GTK_LIBS)
 
 $(GAMEBOY_TEST_TARGET): gameboy/tests/test_cart.c $(GAMEBOY_SRC_DIR)/cart.c | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ gameboy/tests/test_cart.c $(GAMEBOY_SRC_DIR)/cart.c

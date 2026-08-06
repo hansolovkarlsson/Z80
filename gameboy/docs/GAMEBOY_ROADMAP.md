@@ -578,13 +578,31 @@ simplification). Manually verified stable (steady ~30% CPU, no crash,
 no illegal-opcode stop) running both 2048-gb and dmg-acid2 (an
 MBC-less cart, unlike 2048-gb's MBC1) for extended periods.
 
-**Deliberately not done yet**: live audio output. `gameboy/src/apu.c`
-already generates real samples (`main.c --wav` proves that), but
-playing them back live needs a platform audio API this project has no
-dependency on yet - left as an explicit, flagged gap rather than
-guessed at, exactly this project's stated convention for genuinely
-unimplemented pieces. Also not done: Game Boy Color support and save
-states, the other two Phase 7 items - both still fully unscoped.
+**Live audio output: done**, via CoreAudio's AudioQueue (macOS-specific
+by deliberate choice, not oversight - the same judgment call
+`cpm/gtk/src/main.c` already made using `<mach-o/dyld.h>` directly
+rather than adding portability guards for a platform nothing here is
+built/tested on; a portable library like SDL2 was the other option
+considered, rejected to avoid a second external dependency alongside
+GTK4). `gameboy/src/apu.c` was already generating real samples
+(`main.c --wav` proved that) - the gap was purely playback. `setup_audio()`/
+`flush_audio()` (`gtk/src/main.c`) use a "push" model matched to how
+sample production actually works here: `gb_apu_step()` already paces
+itself off the same ~16ms GLib timer driving video (one `step_frame()`
+tick = up to one real video frame's ~738 stereo sample pairs), so each
+tick just hands whatever accumulated since the last one to CoreAudio as
+one small buffer and resets the append position - no ring buffer or
+lock-free bookkeeping needed, since there's only ever one producer and
+CoreAudio's own completion callback frees each buffer once played.
+Cleaned up (`AudioQueueStop`/`AudioQueueDispose`) from the same
+`on_window_destroy()` handler that already stops the video timer, same
+reasoning as that earlier fix. Manually verified: builds and links
+clean against the `AudioToolbox` system framework (no new Homebrew
+dependency), runs stably with no CoreAudio errors in the system log
+across an extended 2048-gb session.
+
+**Still not done**: Game Boy Color support and save states, the other
+two Phase 7 items - both still fully unscoped.
 
 **A sharper diagnosis of dmg-acid2's still-open gap, found through
 this front end specifically**: watching it run continuously (rather

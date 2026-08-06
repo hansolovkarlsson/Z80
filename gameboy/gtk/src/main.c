@@ -13,13 +13,13 @@
 // test` build, and gameboy/src/main.c's existing --ppm/--wav/--input
 // bring-up driver keeps working unmodified for testing.
 //
-// Scope of this first pass: real-time video + keyboard input only. No
-// live audio output yet - gameboy/src/apu.c already generates real
-// samples (main.c's --wav proves that), but playing them back live
-// needs a platform audio API this project has no dependency on yet;
-// left as an explicit, documented gap rather than guessed at here.
+// Real-time video, keyboard input, and live audio (via CoreAudio's
+// AudioQueue - see setup_audio()'s own comment for why that API and not
+// a portable one). Save states and CGB support are still unimplemented
+// anywhere in this project - see gameboy/docs/GAMEBOY_ROADMAP.md's Phase 7.
 
 #include <gtk/gtk.h>
+#include <AudioToolbox/AudioToolbox.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +36,16 @@
 // blurring into a smooth 800x720ish window.
 #define SCALE 4
 
+#define AUDIO_SAMPLE_RATE 44100
+// Interleaved-stereo floats (gb_apu_step()'s own output format) - one
+// real video frame produces roughly 738 stereo pairs at 44.1kHz (70224
+// T-states/frame / (4194304/44100) T-states/sample), so 4096 is
+// comfortable headroom above the ~1476 floats/frame this actually needs,
+// not a size chosen to matter on its own (see setup_audio()'s comment
+// for how this buffer gets drained every tick regardless of how full it
+// is).
+#define AUDIO_BUFFER_CAP 4096
+
 typedef struct {
     GBCpu cpu;
     GBCart cart;
@@ -43,6 +53,8 @@ typedef struct {
     GBTimer timer;
     GBJoypad joypad;
     GBApu apu;
+    float *audio_buffer; // apu's sample_buffer - see setup_audio()
+    AudioQueueRef audio_queue; // NULL if CoreAudio setup failed - video/input still work
     GtkWidget *drawing_area;
     guint timeout_id; // step_frame()'s g_timeout_add() id - see on_window_destroy()
 } GameboyApp;
@@ -89,6 +101,65 @@ static void draw_frame(GtkDrawingArea *area, cairo_t *cr, int width, int height,
     cairo_surface_destroy(surface);
 }
 
+// CoreAudio, not a portable audio library: this project treats macOS as
+// the only real target rather than adding a dependency (or #ifdef
+// guards for a platform nothing here is built/tested on) - the same
+// judgment call cpm/gtk/src/main.c already made using <mach-o/dyld.h>
+// directly. AudioQueue specifically (not the lower-level AudioUnit
+// API) because this is a "push" use case - gb_apu_step() already
+// produces samples on its own schedule (paced by the same ~16ms GLib
+// timer driving video, called once per step_frame() tick) rather than
+// CoreAudio pulling samples on its own render thread, and AudioQueue's
+// plain "hand me a buffer, I'll play it, then tell me when it's done"
+// model fits that directly with no ring-buffer/lock-free bookkeeping.
+static void audio_buffer_finished(void *user_data, AudioQueueRef queue, AudioQueueBufferRef buffer) {
+    (void)user_data;
+    AudioQueueFreeBuffer(queue, buffer);
+}
+
+static void setup_audio(GameboyApp *app) {
+    AudioStreamBasicDescription format = {0};
+    format.mSampleRate = AUDIO_SAMPLE_RATE;
+    format.mFormatID = kAudioFormatLinearPCM;
+    format.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
+    format.mChannelsPerFrame = 2;
+    format.mBitsPerChannel = 32;
+    format.mBytesPerFrame = sizeof(float) * 2;
+    format.mFramesPerPacket = 1;
+    format.mBytesPerPacket = format.mBytesPerFrame;
+
+    OSStatus status = AudioQueueNewOutput(&format, audio_buffer_finished, NULL, NULL, NULL, 0, &app->audio_queue);
+    if (status != noErr) {
+        fprintf(stderr, "CoreAudio: AudioQueueNewOutput failed (status %d) - continuing without audio\n",
+                (int)status);
+        app->audio_queue = NULL;
+        return;
+    }
+    AudioQueueStart(app->audio_queue, NULL);
+}
+
+// Hands whatever gb_apu_step() has appended to apu.sample_buffer since
+// the last tick to CoreAudio as one small buffer, then resets the
+// append position - called once per step_frame() tick, right alongside
+// the video redraw, since both are paced by the same timer and audio
+// production naturally caps out around one frame's worth per tick (see
+// AUDIO_BUFFER_CAP's comment). A fresh AudioQueueBufferRef is allocated
+// per call rather than reused from a pool - simpler than tracking
+// in-flight buffers, and ~60 small allocations/sec is not something
+// worth optimizing away here.
+static void flush_audio(GameboyApp *app) {
+    if (!app->audio_queue || app->apu.sample_buffer_len <= 0) return;
+
+    UInt32 byte_size = (UInt32)(app->apu.sample_buffer_len * sizeof(float));
+    AudioQueueBufferRef buffer;
+    if (AudioQueueAllocateBuffer(app->audio_queue, byte_size, &buffer) == noErr) {
+        memcpy(buffer->mAudioData, app->audio_buffer, byte_size);
+        buffer->mAudioDataByteSize = byte_size;
+        AudioQueueEnqueueBuffer(app->audio_queue, buffer, 0, NULL);
+    }
+    app->apu.sample_buffer_len = 0;
+}
+
 // Runs the core until one real video frame completes (VBlank), the same
 // per-tick shape gameboy/src/main.c's own --ppm loop uses. The ~16ms
 // GLib timeout below is what actually paces wall-clock speed - stepping
@@ -116,6 +187,7 @@ static gboolean step_frame(gpointer user_data) {
             break;
         }
     }
+    flush_audio(app);
     // Belt-and-suspenders alongside on_window_destroy()'s g_source_remove():
     // that call is what actually stops this timer from firing again once
     // the window is gone, but checking here too costs nothing and avoids
@@ -185,6 +257,14 @@ static void on_window_destroy(GtkWidget *window, gpointer user_data) {
         app->timeout_id = 0;
     }
     app->drawing_area = NULL;
+    if (app->audio_queue) {
+        // true (synchronous) for both: no more step_frame() ticks can
+        // arrive once the timeout above is removed, so there's nothing
+        // left this queue's own completion callback needs to race with.
+        AudioQueueStop(app->audio_queue, true);
+        AudioQueueDispose(app->audio_queue, true);
+        app->audio_queue = NULL;
+    }
 }
 
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
@@ -207,7 +287,9 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gb_ppu_reset(&g_app.ppu);
     gb_timer_reset(&g_app.timer);
     gb_joypad_reset(&g_app.joypad);
-    gb_apu_reset(&g_app.apu, 44100, NULL, 0); // no live playback yet - see top-of-file comment
+    g_app.audio_buffer = calloc(AUDIO_BUFFER_CAP, sizeof(float));
+    gb_apu_reset(&g_app.apu, AUDIO_SAMPLE_RATE, g_app.audio_buffer, AUDIO_BUFFER_CAP);
+    setup_audio(&g_app);
     gb_cpu_init_tables();
     gb_cpu_reset(&g_app.cpu);
 
@@ -259,6 +341,7 @@ int main(int argc, char **argv) {
     g_object_unref(app);
 
     free(g_app.cpu.memory);
+    free(g_app.audio_buffer);
     gb_cart_free(&g_app.cart);
     return status;
 }
