@@ -585,3 +585,30 @@ dependency on yet - left as an explicit, flagged gap rather than
 guessed at, exactly this project's stated convention for genuinely
 unimplemented pieces. Also not done: Game Boy Color support and save
 states, the other two Phase 7 items - both still fully unscoped.
+
+**A sharper diagnosis of dmg-acid2's still-open gap, found through
+this front end specifically**: watching it run continuously (rather
+than capturing one still frame, all `--ppm` testing ever did) showed a
+visible flicker - real, not a GTK rendering artifact. Confirmed by
+instrumenting the core directly and diffing consecutive `--ppm`
+captures many frames apart: the rendered image cycles through **4
+distinct states** indefinitely (LCDC/SCX settle to different values at
+VBlank depending on `frame_seen % 4`, e.g. `LCDC=A9,SCX=00` /
+`LCDC=C9,SCX=00` / `LCDC=D1,SCX=F3` / `LCDC=D1,SCX=F3` and back), with
+up to ~10,000 of 23,040 pixels differing between adjacent frames -
+`make gameboy-visual-test`'s 98.04% baseline is only ever measuring
+one specific point in that cycle (the `--frames 2` capture), which is
+why this was never caught before. Root cause is the same one already
+named above, now confirmed at a finer grain: `gb_ppu_step()`'s fixed
+172-dot Mode 3 doesn't match real hardware's variable 172-289 dots
+(base + `SCX & 7` scroll penalty + per-object and window-restart
+fetcher-stall penalties, pandocs' `pixel_fifo.md`), so small
+CPU/PPU misalignments compound across dmg-acid2's own `SCX`-driven
+raster effects instead of settling into the single static image real
+hardware shows. Checked pandocs' actual formula before considering a
+fix and deliberately didn't attempt one: it's a genuine per-dot pixel-
+FIFO simulation (fetcher steps, object-fetch cancellation, window-
+restart pixel injection), not a small `SCX % 8` patch on top of the
+current whole-scanline-at-once renderer - a real, separately-scoped
+rewrite of `render_scanline()`/`gb_ppu_step()`'s Mode 3 handling, not
+attempted here rather than guessed at partially.
