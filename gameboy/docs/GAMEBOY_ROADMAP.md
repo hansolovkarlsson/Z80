@@ -770,3 +770,45 @@ to what's actually implemented: `cart.c`'s own comment already states
 the RTC registers don't advance with real elapsed time, so this ROM
 tests write/latch/read fidelity, not "does time actually pass". See
 `gameboy/rgbds/README.md` for the full story.
+
+**Phase 8: Mode 3's real, variable-length timing - implemented, and a
+real, honest finding about what it did and didn't fix.** Replaced the
+fixed-172-dots simplification `ppu.h` had documented since Phase 3
+with pandocs' `Rendering.md` "Mode 3 length" algorithm - real hardware's
+confirmed, non-hedged formula (distinct from `pixel_fifo.md`'s own
+admittedly-unconfirmed timing for a different interaction): `SCX & 7`
+dots, a flat 6-dot window-activation penalty, and a 6-11-dot penalty
+per object overlapping the scanline (including its tile-sharing and
+OAM-X=0 special cases). `compute_mode3_length()` (`ppu.c`) computes
+this once per scanline, at the Mode 2→3 transition; Mode 0's own
+length is derived from it (`376 - mode3_dots`, matching pandocs' table
+exactly), so both modes' real durations - and therefore exactly when
+Mode 0/Mode 2 STAT interrupts fire - are now accurate. Deliberately
+still not a full per-dot pixel-FIFO simulation: `render_scanline()`
+still computes all 160 pixels at once, since duration (not literal
+per-pixel FIFO mixing) is what STAT timing depends on, and building
+the full FIFO state machine remained out of scope (see `pixel_fifo.md`'s
+own genuinely more speculative parts, and ppu.h's updated comment).
+
+**Verified real and active, not silently inert**: instrumented the
+computed length across a real `dmg-acid2` run and confirmed genuinely
+varying, non-172 values throughout the frame (215-282 dots on
+window/object-heavy scanlines), driven by that ROM's own dynamic
+raster effects - this is a real, working implementation, not a formula
+that happens to always evaluate to the old constant.
+
+**Honest finding: `dmg-acid2`'s own remaining gap is unchanged by this
+fix** - still exactly 451 pixels (LY=0's "HELLO WORLD!" top row, and
+LY=133-141's footer tail), byte-for-byte the same failing pixels as
+before, confirmed by diffing the exact mismatching rows before and
+after. Root cause: those specific scanlines carry zero SCX/window/
+object penalty either way (checked directly), so an accurate Mode 3
+*duration* was never going to move them - this **disproves** the
+Phase 4 theory that blamed Mode 3's fixed length for this specific
+gap, real information even though it doesn't close it. The full
+regression suite (every existing `make test`/`make gameboy-test`/ROM
+target) still passes byte-for-byte identically after this change - a
+real, additive correctness fix with zero observed regressions, just
+not the one that happens to fix `dmg-acid2`'s last mismatch. The
+actual cause remains open, most plausibly needing the full pixel-FIFO
+simulation this phase deliberately still didn't build.

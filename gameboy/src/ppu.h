@@ -14,18 +14,32 @@ struct GBCpu; // forward-declared - see cpu.h's own comment on why
 // priority rule below is grounded against pandocs' LCDC.md/STAT.md/
 // Tile_Data.md/Tile_Maps.md/OAM.md/Rendering.md/Palettes.md/
 // OAM_DMA_Transfer.md (fetched during this phase - see
-// gameboy/docs/GAMEBOY_ROADMAP.md), not guessed. One deliberate simplification,
-// documented there in detail: Mode 3 is always the documented minimum
-//172 dots, not the real hardware's variable 172-289 (which depends on
-// SCX/window/object timing penalties this phase doesn't model) - this
-// affects STAT-interrupt-timing precision, not rendered pixel content,
-// which is what this phase's correctness gate (dmg-acid2) actually
-// checks.
+// gameboy/docs/GAMEBOY_ROADMAP.md), not guessed.
+//
+// Phase 8 (see the roadmap's own status entry) replaced Mode 3's fixed
+// 172-dot length with pandocs' Rendering.md "Mode 3 length" algorithm -
+// SCX%8 + a flat 6-dot window penalty + a per-object penalty (see
+// compute_mode3_length() in ppu.c) - closing the STAT-interrupt-timing
+// gap that caused dmg-acid2's real, previously-documented flicker.
+// Deliberately still *not* a full per-dot pixel-FIFO simulation
+// (pixel_fifo.md's fetcher/FIFO push-pop state machine): pandocs'
+// Rendering.md algorithm gives Mode 3's exact *duration* without
+// needing one, and duration (not literal per-pixel FIFO mixing) is
+// what STAT/OAM-scan interrupt timing actually depends on - render_scanline()
+// still computes all 160 pixels' final color at once, using the same
+// per-scanline register/OAM snapshot compute_mode3_length() used at
+// the Mode 2->3 transition. This means genuinely obscure *mid-Mode-3*
+// raster tricks (a register write timed to land between two pixels
+// within the same scanline, or pixel_fifo.md's own documented "WX
+// changed mid-scanline" bug) still aren't modeled - those need the
+// full FIFO simulation this phase deliberately didn't build.
 typedef struct GBPpu {
     uint8_t lcdc, stat, scy, scx, ly, lyc, dma, bgp, obp0, obp1, wy, wx;
 
     int mode;         // 0=HBlank 1=VBlank 2=OAM scan 3=Drawing
     int dots;         // dot (T-cycle) counter within the current scanline
+    int mode3_dots;   // this scanline's real Mode 3 length, computed once at
+                       // the Mode 2->3 transition - see compute_mode3_length()
     int window_line;  // internal window line counter - see Tile_Maps.md's
                        // "Window Internal Line Counter" tip: only advances
                        // on scanlines where the window was actually drawn

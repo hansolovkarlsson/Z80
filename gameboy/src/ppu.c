@@ -19,6 +19,9 @@ void gb_ppu_reset(GBPpu *ppu) {
     ppu->obp0 = 0xFF;
     ppu->obp1 = 0xFF;
     ppu->mode = 2;
+    ppu->mode3_dots = 172; // sane default (the real minimum) until the
+                            // first Mode 2->3 transition computes a real
+                            // one - see compute_mode3_length()
 }
 
 static void request_stat_interrupt(struct GBCpu *cpu) {
@@ -58,18 +61,149 @@ static uint8_t apply_palette(uint8_t palette, uint8_t color_idx) {
     return (uint8_t)((palette >> (color_idx * 2)) & 0x03);
 }
 
+// Window visibility per pandocs' Tile_Maps.md: WY <= LY for the line,
+// and (checked per-pixel by callers) WX-7 <= x. WX <= 166 keeps a
+// window that's scrolled fully off the right edge from advancing the
+// internal line counter, or incurring compute_mode3_length()'s window
+// penalty, for a line nothing was actually drawn on. Shared by
+// render_scanline()'s drawing pass and compute_mode3_length()'s window
+// timing penalty so both agree on exactly when the window is active.
+static int window_visible_on_line(GBPpu *ppu, int ly) {
+    int bg_win_enabled = (ppu->lcdc & 0x01) != 0;
+    int window_enabled = bg_win_enabled && (ppu->lcdc & 0x20) != 0;
+    return window_enabled && (ppu->wy <= ly) && (ppu->wx <= 166);
+}
+
+// Selects up to 10 objects overlapping scanline `ly` (pandocs' OAM.md
+// selection priority: OAM scan order, first 10 kept) and sorts them
+// into real drawing/priority order (smaller X first, ties broken by
+// OAM order - a stable insertion sort suffices since the scan above
+// already yields ascending OAM order). Shared by render_scanline()'s
+// drawing pass and compute_mode3_length()'s per-object timing penalty:
+// pandocs' Rendering.md footnote on OBJ penalty ordering explicitly
+// matches this same leftmost-first/OAM-tiebreak order, so both need to
+// agree on it exactly, not just happen to produce similar results.
+static int select_objects_for_scanline(struct GBCpu *cpu, int ly, int obj_height, int selected[10]) {
+    int selected_count = 0;
+    for (int i = 0; i < 40 && selected_count < 10; i++) {
+        uint16_t oam_addr = (uint16_t)(0xFE00 + i * 4);
+        uint8_t obj_y = gb_read_byte(cpu, oam_addr);
+        int obj_top = obj_y - 16;
+        if (ly >= obj_top && ly < obj_top + obj_height) {
+            selected[selected_count++] = i;
+        }
+    }
+
+    for (int a = 1; a < selected_count; a++) {
+        int key = selected[a];
+        uint8_t key_x = gb_read_byte(cpu, (uint16_t)(0xFE00 + key * 4 + 1));
+        int b = a - 1;
+        while (b >= 0) {
+            uint8_t b_x = gb_read_byte(cpu, (uint16_t)(0xFE00 + selected[b] * 4 + 1));
+            if (b_x <= key_x) break;
+            selected[b + 1] = selected[b];
+            b--;
+        }
+        selected[b + 1] = key;
+    }
+    return selected_count;
+}
+
+// pandocs' Rendering.md "Mode 3 length" - real hardware's exact,
+// confirmed algorithm (distinct from pixel_fifo.md's own hedged "OBJ
+// penalty timing... not confirmed" wording for a *different*, more
+// speculative interaction - this function follows Rendering.md, the
+// more authoritative of the two on this specific question). Computed
+// once at the Mode 2->3 transition, from a snapshot of LCDC/SCX/WY/WX/
+// OAM at that instant - see ppu.h's own comment for why this is
+// "exact duration, not full per-dot FIFO simulation".
+static int compute_mode3_length(GBPpu *ppu, struct GBCpu *cpu) {
+    int ly = ppu->ly;
+    int dots = 172; // 160 output dots + 12 (two tile-fetch startup, pandocs' own footnote)
+    dots += ppu->scx & 7; // scroll penalty: SCX%8 dots stalled discarding that many leftmost pixels
+
+    int window_visible_this_line = window_visible_on_line(ppu, ly);
+    if (window_visible_this_line) dots += 6; // flat penalty: fetcher reset/setup for the window
+
+    if (!(ppu->lcdc & 0x02)) return dots; // objects disabled - no OBJ penalties at all
+
+    int obj_height = (ppu->lcdc & 0x04) ? 16 : 8;
+    int selected[10];
+    int selected_count = select_objects_for_scanline(cpu, ly, obj_height, selected);
+
+    // "Tiles already considered by a previous OBJ" - at most
+    // selected_count entries are ever needed (one per object that
+    // isn't the OAM-X==0 exception).
+    int considered_is_window[10];
+    int considered_col[10];
+    int considered_count = 0;
+
+    for (int s = 0; s < selected_count; s++) {
+        uint16_t oam_addr = (uint16_t)(0xFE00 + selected[s] * 4);
+        uint8_t obj_x = gb_read_byte(cpu, (uint16_t)(oam_addr + 1));
+
+        if (obj_x == 0) {
+            // Exception: completely off the left edge always costs 11
+            // dots flat, regardless of SCX or tile-sharing with any
+            // other object.
+            dots += 11;
+            continue;
+        }
+
+        // "The Pixel": the OBJ's own leftmost screen column. obj_x is
+        // 1-255 here (0 handled above), so this can be as low as -7
+        // for an object mostly off-screen to the left - still a real,
+        // valid column for tile-lookup purposes below.
+        int pixel = (int)obj_x - 8;
+
+        int use_window = window_visible_this_line && (pixel + 7 >= ppu->wx);
+        int col, pixel_in_tile;
+        if (use_window) {
+            // Only reached when pixel+7 >= wx, i.e. wx_pixel >= 0 -
+            // never negative, so plain / and % are safe here.
+            int wx_pixel = pixel - (ppu->wx - 7);
+            col = wx_pixel / 8;
+            pixel_in_tile = wx_pixel % 8;
+        } else {
+            // +256 before masking: pixel can be mildly negative (down
+            // to -7) and scx is 0-255, so this keeps the sum
+            // non-negative going into & 0xFF rather than relying on
+            // two's-complement wraparound of a negative value.
+            int bg_x = (pixel + ppu->scx + 256) & 0xFF;
+            col = bg_x / 8;
+            pixel_in_tile = bg_x % 8;
+        }
+
+        int already_considered = 0;
+        for (int t = 0; t < considered_count; t++) {
+            if (considered_is_window[t] == use_window && considered_col[t] == col) {
+                already_considered = 1;
+                break;
+            }
+        }
+        if (!already_considered) {
+            int pixels_right = 7 - pixel_in_tile; // pixels of that tile strictly right of The Pixel
+            int wait = pixels_right - 2;
+            if (wait > 0) dots += wait;
+            if (considered_count < 10) {
+                considered_is_window[considered_count] = use_window;
+                considered_col[considered_count] = col;
+                considered_count++;
+            }
+        }
+
+        dots += 6; // flat OBJ tile-fetch cost - incurred by every object, tile-sharing or not
+    }
+
+    return dots;
+}
+
 static void render_scanline(GBPpu *ppu, struct GBCpu *cpu) {
     int ly = ppu->ly;
     uint8_t bg_color_idx[GB_SCREEN_WIDTH];
 
     int bg_win_enabled = (ppu->lcdc & 0x01) != 0;
-    int window_enabled = bg_win_enabled && (ppu->lcdc & 0x20) != 0;
-    // Window visibility per pandocs' Tile_Maps.md: WY <= LY for the
-    // line, and (checked per-pixel below) WX-7 <= x. WX <= 166 keeps a
-    // window that's scrolled fully off the right edge from advancing
-    // the internal line counter for a line nothing was actually drawn
-    // on.
-    int window_visible_this_line = window_enabled && (ppu->wy <= ly) && (ppu->wx <= 166);
+    int window_visible_this_line = window_visible_on_line(ppu, ly);
     int window_drawn_this_line = 0;
 
     for (int x = 0; x < GB_SCREEN_WIDTH; x++) {
@@ -116,36 +250,8 @@ static void render_scanline(GBPpu *ppu, struct GBCpu *cpu) {
     if (!(ppu->lcdc & 0x02)) return; // objects disabled
 
     int obj_height = (ppu->lcdc & 0x04) ? 16 : 8;
-
-    // Selection priority (pandocs' OAM.md): scan OAM in order, keep the
-    // first (up to) 10 objects overlapping this scanline.
     int selected[10];
-    int selected_count = 0;
-    for (int i = 0; i < 40 && selected_count < 10; i++) {
-        uint16_t oam_addr = (uint16_t)(0xFE00 + i * 4);
-        uint8_t obj_y = gb_read_byte(cpu, oam_addr);
-        int obj_top = obj_y - 16;
-        if (ly >= obj_top && ly < obj_top + obj_height) {
-            selected[selected_count++] = i;
-        }
-    }
-
-    // Drawing priority (Non-CGB mode, same page): smaller X first, ties
-    // broken by OAM order. Stable insertion sort - selected[] is
-    // already in ascending OAM order from the scan above, so this only
-    // needs to break ties correctly, which insertion sort does for free.
-    for (int a = 1; a < selected_count; a++) {
-        int key = selected[a];
-        uint8_t key_x = gb_read_byte(cpu, (uint16_t)(0xFE00 + key * 4 + 1));
-        int b = a - 1;
-        while (b >= 0) {
-            uint8_t b_x = gb_read_byte(cpu, (uint16_t)(0xFE00 + selected[b] * 4 + 1));
-            if (b_x <= key_x) break;
-            selected[b + 1] = selected[b];
-            b--;
-        }
-        selected[b + 1] = key;
-    }
+    int selected_count = select_objects_for_scanline(cpu, ly, obj_height, selected);
 
     // claimed[x]: an opaque pixel from a higher-priority object already
     // resolved this column, win or lose against BG - per pandocs'
@@ -209,21 +315,28 @@ void gb_ppu_step(GBPpu *ppu, struct GBCpu *cpu, int cycles) {
             if (ppu->dots >= 80) {
                 ppu->dots -= 80;
                 ppu->mode = 3;
+                // Computed once here, from the register/OAM snapshot as
+                // of the Mode 2->3 transition - see compute_mode3_length()
+                // and ppu.h's own comment on why this is exact duration,
+                // not a full per-dot simulation.
+                ppu->mode3_dots = compute_mode3_length(ppu, cpu);
             }
             break;
 
-        case 3: // Drawing (fixed-length simplification - see this file's header comment)
-            if (ppu->dots >= 172) {
-                ppu->dots -= 172;
+        case 3: // Drawing - pandocs' Rendering.md "Mode 3 length" algorithm (see compute_mode3_length())
+            if (ppu->dots >= ppu->mode3_dots) {
+                ppu->dots -= ppu->mode3_dots;
                 render_scanline(ppu, cpu);
                 ppu->mode = 0;
                 if (ppu->stat & 0x08) request_stat_interrupt(cpu); // Mode 0 int select
             }
             break;
 
-        case 0: // HBlank: remainder of 456 dots (456-80-172=204)
-            if (ppu->dots >= 204) {
-                ppu->dots -= 204;
+        case 0: // HBlank: the rest of the scanline - pandocs' own table:
+                // Mode 0's duration is 376 - Mode 3's (80 + 376 = 456 total,
+                // matching Mode 2's fixed 80 dots above).
+            if (ppu->dots >= 376 - ppu->mode3_dots) {
+                ppu->dots -= 376 - ppu->mode3_dots;
                 ppu->ly++;
                 update_lyc_flag(ppu, cpu);
                 if (ppu->ly == 144) {
@@ -290,6 +403,7 @@ void gb_ppu_write_reg(GBPpu *ppu, struct GBCpu *cpu, uint16_t addr, uint8_t val)
                 ppu->mode = 0;
                 ppu->dots = 0;
                 ppu->ly = 0;
+                ppu->mode3_dots = 172; // same reasoning as gb_ppu_reset()
             }
             ppu->lcdc = val;
             break;

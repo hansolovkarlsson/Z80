@@ -15,12 +15,20 @@ grounded code will do.
 dmg-acid2's mid-frame LY=LYC-driven register writes actually happen
 (see its own README, and gameboy/test_roms/dmg-acid2/README.md). The
 remaining gap (row 0's "HELLO WORLD!" text and the tail end of the
-footer text) is a real, open, documented issue - see
-gameboy/docs/GAMEBOY_ROADMAP.md's Phase 4 status - plausibly related to this
-emulator's scanline-at-once renderer not modeling exact sub-scanline
-interrupt-response timing, but not fully root-caused yet. This script's
-job is to catch a real *regression* (a match rate meaningfully below
-the established baseline), not to gate on a full pass that isn't
+footer text, 451 pixels, unchanged since Phase 4) is real, open, and
+documented - see gameboy/docs/GAMEBOY_ROADMAP.md's Phase 4 and Phase 8
+status. Phase 8 gave Mode 3 its real, pandocs-accurate variable length
+(replacing the fixed-172-dots simplification) and *disproved* the
+Phase 4 theory that Mode 3's duration was this gap's cause: LY=0 and
+LY=133-141 turn out to have zero SCX/window/object penalties either
+way, so an accurate Mode 3 length doesn't move them at all (confirmed
+by checking exactly which scanlines get a non-default length - see
+gameboy/docs/GAMEBOY_ROADMAP.md's Phase 8 entry). The real cause is
+still open - most likely something only a full per-dot pixel-FIFO
+simulation (rather than this emulator's still-scanline-at-once
+renderer) would model correctly, but that's not confirmed either. This
+script's job is to catch a real *regression* (a match rate meaningfully
+below the established baseline), not to gate on a full pass that isn't
 possible yet.
 """
 import sys

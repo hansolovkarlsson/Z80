@@ -225,26 +225,33 @@ Each of the 154 scanlines (144 visible + 10 V-Blank) takes 456 dots
 | Mode | Name | Dots | When |
 |---|---|---|---|
 | 2 | OAM scan | 80 | start of every visible scanline (0-143) |
-| 3 | Drawing | 172-289 (real hardware) | after OAM scan |
-| 0 | H-Blank | remainder of 456 | after Drawing |
+| 3 | Drawing | 172-289 | after OAM scan |
+| 0 | H-Blank | 376 - Mode 3's duration | after Drawing |
 | 1 | V-Blank | 456 × 10 scanlines | after scanline 143, before scanline 0 |
 
-**Deliberate simplification**: this emulator's Mode 3 is always exactly
-172 dots (the real hardware minimum), not the real, variable 172-289
-range (which depends on `SCX`'s sub-tile scroll offset and how many
-window/object fetches happen mid-scanline). This affects STAT-interrupt
-*timing* precision, not rendered pixel *content* — the actual
-correctness gate (`dmg-acid2`, a pixel-for-pixel comparison) checks the
-latter, not the former. See [Implementation
-status](#implementation-status-1) for the measured, honestly-reported
-gap this causes.
+Mode 3's real, variable length (172-289 dots) is implemented (Phase 8),
+using pandocs' `Rendering.md` "Mode 3 length" algorithm rather than the
+project's earlier fixed-172-dots simplification: `SCX & 7` dots
+(scroll penalty), a flat 6-dot penalty when the window activates that
+scanline, and a 6-11-dot penalty per object overlapping the scanline
+(pandocs' own "OBJ penalty algorithm", including the tile-sharing and
+OAM-X=0 special cases). Computed once per scanline, at the Mode 2→3
+transition, from a snapshot of `LCDC`/`SCX`/`WY`/`WX`/OAM at that
+instant — see `gb_ppu_step()`/`compute_mode3_length()` in `ppu.c`.
 
-Rendering itself happens once, all at once, at the moment Mode 3 ends
-— not progressively pixel-by-pixel the way real hardware's pixel FIFO
-works. This is the same simplification as the timing point above, and
-plausibly the specific remaining cause of the small pixel mismatch
-still open in `dmg-acid2` (see [Implementation
-status](#implementation-status-1)).
+Rendering itself still happens once, all at once, at the moment Mode 3
+ends — not progressively pixel-by-pixel the way real hardware's pixel
+FIFO works (pandocs' `pixel_fifo.md`'s fetcher/FIFO push-pop state
+machine). This remains a deliberate simplification: pandocs'
+`Rendering.md` algorithm gives Mode 3's exact *duration* without needing
+a full FIFO simulation, and duration (not literal per-pixel FIFO
+mixing) is what STAT/OAM-scan interrupt timing depends on. Genuinely
+obscure *mid-Mode-3* effects (a register write timed to land between
+two specific pixels within one scanline, or `pixel_fifo.md`'s own
+documented "WX changed mid-scanline" bug) still aren't modeled. See
+[Implementation status](#implementation-status-1) for what this
+Phase 8 fix did and didn't change about `dmg-acid2`'s own measured
+match rate.
 
 ### Tile data and addressing
 
@@ -567,9 +574,14 @@ Blargg's `cpu_instrs`/`instr_timing` (12/12 passing), `dmg-acid2`
 (98.04% pixel match), and `dmg_sound` (7/12 passing) — see
 `gameboy/docs/GAMEBOY_ROADMAP.md`'s Status section for the exact numbers,
 root causes behind every bug found along the way, and the full list of
-what's deliberately deferred (PPU Mode 3's fixed-172-dot timing and
-instant OAM DMA; the several named-and-cited APU quirks; MBC3's RTC not
-advancing by wall-clock time; no real joypad input source; no low-power
-STOP mode). Nothing in this document describes aspirational or
-planned behavior — everything above either works as described today or
-is explicitly flagged as not yet modeled.
+what's deliberately deferred (instant OAM DMA; the several
+named-and-cited APU quirks; MBC3's RTC not advancing by wall-clock
+time; no real joypad input source; no low-power STOP mode). PPU Mode
+3's real, variable length is implemented (Phase 8) - `dmg-acid2`'s
+match rate is unchanged at 98.04% by that fix, since the specific rows
+still mismatching (LY=0, LY=133-141) turn out to carry zero SCX/window/
+object penalty either way; the remaining pixel-FIFO-shaped gap (full
+per-dot simulation, not just accurate Mode 3 duration) is still
+deliberately deferred. Nothing in this document describes aspirational
+or planned behavior — everything above either works as described today
+or is explicitly flagged as not yet modeled.
