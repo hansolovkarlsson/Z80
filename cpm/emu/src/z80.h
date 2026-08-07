@@ -32,6 +32,43 @@ typedef struct {
     uint8_t iff1, iff2;
     uint8_t im; // Interrupt Mode 0, 1, or 2
 
+    // Set by the EI opcode handler; consumed (cleared) by the very next
+    // z80_step() call, which skips interrupt sampling for that one step
+    // regardless of iff1/int_pending/nmi_pending. Real hardware: "When
+    // an EI instruction is executed, any pending interrupt request is
+    // not accepted until after the instruction following EI is
+    // executed" (Zilog Z80 CPU User Manual, "Interrupt Enable/Disable") -
+    // documented there for the maskable INT specifically, extended here
+    // to NMI too (the manual is silent on that combination, but every
+    // serious Z80 reference/emulator this project checked treats the
+    // one-instruction inhibit as gating the single internal interrupt-
+    // sample latch, not something conditioned on IFF, so it blocks NMI
+    // sampling identically).
+    uint8_t ei_delay;
+
+    // Maskable interrupt request line. Level-triggered on real hardware
+    // (the device holds INT asserted until acknowledged) - modeled here
+    // as "stays set until the CPU accepts it or the caller withdraws it
+    // via z80_clear_int()", the closest equivalent without a real device
+    // driving an actual electrical line (no interrupt-raising hardware
+    // is attached yet - see cpm/docs/ROADMAP.md's Known Gaps). int_data
+    // is the byte the interrupting device would place on the data bus:
+    // ignored in Mode 1, the low 7 bits of the Mode 2 vector-table
+    // address (bit 0 is always forced to 0 by real hardware - addresses
+    // in the table must be word-aligned), or the actual instruction
+    // opcode to execute in Mode 0 - see z80_request_int()'s own comment
+    // for this implementation's Mode 0 scope.
+    uint8_t int_pending;
+    uint8_t int_data;
+
+    // Non-maskable interrupt line. Edge-triggered and latched on real
+    // hardware (a single pulse is remembered until serviced, unlike
+    // INT's level) - modeled directly as such: z80_request_nmi() sets
+    // this, and it's cleared only once actually accepted. Never gated
+    // by iff1 (that's what "non-maskable" means) - only by ei_delay
+    // above.
+    uint8_t nmi_pending;
+
     // Memory
     // 64 KB Memory Array
     uint8_t *memory;
@@ -57,5 +94,17 @@ typedef int (*Z80OpcodeHandler)(Z80 *cpu, uint8_t *ram);
 
 void z80_init_tables(void);
 int z80_step(Z80 *cpu, uint8_t *ram);
+
+// Interrupt request API - the host side's equivalent of asserting a
+// real INT/NMI line. No real device calls these yet (see z80.h's own
+// int_pending/nmi_pending comments); presently only exercised by
+// cpm/tests/test_interrupts.c's direct unit tests, which is also why
+// this needs to be a real, callable API rather than private state -
+// there's no CP/M-executable instruction that can raise an interrupt
+// against itself, so a host-side caller (a test, or a future real
+// device model) is the only way to drive this at all.
+void z80_request_int(Z80 *cpu, uint8_t data);
+void z80_clear_int(Z80 *cpu); // withdraw INT before it's accepted, mirroring a device deasserting its line
+void z80_request_nmi(Z80 *cpu);
 
 #endif

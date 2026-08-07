@@ -1055,14 +1055,42 @@ any of these):
 - [x] **`IM 0`/`1`/`2`**: implemented (`cpu->im` is now set), including the
   undocumented duplicate encodings. No interrupt-delivery mechanism
   consumes `cpu->im`/`iff1`/`iff2` yet — see below.
-- **Interrupt delivery**: `cpu->iff1`/`iff2`/`im` are tracked correctly
-  (`DI`/`EI`/`IM n`/`RETN` all touch them now) but nothing actually raises
-  a maskable or non-maskable interrupt — there's no host-side interrupt
-  source (timer, keyboard, etc.) to trigger one yet, and no dispatch logic
-  for `IM 0`/`1`/`2`'s differing behavior. Revisit once Phase 3 has a BIOS
-  device that actually needs to interrupt (e.g. a timer tick) — building
-  the delivery mechanism now would be speculative and hard to validate
-  without a real consumer.
+- [x] **Interrupt delivery**: implemented (`z80_step()`/`z80_service_int()`/
+  `z80_service_nmi()` in `z80.c`), grounded against the Zilog Z80 CPU User
+  Manual (UM008011-0816)'s "Interrupt Response" section rather than
+  guessed. `z80_request_int(cpu, data)`/`z80_request_nmi(cpu)`/
+  `z80_clear_int(cpu)` are the host-side API a real device would call
+  (mirroring asserting an actual `INT`/`NMI` line) — sampled at
+  instruction boundaries, gated correctly by `iff1` (`INT` only; `NMI` is
+  genuinely non-maskable) and by `ei_delay` (a new `Z80` field: the
+  documented one-instruction delay after `EI`, extended here to `NMI` too
+  since the manual only states it for `INT` but the internal sample-inhibit
+  circuit isn't gated by `IFF` at all — every serious independent
+  reference/emulator agrees). `IM 1` (13 T-states) and `IM 2` (19
+  T-states, vector-table lookup with the device byte's low bit correctly
+  forced to 0) match the manual's own explicit numbers exactly; `NMI` (11
+  T-states, fixes `PC` to `0x0066`, clears only `IFF1`) is the
+  well-established number every reference converges on where the manual
+  itself only describes the mechanism, not a stated total. `IM 0` supports
+  only a single-byte `RST` device vector — the real-world norm the manual
+  itself calls out ("often this response is a restart instruction") and
+  the only case safely dispatchable without a full "instruction fetched
+  from the device, not memory" bus model (several opcode handlers,
+  `z80_op_rst_dispatch` included, re-derive their own opcode via
+  `z80_read_byte(cpu, cpu->pc - 1)` rather than being passed it directly,
+  which would silently read the wrong byte for a generic dispatch); a
+  non-`RST` `IM 0` vector is a documented, deliberate gap (returns `-1`,
+  the same "unimplemented" signal a genuinely unrecognized opcode gives),
+  not a guess. `HALT` needed no new code at all — its existing "just
+  decrement `PC` back to itself and keep re-fetching" implementation
+  already breaks out correctly the moment an accepted interrupt
+  overwrites `PC`, matching the manual's own description ("the CPU
+  functions as if it had recycled a restart instruction" from the halt
+  address). No host-side interrupt-raising device exists yet (no
+  timer/keyboard chip is modeled) — `cpm/tests/test_interrupts.c` (see
+  below) is presently this mechanism's only caller, by direct C-level
+  unit test rather than a real device or CP/M program, since no
+  CP/M-executable instruction can raise an interrupt against itself.
 - [x] **Automated regression check**: `make test` (`cpm/tests/run_tests.sh`)
   runs ZEXALL/ZEXDOC and fails if the output contains `ERROR`, an
   `Unimplemented opcode` line, or doesn't reach `Tests complete`; it also
@@ -1071,7 +1099,14 @@ any of these):
   `gaps_test.asm` use) or unimplemented-opcode hit. `cpm/asm/examples/
   gaps_test.asm` specifically covers the I/O-port and `RETI`/`RETN`/
   `LD A,I`-family additions above, since ZEXALL doesn't exercise any of
-  them.
+  them. `cpm/tests/test_interrupts.c` (`bin/z80-test-interrupts`, also
+  wired into `run_tests.sh`) is the direct C-level equivalent for
+  interrupt delivery specifically — the one regression check in this
+  project that isn't a `.asm` program, for the reason given above: 27
+  checks covering `IM 0`/`1`/`2` timing/vectoring, `NMI` vs. `INT`
+  masking and priority, `IFF1`/`IFF2` semantics (including `RETN`'s
+  restore), the `EI`-delay window, `HALT` interaction, and
+  `z80_clear_int()`.
 - **Flat memory model**: `z80_read_byte`/`z80_write_byte` index straight
   into a 64KB array with no bank switching. Fine for CP/M's 64KB TPA;
   revisit only if a later phase needs more than that.

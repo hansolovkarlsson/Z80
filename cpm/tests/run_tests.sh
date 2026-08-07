@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Automated regression check, wrapping the manual "eyeball the console
-# output" verification described in CLAUDE.md/cpm/docs/ROADMAP.md. Two
+# output" verification described in CLAUDE.md/cpm/docs/ROADMAP.md. Three
 # kinds of checks:
 #   - The ZEXALL/ZEXDOC exercisers: fail if the output contains an ERROR
 #     line, an unimplemented-opcode line, or never reaches "Tests complete".
 #   - Every asm/examples/*.asm program: assemble it, run it, fail if the
 #     output contains a FAIL line (the OK-n/FAIL-n convention used by
 #     selftest.asm/gaps_test.asm) or an unimplemented-opcode line.
+#   - bin/z80-test-interrupts: a direct C-level unit test (not a .asm
+#     program - see cpm/tests/test_interrupts.c's own top comment for
+#     why interrupt acceptance specifically can't be tested that way),
+#     using the identical FAIL-line convention as the .asm checks above.
 # Not a general framework - just enough to turn "did I break anything" into
 # an exit code instead of a manual read of console output.
 
@@ -131,13 +135,35 @@ check_term_test() {
     fi
 }
 
-if [ ! -x "$Z80" ] || [ ! -x "$Z80ASM" ]; then
-    echo "tests/run_tests.sh: bin/z80 and bin/z80asm must be built first (run 'make')" >&2
+check_c_unit_test() {
+    local name="$1" binary="$2"
+    local out
+    out=$("$binary" 2>&1)
+    local status=0
+
+    if echo "$out" | grep -qi "^FAIL"; then
+        echo "FAIL: $name reported one or more FAIL lines"
+        status=1
+    fi
+
+    if [ "$status" -eq 0 ]; then
+        echo "PASS: $name"
+    else
+        echo "$out" | grep -i "^FAIL" | sed 's/^/    /'
+        overall_status=1
+    fi
+}
+
+TEST_INTERRUPTS="$ROOT/bin/z80-test-interrupts"
+
+if [ ! -x "$Z80" ] || [ ! -x "$Z80ASM" ] || [ ! -x "$TEST_INTERRUPTS" ]; then
+    echo "tests/run_tests.sh: bin/z80, bin/z80asm, and bin/z80-test-interrupts must be built first (run 'make test')" >&2
     exit 1
 fi
 
 check_exerciser "ZEXALL" emu/zexall/ZEXALL-main/zexall.com
 check_exerciser "ZEXDOC" emu/zexall/ZEXALL-main/zexdoc.com
+check_c_unit_test "test_interrupts" "$TEST_INTERRUPTS"
 
 for src in asm/examples/*.asm; do
     case "$(basename "$src")" in

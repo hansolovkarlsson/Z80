@@ -227,12 +227,18 @@ selection works for this double-prefixed form.
 
 Nearly every instruction real Z80 hardware supports is executable by
 `cpm/emu/src/z80.c` (verified by `zexall`/`zexdoc`, plus `cpm/asm/examples/
-gaps_test.asm` for the instructions those exercisers don't touch). The one
-remaining gap:
+gaps_test.asm` for the instructions those exercisers don't touch).
+Interrupt delivery (`INT`/`NMI` from the host side, not an instruction at
+all but closely tied to `IM 0`/`1`/`2`/`DI`/`EI`/`RETI`/`RETN`) is
+implemented too — `z80_request_int()`/`z80_request_nmi()`/
+`z80_clear_int()` in `z80.h`, grounded against the Zilog Z80 CPU User
+Manual's "Interrupt Response" section, with `cpm/tests/test_interrupts.c`
+as its regression coverage (no real interrupt-raising device is attached
+yet — see `cpm/docs/ROADMAP.md`'s Status section). The one remaining gap:
 
 | Instructions | Emulator status |
 |---|---|
-| Interrupt delivery (`INT`/`NMI` from the host side) | No mechanism exists yet — `IM 0`/`1`/`2` set `cpu->im`, and `DI`/`EI`/`RETN` correctly maintain `iff1`/`iff2`, but nothing ever raises an interrupt for them to gate. Deferred to Phase 3, once there's a BIOS device (e.g. a timer) that actually needs one — see `cpm/docs/ROADMAP.md`'s "Known gaps" section. |
+| `IM 0` with a multi-byte/prefixed device-supplied instruction | Only a single-byte `RST` device vector is supported (the real-world norm — the Zilog manual itself calls this "often" the case) — a non-`RST` byte returns the same `-1` "unimplemented" signal a genuinely unrecognized opcode gives, a documented, deliberate scope decision rather than a silent wrong answer. See `cpm/docs/ROADMAP.md`'s Status section for why a fully general "any instruction on the bus" isn't implemented. |
 
 `IN A,(n)`/`IN r,(C)`/`OUT (n),A`/`OUT (C),r`, `IM 0`/`1`/`2`, `RETI`/
 `RETN`, and `LD A,I`/`LD A,R`/`LD I,A`/`LD R,A` are all implemented,

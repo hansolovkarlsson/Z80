@@ -5,11 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project
 
 A Z80 CPU emulator written in C, built to run CP/M-80 programs. Phase 1 (a
-complete Z80 core passing ZEXALL/ZEXDOC cleanly) is done; Phase 2 (a Z80
-assembler, including macros/`include`, plus a disassembler) is far along
-too — see `cpm/docs/ROADMAP.md` for exact status, what's next (a full CP/M
-BDOS/BIOS), and known gaps (I/O ports, interrupts). This directory is a
-git repository (initialized after the first working ZEXALL/ZEXDOC pass).
+complete Z80 core passing ZEXALL/ZEXDOC cleanly, including I/O ports and
+interrupt delivery) is done; Phase 2 (a Z80 assembler, including
+macros/`include`, plus a disassembler) is done too; Phase 3 (CP/M
+BDOS/BIOS) is far along — see `cpm/docs/ROADMAP.md` for exact status and
+its Known Gaps section for what's left. This directory is a git
+repository (initialized after the first working ZEXALL/ZEXDOC pass).
 The emulator, assembler, disassembler, GTK launcher, sample disk, and
 third-party reference software/docs all live under `cpm/`; `bin/` (the
 build output) and `scripts/` (general-purpose tooling) stay at the true

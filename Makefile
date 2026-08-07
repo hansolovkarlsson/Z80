@@ -18,6 +18,14 @@ DASM_SRCS := $(wildcard $(DASM_SRC_DIR)/*.c)
 DASM_OBJS := $(DASM_SRCS:.c=.o)
 DASM_TARGET := $(BIN_DIR)/z80dasm
 
+# z80.c's own interrupt-acceptance unit test (cpm/tests/test_interrupts.c) -
+# a direct C-level test, not a .asm program run through run_tests.sh like
+# every other regression check here, since no CP/M-executable instruction
+# can raise an interrupt against itself (INT/NMI are host-side signals on
+# real hardware) - see that file's own top comment. Built from
+# $(EMU_SRC_DIR)'s real z80.c/alu.c/cpm.c, not a separate reimplementation.
+EMU_TEST_INTERRUPTS_TARGET := $(BIN_DIR)/z80-test-interrupts
+
 # Opt-in only (never part of `all`/`test`) - the only build target with an
 # external dependency beyond a bare C compiler. A thin GTK4+VTE launcher
 # for the real bin/z80, not a separate emulator - see cpm/gtk/src/main.c's
@@ -51,6 +59,9 @@ $(ASM_TARGET): $(ASM_OBJS) | $(BIN_DIR)
 $(DASM_TARGET): $(DASM_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(DASM_OBJS)
 
+$(EMU_TEST_INTERRUPTS_TARGET): cpm/tests/test_interrupts.c $(EMU_SRC_DIR)/z80.c $(EMU_SRC_DIR)/alu.c $(EMU_SRC_DIR)/cpm.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ cpm/tests/test_interrupts.c $(EMU_SRC_DIR)/z80.c $(EMU_SRC_DIR)/alu.c $(EMU_SRC_DIR)/cpm.c
+
 $(GTK_TARGET): $(GTK_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(GTK_OBJS) $(GTK_LIBS)
 
@@ -66,8 +77,8 @@ $(GTK_SRC_DIR)/%.o: $(GTK_SRC_DIR)/%.c
 run: emulator
 	./$(EMU_TARGET) cpm/emu/zexall/ZEXALL-main/zexall.com | less
 
-test: emulator assembler
+test: emulator assembler $(EMU_TEST_INTERRUPTS_TARGET)
 	./cpm/tests/run_tests.sh
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(EMU_TEST_INTERRUPTS_TARGET)

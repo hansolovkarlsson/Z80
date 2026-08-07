@@ -21,6 +21,8 @@ static inline uint16_t fetch_word(Z80 *cpu, uint8_t *ram) {
 
 static void z80_push16(Z80 *cpu, uint16_t val);
 static uint16_t z80_pop16(Z80 *cpu);
+static int z80_service_nmi(Z80 *cpu, uint8_t *ram);
+static int z80_service_int(Z80 *cpu, uint8_t *ram);
 
 
 // Direct 16-bit memory access helpers
@@ -1017,6 +1019,121 @@ static uint16_t z80_pop16(Z80 *cpu) {
     return (high << 8) | low;
 }
 
+/*
+ * Interrupt acceptance - real Z80 hardware behavior grounded against the
+ * Zilog Z80 CPU User Manual (UM008011-0816), "Interrupt Response"
+ * section (pages 17-20). Called from z80_step() once per instruction
+ * boundary; each function is only ever reached after that caller has
+ * already confirmed the interrupt is actually acceptable (ei_delay
+ * clear, and for INT specifically, iff1 set) - see z80_step()'s own
+ * comment for that gating logic.
+ */
+
+// Non-maskable interrupt: always accepted regardless of iff1 (that's
+// what "non-maskable" means), and takes priority over a simultaneously-
+// pending maskable INT - manual, "HALT Exit": "If both are received at
+// this time, then the nonmaskable interrupt is acknowledged because it
+// is the highest priority" (enforced by z80_step()'s own check order,
+// not here). PC is pushed and set to the fixed vector 0x0066. IFF2 is
+// left untouched, preserving whatever IFF1 was immediately before this
+// (Table 1, "Accept NMI: IFF1=0, IFF2=*") so a later RETN can restore
+// it; IFF1 itself is cleared so a maskable interrupt can't nest inside
+// the NMI handler until the handler explicitly re-enables one. 11
+// T-states: the manual describes the mechanism (page 13) without
+// stating a total directly, but ties Mode 1's own 13-T-state total to
+// "identical to [NMI] except the call location is 0038h instead of
+// 0066h" *plus* the 2 acknowledge wait states that page 19 explicitly
+// attributes to maskable INT's daisy-chain-priority settling alone (not
+// applicable to the always-accepted NMI) - 13-2=11, matching what every
+// serious independent Z80 reference/emulator converges on for NMI.
+static int z80_service_nmi(Z80 *cpu, uint8_t *ram) {
+    (void)ram;
+    cpu->nmi_pending = 0;
+    cpu->iff1 = 0;
+    cpu->r = (cpu->r & 0x80) | ((cpu->r + 1) & 0x7F); // ack cycle refreshes R exactly like a normal fetch (manual Figure 10: RFSH pulses identically)
+    z80_push16(cpu, cpu->pc);
+    cpu->pc = 0x0066;
+    return 11;
+}
+
+// Maskable interrupt (INT), reached only when iff1 was already set (see
+// z80_step()). Accepting it resets *both* IFF1 and IFF2 (Table 1:
+// "Accept [maskable] Interrupt... both IFF1 and IFF2 are automatically
+// reset, inhibiting further interrupts until the programmer issues a
+// new EI instruction") - unlike NMI above, which only clears IFF1.
+static int z80_service_int(Z80 *cpu, uint8_t *ram) {
+    (void)ram; // kept for a uniform signature with z80_service_nmi/main_opcode_table handlers
+    uint8_t data = cpu->int_data;
+    cpu->int_pending = 0;
+    cpu->iff1 = 0;
+    cpu->iff2 = 0;
+    cpu->r = (cpu->r & 0x80) | ((cpu->r + 1) & 0x7F);
+
+    switch (cpu->im) {
+        case 1:
+            // Manual, "Mode 1": "the CPU responds... by executing a
+            // restart at address 0038h... identical to [NMI] except the
+            // call location is 0038h... two more [T-states] than normal
+            // due to the two added wait states" - a plain RST is 11
+            // T-states, so 11+2=13.
+            z80_push16(cpu, cpu->pc);
+            cpu->pc = 0x0038;
+            return 13;
+
+        case 2: {
+            // Manual, "Mode 2": the interrupting device supplies the
+            // low 8 bits of a pointer into a programmer-maintained
+            // vector table; I holds the high 8 bits. "Only seven bits
+            // are required from the interrupting device, because the
+            // least-significant bit must be a 0... addresses must
+            // always start in even locations" - hence data & 0xFE, not
+            // data itself. The table stores the target address
+            // low-byte-first ("The first byte in the table is the
+            // least-significant... portion"). "19 clock periods... seven
+            // to fetch the lower eight bits from the interrupting
+            // device, six to save the program counter, and six to
+            // obtain the jump address."
+            uint16_t vector_addr = ((uint16_t)cpu->i << 8) | (uint16_t)(data & 0xFE);
+            uint16_t target = (uint16_t)z80_read_byte(cpu, vector_addr) |
+                               ((uint16_t)z80_read_byte(cpu, (uint16_t)(vector_addr + 1)) << 8);
+            z80_push16(cpu, cpu->pc);
+            cpu->pc = target;
+            return 19;
+        }
+
+        default: {
+            // Mode 0: manual, "Mode 0": "the interrupting device can
+            // place any instruction on the data bus and the CPU
+            // executes it... often this response is a restart
+            // instruction... any other instruction such as a 3-byte
+            // call... could [also] be executed." This implementation
+            // only supports the single-byte RST case - the real-world
+            // norm this project's own CP/M target never actually needs
+            // (CP/M's standard BDOS/BIOS model doesn't use Z80
+            // interrupts at all), and the only case that's safe to
+            // dispatch without a real "instruction fetched from the
+            // device instead of memory" bus model: several existing
+            // opcode handlers (z80_op_rst_dispatch included) re-derive
+            // their own opcode via z80_read_byte(cpu, cpu->pc - 1)
+            // rather than being passed it directly, which would read
+            // back the wrong byte (whatever real memory already holds
+            // at pc-1) if dispatched generically through
+            // main_opcode_table here instead of handled directly like
+            // this. A genuinely general "any instruction, including
+            // prefixed/multi-byte ones" Mode 0 is a known, deliberately
+            // unimplemented gap - see cpm/docs/ROADMAP.md's Known Gaps -
+            // not silently guessed at.
+            if ((data & 0xC7) == 0xC7) { // RST opcodes: 11ppp111
+                uint8_t p = data & 0x38;
+                z80_push16(cpu, cpu->pc);
+                cpu->pc = (uint16_t)p;
+                return 11 + 2; // manual: "two more than the normal number for the instruction"
+            }
+            return -1; // unsupported Mode 0 vector - see comment above
+        }
+    }
+}
+
 // Opcode Handlers
 int z80_op_push_bc(Z80 *cpu, uint8_t *ram) {
     (void)ram;
@@ -1901,6 +2018,7 @@ int z80_op_ei(Z80 *cpu, uint8_t *ram) {
     (void)ram;
     cpu->iff1 = 1;
     cpu->iff2 = 1;
+    cpu->ei_delay = 1; // see z80.h's own comment: no interrupt sampled for the very next step
     return 4;
 }
 
@@ -2235,13 +2353,43 @@ int z80_step(Z80 *cpu, uint8_t *ram) {
     // redirect back into the CCP.
     if (cpu->pc == 0x0000 && !cpm_is_ccp_mode()) return 0;
 
-    // 2. Fetch opcode byte
+    // 2. Interrupt acceptance - sampled at instruction boundaries, i.e.
+    // exactly here, before the next opcode is fetched (Zilog Z80 CPU
+    // User Manual: "The CPU samples the interrupt signal (INT) with the
+    // rising edge of the final clock at the end of any instruction").
+    // Skipped for exactly one step following EI (see z80.h's own
+    // ei_delay comment) - that window is consumed here regardless of
+    // whether anything was actually pending, matching real hardware's
+    // unconditional one-instruction inhibit. NMI is checked first and
+    // unconditionally (never gated by iff1); INT only when iff1 is set.
+    if (cpu->ei_delay) {
+        cpu->ei_delay = 0;
+    } else if (cpu->nmi_pending) {
+        return z80_service_nmi(cpu, ram);
+    } else if (cpu->int_pending && cpu->iff1) {
+        return z80_service_int(cpu, ram);
+    }
+
+    // 3. Fetch opcode byte
     uint8_t opcode = fetch_byte(cpu, ram);
 
-    // 3. Increment memory refresh register R (Bits 0-6 cycle)
+    // 4. Increment memory refresh register R (Bits 0-6 cycle)
     cpu->r = (cpu->r & 0x80) | ((cpu->r + 1) & 0x7F);
 
-    // 4. Decode & Execute via table lookup
+    // 5. Decode & Execute via table lookup
     return main_opcode_table[opcode](cpu, ram);
+}
+
+void z80_request_int(Z80 *cpu, uint8_t data) {
+    cpu->int_pending = 1;
+    cpu->int_data = data;
+}
+
+void z80_clear_int(Z80 *cpu) {
+    cpu->int_pending = 0;
+}
+
+void z80_request_nmi(Z80 *cpu) {
+    cpu->nmi_pending = 1;
 }
 
