@@ -146,7 +146,44 @@ there surfaced and fixed several real dialect gaps, documented below.
   functional correctness (the reassembled binary runs and passes all 67
   tests) and isn't fixable on the assembler side — there's nothing in the
   available source to assemble that would produce those bytes.
-- [ ] A small library of example programs beyond the ones above.
+- [x] **A small library of example programs beyond the ones above**: three
+  general-purpose building blocks, distinct in kind from both the four
+  programs above (chosen to exercise specific assembler/encoder features)
+  and the later gap-closing regression tests
+  (`console_test.asm`/`file_test.asm`/`gaps_test.asm`/`term_test.asm`, each
+  written to cover a specific BDOS/BIOS feature) - these exist because
+  they're genuinely useful utilities that were simply missing, covering
+  numbers, raw bytes, and text respectively:
+  - `print16.asm` - convert a 16-bit value to decimal and print it. No BDOS
+    function prints a number in decimal, and the Z80 has no divide
+    instruction, so doing this at all means implementing `div16by8` (the
+    standard 16-bit/8-bit shift-subtract "restoring division" routine) from
+    scratch. `num_to_str` repeatedly divides by 10 and pushes each
+    remainder onto the stack as it's produced (least-significant digit
+    first) - popping them back off then hands them out most-significant-
+    first for free, which is the order printing needs. Five conversions
+    (0, 9, 10, 1234, 65535 - zero, a single digit, a value with an embedded
+    zero digit, a middling value, and the max 16-bit value) are checked
+    against known-good strings.
+  - `hexdump.asm` - print a buffer as hex bytes with an ASCII sidebar
+    (non-printable bytes shown as `.`), the classic memory-dump utility.
+    `hex_byte` only needs a nibble split (`SRL A` x4) and a lookup table,
+    not division. Checked against four bytes (`00h`/`0Fh`/`A5h`/`FFh`)
+    covering an all-zero byte, a zero high nibble, mixed digit/letter
+    nibbles, and the max byte.
+  - `strutil.asm` - in-place string utilities on `$`-terminated strings:
+    `str_reverse`, `str_upper`, `str_lower`. `str_reverse` sidesteps the
+    awkward part of a two-pointer reversal on the Z80 (there's no single
+    instruction for a 16-bit less-than test, so a naive "loop while left <
+    right" needs extra comparison logic) by computing the swap count up
+    front as `length / 2` and counting down instead - the two pointers are
+    then guaranteed to meet exactly without ever needing to check.
+  All three self-check against known input/output pairs with the same
+  OK-n/FAIL-n convention as `selftest.asm`/`gaps_test.asm`, then print a
+  demonstration for visual confirmation too, and are picked up
+  automatically by `run_tests.sh`'s `asm/examples/*.asm` glob - no wiring
+  needed. More building-block examples would continue this same library -
+  this is a solid start, not a claim of exhaustiveness.
 - [x] **Real ZSM4 compatibility target reached: `zexall.mac`/`zexdoc.mac`
   (not just `zexall.z80`/`zexdoc.z80`) now assemble and run cleanly.**
   `zexall.z80` is *not* a human-maintained ZSM4 source — its own header
