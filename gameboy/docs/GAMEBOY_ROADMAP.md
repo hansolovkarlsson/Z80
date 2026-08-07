@@ -601,8 +601,56 @@ clean against the `AudioToolbox` system framework (no new Homebrew
 dependency), runs stably with no CoreAudio errors in the system log
 across an extended 2048-gb session.
 
-**Still not done**: Game Boy Color support and save states, the other
-two Phase 7 items - both still fully unscoped.
+**Still not done**: Game Boy Color support - the remaining Phase 7 item,
+still fully unscoped.
+
+**Save states: done** (`gameboy/src/savestate.c`/`.h`, new). Serializes
+every field `gb_cpu_step()`/`gb_ppu_step()`/`gb_timer_step()`/
+`gb_apu_step()` actually consume - CPU registers, the full `memory[]`
+array (VRAM/WRAM/OAM/I-O-registers/HRAM), PPU/timer/joypad/APU register
+and internal state, and the cartridge's banking registers, RTC, and
+battery RAM - to a single file, explicitly little-endian field by field
+(not a raw struct `memcpy`, which would serialize `GBCpu`/`GBCart`'s own
+pointers - `memory`, `cart`, `rom`, `ram`, etc. - as meaningless
+addresses, and wouldn't give a portable on-disk layout even for the
+pointer-free structs). Deliberately does *not* save `GBApu`'s
+`sample_buffer`/`cap`/`len` - a driver-owned output buffer, not emulated
+hardware state.
+
+Guards against the one real failure mode a save-state feature can have -
+silently restoring the wrong state - two ways: `gb_savestate_load()`
+checks a stored ROM size and content hash (`fnv1a()`, a real, well-known
+32-bit hash chosen over a CRC32 table/zlib dependency neither of which
+this project otherwise needs) against the currently-loaded cartridge
+before touching anything, refusing rather than loading mismatched
+banking/RTC state onto the wrong ROM; and the save/load API lives behind
+`GBCpu` alone (reached through its existing `cart`/`ppu`/`timer`/
+`joypad`/`apu` pointers), so there's no way to call it with mismatched
+structs by construction.
+
+Wired into both drivers: `gameboy/gtk/src/main.c` binds F5 (save) / F9
+(load) to `<rom path>.state` - the same key convention several existing
+emulators (VBA-M, Dolphin, RetroArch's defaults) already use, not
+invented here - and `gameboy/src/main.c` gained `--load-state`/
+`--save-state` CLI flags for scripted/test use.
+
+Verified two ways: `gameboy/tests/test_savestate.c` (new, direct
+round-trip - build every struct with a distinctive value in every single
+field, save, stomp everything to a *different* set of values, load, and
+check every field individually came back exactly as saved, plus a
+negative case confirming a ROM mismatch is refused rather than silently
+loaded) and `make gameboy-savestate-test` (new, real-ROM/real-driver
+round-trip through the actual `--load-state`/`--save-state` CLI flags -
+run dmg-acid2 continuously to frame 2 as a baseline, separately run it
+to frame 1 and save state, then in a *third*, fresh process load that
+state and run one more frame; the two frame 2s come out `cmp`
+byte-identical, proving the save/load round-trip is bit-exact, not just
+"close enough", against a real ROM's real execution). Both new tests
+pass, and the full existing regression suite (`gameboy-test`, `gameboy-
+visual-test`, `gameboy-2048-test`, `gameboy-droneboy-test`, `gameboy-
+tobu-test`, both RGBDS ROMs, `gameboy-gtk`) still passes byte-identically
+after this change - a real, additive feature with zero observed
+regressions.
 
 **A sharper diagnosis of dmg-acid2's still-open gap, found through
 this front end specifically**: watching it run continuously (rather

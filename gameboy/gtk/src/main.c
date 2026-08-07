@@ -13,10 +13,12 @@
 // test` build, and gameboy/src/main.c's existing --ppm/--wav/--input
 // bring-up driver keeps working unmodified for testing.
 //
-// Real-time video, keyboard input, and live audio (via CoreAudio's
+// Real-time video, keyboard input, live audio (via CoreAudio's
 // AudioQueue - see setup_audio()'s own comment for why that API and not
-// a portable one). Save states and CGB support are still unimplemented
-// anywhere in this project - see gameboy/docs/GAMEBOY_ROADMAP.md's Phase 7.
+// a portable one), and save states (F5 save / F9 load, gameboy/src/
+// savestate.c - see on_key_pressed() below). CGB support is still
+// unimplemented anywhere in this project - see
+// gameboy/docs/GAMEBOY_ROADMAP.md's Phase 7.
 
 #include <gtk/gtk.h>
 #include <AudioToolbox/AudioToolbox.h>
@@ -30,6 +32,7 @@
 #include "timer.h"
 #include "joypad.h"
 #include "apu.h"
+#include "savestate.h"
 
 // Integer upscale factor - nearest-neighbor (see draw_frame()'s filter
 // choice below), so the real 160x144 pixel grid stays sharp rather than
@@ -57,6 +60,7 @@ typedef struct {
     AudioQueueRef audio_queue; // NULL if CoreAudio setup failed - video/input still work
     GtkWidget *drawing_area;
     guint timeout_id; // step_frame()'s g_timeout_add() id - see on_window_destroy()
+    char *save_state_path; // "<rom>.state" - see key_to_button()'s F5/F9 handling below
 } GameboyApp;
 
 static char *g_rom_path = NULL;
@@ -230,8 +234,22 @@ static gboolean on_key_event(GtkEventControllerKey *controller, guint keyval, gu
     return TRUE;
 }
 
+// F5/F9 - the same save/load-state key convention several existing
+// emulators (VBA-M, Dolphin, RetroArch's default bindings) use, not
+// invented here. Handled only on key-press (not on_key_event's shared
+// press/release path, unlike joypad buttons) since a save/load is a
+// one-shot action, not a held state.
 static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, guint keycode,
                                 GdkModifierType state, gpointer user_data) {
+    GameboyApp *app = user_data;
+    if (keyval == GDK_KEY_F5) {
+        gb_savestate_save(&app->cpu, app->save_state_path);
+        return TRUE;
+    }
+    if (keyval == GDK_KEY_F9) {
+        gb_savestate_load(&app->cpu, app->save_state_path);
+        return TRUE;
+    }
     return on_key_event(controller, keyval, keycode, state, user_data, 1);
 }
 
@@ -293,6 +311,15 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gb_cpu_init_tables();
     gb_cpu_reset(&g_app.cpu);
 
+    // "<rom path>.state" - simple and predictable rather than a
+    // separate save-slot picker UI, which nothing about this front end
+    // has needed yet (same "start simple" reasoning key_to_button()'s
+    // fixed layout already applies).
+    size_t path_len = strlen(g_rom_path);
+    g_app.save_state_path = malloc(path_len + 7); // ".state\0"
+    memcpy(g_app.save_state_path, g_rom_path, path_len);
+    strcpy(g_app.save_state_path + path_len, ".state");
+
     GtkWidget *window = gtk_application_window_new(gtk_app);
     gtk_window_set_title(GTK_WINDOW(window), g_rom_path);
     gtk_window_set_default_size(GTK_WINDOW(window), GB_SCREEN_WIDTH * SCALE, GB_SCREEN_HEIGHT * SCALE);
@@ -326,7 +353,8 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
 int main(int argc, char **argv) {
     if (argc < 2 || strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
         printf("Usage:\n  %s <rom.gb>   Run a Game Boy ROM in a real GTK window\n\n", argv[0]);
-        printf("Keys: arrows = D-pad, Z = B, X = A, Enter = Start, Right Shift = Select\n");
+        printf("Keys: arrows = D-pad, Z = B, X = A, Enter = Start, Right Shift = Select,\n"
+               "      F5 = save state, F9 = load state (to/from '<rom>.state')\n");
         return argc < 2 ? EXIT_FAILURE : EXIT_SUCCESS;
     }
     g_rom_path = argv[1];
@@ -342,6 +370,7 @@ int main(int argc, char **argv) {
 
     free(g_app.cpu.memory);
     free(g_app.audio_buffer);
+    free(g_app.save_state_path);
     gb_cart_free(&g_app.cart);
     return status;
 }

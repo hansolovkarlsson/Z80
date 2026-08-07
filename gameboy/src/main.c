@@ -9,6 +9,7 @@
 #include "timer.h"
 #include "joypad.h"
 #include "apu.h"
+#include "savestate.h"
 
 // Phase 5 bring-up driver: load a real cartridge, run it, ticking the
 // PPU/timer/APU alongside the CPU each step (same clock, same call
@@ -193,14 +194,18 @@ int main(int argc, char **argv) {
                 "  %s <rom.gb> --input <script> [with --ppm/--frames/--wav/--seconds above]\n"
                 "                                      Script joypad button presses by VBlank frame\n"
                 "                                      number - lines of '<frame> <BUTTON> <down|up>',\n"
-                "                                      BUTTON one of A/B/SELECT/START/RIGHT/LEFT/UP/DOWN\n",
-                argv[0], argv[0], argv[0], argv[0]);
+                "                                      BUTTON one of A/B/SELECT/START/RIGHT/LEFT/UP/DOWN\n"
+                "  %s <rom.gb> --load-state <in.state>  Restore state before running (see savestate.c)\n"
+                "  %s <rom.gb> --save-state <out.state> Save state after the run budget/--frames/--wav ends\n",
+                argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
         return 1;
     }
 
     const char *ppm_path = NULL;
     const char *wav_path = NULL;
     const char *input_path = NULL;
+    const char *load_state_path = NULL;
+    const char *save_state_path = NULL;
     int target_frames = 2;
     double wav_seconds = 5.0;
     for (int i = 2; i < argc; i++) {
@@ -214,6 +219,10 @@ int main(int argc, char **argv) {
             input_path = argv[++i];
         } else if (strcmp(argv[i], "--seconds") == 0 && i + 1 < argc) {
             wav_seconds = atof(argv[++i]);
+        } else if (strcmp(argv[i], "--load-state") == 0 && i + 1 < argc) {
+            load_state_path = argv[++i];
+        } else if (strcmp(argv[i], "--save-state") == 0 && i + 1 < argc) {
+            save_state_path = argv[++i];
         }
     }
 
@@ -248,6 +257,10 @@ int main(int argc, char **argv) {
     gb_cpu_init_tables();
     gb_cpu_reset(&cpu);
     gb_serial_output_hook = serial_putc;
+
+    if (load_state_path && gb_savestate_load(&cpu, load_state_path) != 0) {
+        return 1;
+    }
 
     InputEvent input_events[MAX_INPUT_EVENTS];
     int input_count = 0;
@@ -296,6 +309,9 @@ int main(int argc, char **argv) {
     }
     if (wav_path) {
         write_wav(sample_buffer, apu.sample_buffer_len, WAV_SAMPLE_RATE, wav_path);
+    }
+    if (save_state_path) {
+        gb_savestate_save(&cpu, save_state_path);
     }
 
     fprintf(stderr, "\n\nExecuted %ld instructions (budget %ld), %d frame(s). Final PC=0x%04X\n",

@@ -69,6 +69,17 @@ GAMEBOY_TEST_APU_TARGET := $(BIN_DIR)/gameboy-test-apu
 # minimal-dependency reasoning as GAMEBOY_TEST_APU_TARGET above.
 GAMEBOY_TEST_CPU_TARGET := $(BIN_DIR)/gameboy-test-cpu
 
+# savestate.c's own unit test (gameboy/tests/test_savestate.c) - a
+# direct round-trip check (save a hand-built state, mutate every field,
+# load, assert everything came back) - same minimal-dependency reasoning
+# as GAMEBOY_TEST_CPU_TARGET above (needs cpu/mmu/cart/ppu/timer/joypad/
+# apu linked since savestate.c reaches all of them through GBCpu, but no
+# real ROM). GAMEBOY_SAVESTATE_TEST below is the complementary
+# real-ROM/real-driver round-trip check (does a save+load actually
+# resume a genuine run bit-identically), through the actual --load-state/
+# --save-state CLI flags rather than the struct-level API directly.
+GAMEBOY_TEST_SAVESTATE_TARGET := $(BIN_DIR)/gameboy-test-savestate
+
 # dmg-acid2 (gameboy/test_roms/dmg-acid2/ - MIT-licensed, committed
 # unlike Blargg's ROMs) is the PPU's real correctness gate: render a
 # frame, compare it pixel-for-pixel against the reference image.
@@ -79,6 +90,21 @@ GAMEBOY_TEST_CPU_TARGET := $(BIN_DIR)/gameboy-test-cpu
 GAMEBOY_VISUAL_ROM := gameboy/test_roms/dmg-acid2/dmg-acid2.gb
 GAMEBOY_VISUAL_REF := gameboy/test_roms/dmg-acid2/reference-dmg.png
 GAMEBOY_VISUAL_OUT := $(BIN_DIR)/dmg-acid2-output.ppm
+
+# Real-ROM save/load round-trip (see GAMEBOY_TEST_SAVESTATE_TARGET's own
+# comment above): run dmg-acid2 continuously to frame 2 as the baseline,
+# then separately run it to frame 1, save state, and in a *third*, fresh
+# process load that state and run one more frame - if save/load fully
+# captures everything gb_cpu_step()/gb_ppu_step()/etc. need to resume
+# correctly, that third process's frame 1 output must be byte-identical
+# to the continuous run's frame 2 (cmp, not compare_frame.py's
+# percentage gate - a real round-trip has no excuse for even one
+# differing byte). Reuses dmg-acid2 rather than a new ROM since it's
+# already committed and deterministic with no scripted input needed.
+GAMEBOY_SAVESTATE_CONTINUOUS := $(BIN_DIR)/savestate-continuous.ppm
+GAMEBOY_SAVESTATE_MID_PPM := $(BIN_DIR)/savestate-mid.ppm
+GAMEBOY_SAVESTATE_MID_STATE := $(BIN_DIR)/savestate-mid.state
+GAMEBOY_SAVESTATE_RESUMED := $(BIN_DIR)/savestate-resumed.ppm
 
 # 2048-gb (gameboy/test_roms/2048-gb/ - zlib-licensed, committed same as
 # dmg-acid2) is Phase 6's real-game validation target: a genuine,
@@ -152,7 +178,7 @@ GAMEBOY_GTK_CFLAGS := $(GTK_CFLAGS) -I$(GAMEBOY_SRC_DIR)
 # dependency needed.
 GAMEBOY_GTK_LIBS := $(GTK_LIBS) -framework AudioToolbox
 
-.PHONY: all emulator assembler disassembler gtk gameboy gameboy-test gameboy-visual-test gameboy-2048-test gameboy-droneboy-test gameboy-tobu-test gameboy-rgbds-test gameboy-rgbds-mbc3-test gameboy-gtk run test clean
+.PHONY: all emulator assembler disassembler gtk gameboy gameboy-test gameboy-visual-test gameboy-2048-test gameboy-droneboy-test gameboy-tobu-test gameboy-rgbds-test gameboy-rgbds-mbc3-test gameboy-savestate-test gameboy-gtk run test clean
 
 all: emulator assembler disassembler
 
@@ -166,11 +192,12 @@ gtk: $(GTK_TARGET)
 
 gameboy: $(GAMEBOY_TARGET)
 
-gameboy-test: $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_TEST_APU_TARGET) $(GAMEBOY_TEST_CPU_TARGET)
+gameboy-test: $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_TEST_APU_TARGET) $(GAMEBOY_TEST_CPU_TARGET) $(GAMEBOY_TEST_SAVESTATE_TARGET)
 	./$(GAMEBOY_TEST_TARGET)
 	./$(GAMEBOY_TEST_TIMER_TARGET)
 	./$(GAMEBOY_TEST_APU_TARGET)
 	./$(GAMEBOY_TEST_CPU_TARGET)
+	./$(GAMEBOY_TEST_SAVESTATE_TARGET)
 
 gameboy-visual-test: $(GAMEBOY_TARGET)
 	./$(GAMEBOY_TARGET) $(GAMEBOY_VISUAL_ROM) --ppm $(GAMEBOY_VISUAL_OUT) --frames 2
@@ -205,6 +232,12 @@ gameboy-rgbds-mbc3-test: $(GAMEBOY_TARGET) | $(BIN_DIR)
 		&& echo "gameboy-rgbds-mbc3-test: OK (RTC latch/isolation behavior correct)" \
 		|| (echo "gameboy-rgbds-mbc3-test: FAIL (expected serial output not seen)"; exit 1)
 
+gameboy-savestate-test: $(GAMEBOY_TARGET)
+	./$(GAMEBOY_TARGET) $(GAMEBOY_VISUAL_ROM) --ppm $(GAMEBOY_SAVESTATE_CONTINUOUS) --frames 2
+	./$(GAMEBOY_TARGET) $(GAMEBOY_VISUAL_ROM) --ppm $(GAMEBOY_SAVESTATE_MID_PPM) --frames 1 --save-state $(GAMEBOY_SAVESTATE_MID_STATE)
+	./$(GAMEBOY_TARGET) $(GAMEBOY_VISUAL_ROM) --load-state $(GAMEBOY_SAVESTATE_MID_STATE) --ppm $(GAMEBOY_SAVESTATE_RESUMED) --frames 1
+	cmp $(GAMEBOY_SAVESTATE_CONTINUOUS) $(GAMEBOY_SAVESTATE_RESUMED) && echo "gameboy-savestate-test: OK (save/load round-trip is bit-exact against a continuous run)"
+
 gameboy-gtk: $(GAMEBOY_GTK_TARGET)
 
 $(EMU_TARGET): $(EMU_OBJS) | $(BIN_DIR)
@@ -237,6 +270,9 @@ $(GAMEBOY_TEST_APU_TARGET): gameboy/tests/test_apu.c $(GAMEBOY_SRC_DIR)/apu.c | 
 $(GAMEBOY_TEST_CPU_TARGET): gameboy/tests/test_cpu.c $(GAMEBOY_SRC_DIR)/cpu.c $(GAMEBOY_SRC_DIR)/alu.c $(GAMEBOY_SRC_DIR)/mmu.c $(GAMEBOY_SRC_DIR)/cart.c $(GAMEBOY_SRC_DIR)/ppu.c $(GAMEBOY_SRC_DIR)/joypad.c $(GAMEBOY_SRC_DIR)/apu.c $(GAMEBOY_SRC_DIR)/timer.c | $(BIN_DIR)
 	$(CC) $(CFLAGS) -lm -o $@ gameboy/tests/test_cpu.c $(GAMEBOY_SRC_DIR)/cpu.c $(GAMEBOY_SRC_DIR)/alu.c $(GAMEBOY_SRC_DIR)/mmu.c $(GAMEBOY_SRC_DIR)/cart.c $(GAMEBOY_SRC_DIR)/ppu.c $(GAMEBOY_SRC_DIR)/joypad.c $(GAMEBOY_SRC_DIR)/apu.c $(GAMEBOY_SRC_DIR)/timer.c
 
+$(GAMEBOY_TEST_SAVESTATE_TARGET): gameboy/tests/test_savestate.c $(GAMEBOY_SRC_DIR)/savestate.c $(GAMEBOY_SRC_DIR)/cpu.c $(GAMEBOY_SRC_DIR)/alu.c $(GAMEBOY_SRC_DIR)/mmu.c $(GAMEBOY_SRC_DIR)/cart.c $(GAMEBOY_SRC_DIR)/ppu.c $(GAMEBOY_SRC_DIR)/joypad.c $(GAMEBOY_SRC_DIR)/apu.c $(GAMEBOY_SRC_DIR)/timer.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) -lm -o $@ gameboy/tests/test_savestate.c $(GAMEBOY_SRC_DIR)/savestate.c $(GAMEBOY_SRC_DIR)/cpu.c $(GAMEBOY_SRC_DIR)/alu.c $(GAMEBOY_SRC_DIR)/mmu.c $(GAMEBOY_SRC_DIR)/cart.c $(GAMEBOY_SRC_DIR)/ppu.c $(GAMEBOY_SRC_DIR)/joypad.c $(GAMEBOY_SRC_DIR)/apu.c $(GAMEBOY_SRC_DIR)/timer.c
+
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
@@ -256,4 +292,4 @@ test: emulator assembler
 	./cpm/tests/run_tests.sh
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(GAMEBOY_GTK_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_TEST_APU_TARGET) $(GAMEBOY_TEST_CPU_TARGET) $(GAMEBOY_VISUAL_OUT) $(GAMEBOY_2048_OUT) $(GAMEBOY_DRONEBOY_OUT) $(GAMEBOY_TOBU_OUT) $(GAMEBOY_GTK_TARGET) $(RGBDS_HELLO_OBJ) $(RGBDS_HELLO_ROM) $(RGBDS_MBC3_RTC_OBJ) $(RGBDS_MBC3_RTC_ROM)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(GAMEBOY_OBJS) $(GAMEBOY_GTK_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(GAMEBOY_TARGET) $(GAMEBOY_TEST_TARGET) $(GAMEBOY_TEST_TIMER_TARGET) $(GAMEBOY_TEST_APU_TARGET) $(GAMEBOY_TEST_CPU_TARGET) $(GAMEBOY_TEST_SAVESTATE_TARGET) $(GAMEBOY_VISUAL_OUT) $(GAMEBOY_2048_OUT) $(GAMEBOY_DRONEBOY_OUT) $(GAMEBOY_TOBU_OUT) $(GAMEBOY_SAVESTATE_CONTINUOUS) $(GAMEBOY_SAVESTATE_MID_PPM) $(GAMEBOY_SAVESTATE_MID_STATE) $(GAMEBOY_SAVESTATE_RESUMED) $(GAMEBOY_GTK_TARGET) $(RGBDS_HELLO_OBJ) $(RGBDS_HELLO_ROM) $(RGBDS_MBC3_RTC_OBJ) $(RGBDS_MBC3_RTC_ROM)
