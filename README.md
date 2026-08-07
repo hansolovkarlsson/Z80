@@ -1,10 +1,13 @@
 # Z80
 
-A Z80 CPU emulator written in C, built to run CP/M-80 programs. This
-project also hosts an unrelated Game Boy emulator (`gameboy/`, see its
-own `README.md`) — everything CP/M-related below lives under `cpm/`,
-kept separate; only `bin/` (the shared build output for both) and
-`scripts/` (general-purpose tooling used by both) stay at the repo root.
+A Z80 CPU emulator written in C, built to run CP/M-80 programs.
+Everything CP/M-related below lives under `cpm/`; `bin/` (the build
+output) and `scripts/` (general-purpose tooling) stay at the repo root.
+(This repo previously also hosted a standalone Game Boy emulator as a
+separate, code-sharing-free subproject under `gameboy/` — it's since
+been split out into its own repository via `git subtree split`,
+preserving its real commit history, once it became clear the two
+projects would never actually share code.)
 
 The core CPU emulator is complete: it implements the full documented and
 undocumented Z80 instruction set (table-driven opcode dispatch, all
@@ -53,10 +56,9 @@ make clean         # remove build output
 run as `z80`/`z80asm`/`z80dasm` from anywhere instead of needing a
 relative `bin/...` prefix. Optional — the examples below use the
 explicit relative path instead, run from inside `cpm/` (`bin/` itself
-stays at the repo root, shared with the `gameboy/` subproject, so it's
-reached as `../bin/z80` from there) since that's also where `bin/z80`'s
-own CP/M disk-directory lookup (`cpm_disk/`, see below) expects to be
-run from.
+stays at the repo root, reached as `../bin/z80` from there) since
+that's also where `bin/z80`'s own CP/M disk-directory lookup
+(`cpm_disk/`, see below) expects to be run from.
 
 Correctness is verified by running the ZEXALL/ZEXDOC exerciser and reading
 its console output: every opcode should report `OK`; a wrong flag or result
@@ -90,11 +92,8 @@ how many bytes to decode):
 
 ## Project layout
 
-Everything CP/M-related lives under `cpm/` — kept separate from the
-unrelated `gameboy/` subproject (a standalone Game Boy emulator sharing
-this repo, see its own `README.md`). Only `bin/` (the shared build
-output for both) and `scripts/` (general-purpose tooling used by both)
-stay at the repo root.
+Everything CP/M-related lives under `cpm/`; `bin/` (the build output)
+and `scripts/` (general-purpose tooling) stay at the repo root.
 
 - `cpm/emu/src/` — the emulator itself (`z80.c`/`z80.h` opcode dispatch,
   `alu.c`/`alu.h` flag/arithmetic logic, `cpm.c`/`cpm.h` minimal CP/M BDOS
@@ -146,17 +145,14 @@ stay at the repo root.
   ([`BDSC_REFERENCE.md`](cpm/docs/BDSC_REFERENCE.md)), Tasty Basic
   ([`TASTYBASIC_REFERENCE.md`](cpm/docs/TASTYBASIC_REFERENCE.md)), MBASIC
   ([`MBASIC_REFERENCE.md`](cpm/docs/MBASIC_REFERENCE.md)), and Turbo Pascal
-  ([`TURBOPASCAL_REFERENCE.md`](cpm/docs/TURBOPASCAL_REFERENCE.md)). The
-  top-level `docs/` (repo root) holds only `GAMEBOY_ROADMAP.md`, the
-  unrelated Game Boy subproject's own roadmap.
+  ([`TURBOPASCAL_REFERENCE.md`](cpm/docs/TURBOPASCAL_REFERENCE.md)).
 - `cpm/gtk/` — an opt-in (`make gtk`) thin GTK4 launcher for `bin/z80`,
   attached to a pty with a `VteTerminal` doing the real terminal
   interpretation. See `cpm/gtk/README.md`.
 - `scripts/` — standalone reusable tooling that isn't part of the
-  emulator/assembler/disassembler build itself, shared by both `cpm/`
-  and `gameboy/`: `config.sh` (`PATH` setup, see above) and
-  `8080_to_z80.py` (the general 8080→Z80 mnemonic translator, see
-  above). See `scripts/README.md`.
+  emulator/assembler/disassembler build itself: `config.sh` (`PATH`
+  setup, see above) and `8080_to_z80.py` (the general 8080→Z80 mnemonic
+  translator, see above). See `scripts/README.md`.
 - `cpm/resources/` — reference links/documents on the Z80, CP/M, etc. (not
   code, just reading material), alongside the third-party program
   directories itemized above.

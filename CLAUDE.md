@@ -10,12 +10,16 @@ assembler, including macros/`include`, plus a disassembler) is far along
 too — see `cpm/docs/ROADMAP.md` for exact status, what's next (a full CP/M
 BDOS/BIOS), and known gaps (I/O ports, interrupts). This directory is a
 git repository (initialized after the first working ZEXALL/ZEXDOC pass).
-The CP/M side (emulator, assembler, disassembler, GTK launcher, sample
-disk, and third-party reference software/docs) all live under `cpm/`,
-kept separate from the unrelated `gameboy/` subproject (a standalone
-Game Boy emulator sharing this repo, see `gameboy/docs/GAMEBOY_ROADMAP.md`) —
-only `bin/` (the shared build output for both) and `scripts/`
-(general-purpose tooling used by both) stay at the true repo root.
+The emulator, assembler, disassembler, GTK launcher, sample disk, and
+third-party reference software/docs all live under `cpm/`; `bin/` (the
+build output) and `scripts/` (general-purpose tooling) stay at the true
+repo root. This repo previously also held a standalone Game Boy
+emulator as a separate, code-sharing-free subproject under `gameboy/`;
+it was split out into its own repository (via `git subtree split`,
+preserving its real commit history) once real end-to-end functionality
+made clear the two would never actually share code - see that project's
+own `docs/GAMEBOY_ROADMAP.md` (in its new repo) for the full history if
+relevant.
 
 Three reference docs live in `cpm/docs/` alongside the roadmap:
 `Z80_REFERENCE.md` (the Z80 instruction set, including undocumented
@@ -31,7 +35,7 @@ the ISA, syntax, or OS spec itself.
 
 The emulator lives in `cpm/emu/src/`, the assembler in `cpm/asm/src/`, the
 disassembler in `cpm/disasm/src/`; the Makefile builds all three into `bin/`
-(at the repo root, shared with the `gameboy/` subproject's own binary).
+at the repo root.
 
 ```
 make               # builds bin/z80, bin/z80asm, and bin/z80dasm
@@ -63,11 +67,10 @@ coverage for those.
 
 `bin/z80` takes the `.com` file to run as argv[1] (paths are resolved
 relative to the working directory you invoke the binary from, typically
-`cpm/` — `bin/` itself stays at the true repo root, shared with the
-`gameboy/` subproject, so run these as `../bin/z80` from inside `cpm/`,
-or `bin/z80` from the repo root with a `cpm/`-prefixed argument) —
-there's no default program; running it with no arguments (or
-`-h`/`--help`) just prints usage instead:
+`cpm/` — `bin/` itself stays at the true repo root, so run these as
+`../bin/z80` from inside `cpm/`, or `bin/z80` from the repo root with a
+`cpm/`-prefixed argument) — there's no default program; running it with
+no arguments (or `-h`/`--help`) just prints usage instead:
 
 ```
 ../bin/z80 emu/zexall/ZEXALL-main/zexdoc.com

@@ -8,9 +8,8 @@ here fits CP/M's real 8.3 limit (8-character base name, 3-character
 extension) specifically so `DIR` at the CCP shell (see below) can list
 and run every single one of them — no name here is the same as its
 `cpm/asm/examples/`/`resources/` source's own filename for that reason. Run
-any of them from inside **`cpm/`** (`bin/` itself stays at the repo root,
-shared with the `gameboy/` subproject - see `CLAUDE.md`'s top-level
-layout):
+any of them from inside **`cpm/`** (`bin/` itself stays at the repo
+root - see `CLAUDE.md`'s top-level layout):
 
 ```
 ../bin/z80 cpm_disk/hello.com

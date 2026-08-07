@@ -12,10 +12,10 @@
 
 set -uo pipefail
 
-# ROOT is the true repo root (bin/ lives there, shared with gameboy/'s own
-# build) - two levels up from this script's own cpm/tests/ location, not
-# one, since this script itself lives a level deeper than the top-level
-# layout might suggest. CWD is then set to cpm/ (not ROOT) so every
+# ROOT is the true repo root (bin/ lives there) - two levels up from
+# this script's own cpm/tests/ location, not one, since this script
+# itself lives a level deeper than the top-level layout might suggest.
+# CWD is then set to cpm/ (not ROOT) so every
 # relative path below (asm/examples/*.asm, emu/zexall/...) keeps working
 # unchanged relative to where the actual CP/M subproject files live.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

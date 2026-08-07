@@ -1016,13 +1016,17 @@ Aspirational, not yet scoped:
   launches, same allocator, same symptom - see `cpm/gtk/README.md` for the
   citation). Not fixable from application code; just retry the launch
   when it happens, and revisit if/when Apple ships a fix.
-- **A Game Boy emulator - now underway** (`gameboy/`) - see
-  `gameboy/docs/GAMEBOY_ROADMAP.md` for the full phase plan, CPU-difference
-  rationale, and directory layout (`gameboy/src/`, `gameboy/roms/`,
-  `gameboy/test_roms/`). Superseded the earlier "extract a shared
-  `core/`" idea sketched here in favor of a standalone
-  `gameboy/src/` core - see that document's own "Architecture
-  decision" section for why.
+- **A Game Boy emulator - built, and since split into its own repo.**
+  Developed for a while as a subproject here under `gameboy/` (a
+  standalone SM83 core - superseded the earlier "extract a shared
+  `core/`" idea sketched here, since the Z80 and SM83 diverge too much
+  at the dispatch/ALU level for real sharing to have been worth it), it
+  grew a real front end, real-game validation, and save states before
+  being split out into its own GitHub repository via `git subtree
+  split` (preserving its real commit history) once it was clear the two
+  projects would never actually share code. See that project's own
+  `docs/GAMEBOY_ROADMAP.md` (in its new repo) for the full phase plan
+  and status if relevant here.
 - A custom ROM/OS on top of it — open design questions include a stack VM
   and whether Logo-style prefix notation could combine with a stack machine
   model.
