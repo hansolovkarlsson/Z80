@@ -20,7 +20,15 @@ it was split out into its own repository (via `git subtree split`,
 preserving its real commit history) once real end-to-end functionality
 made clear the two would never actually share code - see that project's
 own `docs/GAMEBOY_ROADMAP.md` (in its new repo) for the full history if
-relevant.
+relevant. `abc80/` is a second, newer machine target - the Luxor ABC80,
+a real Z80-based Swedish home computer from 1978 - and unlike `gameboy/`
+it *does* share code: its `abc80/emu/src/main.c` links directly against
+`cpm/emu/src/z80.o`/`alu.o`, the same proven core `bin/z80` uses, so it
+stays in this repo rather than being a future split candidate. See
+`abc80/docs/ABC80_ROADMAP.md` for its status, hardware-documentation
+sources, and known gaps - as of Milestone 1, it boots the real BASIC ROM
+images (committed under `abc80/resources/rom/`) to a genuine hardware
+RAM-detection loop, with no video/sound/keyboard/PIO emulated yet.
 
 Three reference docs live in `cpm/docs/` alongside the roadmap:
 `Z80_REFERENCE.md` (the Z80 instruction set, including undocumented
@@ -133,10 +141,18 @@ about how the dispatch code is structured, not the ISA.)
 
 **Table-driven dispatch.** `z80_init_tables()` (in `z80.c`) populates
 `main_opcode_table[256]` (a `Z80OpcodeHandler` array) mapping each opcode byte
-to a handler function. `z80_step()` intercepts CP/M BDOS calls, fetches one
-opcode byte, bumps the R register, and calls `main_opcode_table[opcode](cpu, ram)`.
-Handlers return the T-state cycle count for the instruction (or a negative
-value on an unimplemented/fatal opcode, which halts `main.c`'s run loop).
+to a handler function. `z80_execute()` (`z80.c`) is the actual machine-agnostic
+core: it samples interrupts, fetches one opcode byte, bumps the R register,
+and calls `main_opcode_table[opcode](cpu, ram)`. `z80.c`/`alu.c` have no
+CP/M awareness at all - `z80_step()` (`cpm.c`) is CP/M's own thin wrapper
+around `z80_execute()`, intercepting BDOS/BIOS calls (`PC == 0x0005`/
+`PC == 0x0000`, see below) before handing off. This split exists because
+those two addresses sit inside real firmware code for `abc80/`'s ABC80
+machine target (see that project's own `docs/ABC80_ROADMAP.md`), which calls
+`z80_execute()` directly instead - `bin/z80`'s own `main.c` is the only
+caller of `z80_step()`. Handlers return the T-state cycle count for the
+instruction (or a negative value on an unimplemented/fatal opcode, which
+halts the caller's run loop).
 
 Several opcode ranges are handled generically instead of one handler per
 opcode, decoding register indices out of the opcode byte itself:

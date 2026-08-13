@@ -93,7 +93,13 @@ void z80_io_out(Z80 *cpu, uint8_t port, uint8_t value);
 typedef int (*Z80OpcodeHandler)(Z80 *cpu, uint8_t *ram);
 
 void z80_init_tables(void);
-int z80_step(Z80 *cpu, uint8_t *ram);
+
+// The machine-agnostic instruction-execution core (interrupt sampling,
+// opcode fetch/dispatch) - no CP/M awareness. CP/M's own z80_step()
+// (cpm.h/cpm.c) wraps this with BDOS/BIOS call interception; a non-CP/M
+// machine target calls z80_execute() directly instead - see its own
+// comment in z80.c for why that split exists.
+int z80_execute(Z80 *cpu, uint8_t *ram);
 
 // Interrupt request API - the host side's equivalent of asserting a
 // real INT/NMI line. No real device calls these yet (see z80.h's own

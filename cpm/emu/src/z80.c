@@ -2,7 +2,8 @@
 // z80.c
 #include <stdio.h>
 #include <stdbool.h>
-#include "common.h"
+#include "z80.h"
+#include "alu.h"
 
 // Base opcode dispatch table
 Z80OpcodeHandler main_opcode_table[256];
@@ -2333,27 +2334,15 @@ void z80_init_tables(void) {
 
 // z80.c
 
-int z80_step(Z80 *cpu, uint8_t *ram) {
-    // 1. Intercept CP/M BDOS/BIOS calls before fetching
-    check_cpm_bdos(cpu, ram);
-    check_cpm_bios(cpu, ram);
-
-    // BDOS function 0 (P_TERMCPM) and the BIOS WBOOT vector both set PC to
-    // 0x0000 directly rather than returning to the caller - main.c's run
-    // loop checks for PC==0x0000 at the top of its *next* iteration, but
-    // without this check here, this function would immediately fetch and
-    // execute the JP-to-WBOOT main.c preloads at address 0, undoing the
-    // termination before that check ever runs.
-    //
-    // In CCP mode this guard would instead be a permanent hang: nothing
-    // would ever advance PC off of 0, since main.c no longer breaks its
-    // loop on PC==0 there either (see its own comment) - a warm boot
-    // needs the JP-to-WBOOT at address 0 to actually execute so
-    // check_cpm_bios() can catch it at the real WBOOT vector address and
-    // redirect back into the CCP.
-    if (cpu->pc == 0x0000 && !cpm_is_ccp_mode()) return 0;
-
-    // 2. Interrupt acceptance - sampled at instruction boundaries, i.e.
+// The machine-agnostic instruction-execution core: interrupt sampling,
+// opcode fetch/dispatch, and R-register increment - nothing CP/M-specific.
+// z80_step() (cpm.c) is CP/M's own thin wrapper around this, adding BDOS/
+// BIOS call interception before handing off here; a non-CP/M machine target
+// (e.g. abc80/) calls this directly instead, since its own ROM code
+// legitimately executes at addresses (0x0000, 0x0005) that check_cpm_bdos()/
+// check_cpm_bios() would otherwise misinterpret as BDOS/BIOS calls.
+int z80_execute(Z80 *cpu, uint8_t *ram) {
+    // 1. Interrupt acceptance - sampled at instruction boundaries, i.e.
     // exactly here, before the next opcode is fetched (Zilog Z80 CPU
     // User Manual: "The CPU samples the interrupt signal (INT) with the
     // rising edge of the final clock at the end of any instruction").
@@ -2370,13 +2359,13 @@ int z80_step(Z80 *cpu, uint8_t *ram) {
         return z80_service_int(cpu, ram);
     }
 
-    // 3. Fetch opcode byte
+    // 2. Fetch opcode byte
     uint8_t opcode = fetch_byte(cpu, ram);
 
-    // 4. Increment memory refresh register R (Bits 0-6 cycle)
+    // 3. Increment memory refresh register R (Bits 0-6 cycle)
     cpu->r = (cpu->r & 0x80) | ((cpu->r + 1) & 0x7F);
 
-    // 5. Decode & Execute via table lookup
+    // 4. Decode & Execute via table lookup
     return main_opcode_table[opcode](cpu, ram);
 }
 

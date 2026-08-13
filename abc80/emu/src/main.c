@@ -1,0 +1,181 @@
+// abc80/emu/src/main.c - Milestone 1 entry point for the Luxor ABC80
+// machine target: loads the real BASIC ROM images and runs them on the
+// shared Z80 core (cpm/emu/src/z80.c/alu.c) via z80_execute() directly -
+// never z80_step(), since that's CP/M's own wrapper and intercepts
+// addresses (0x0000, 0x0005) that legitimately hold real ABC80 ROM code.
+// See abc80/docs/ABC80_ROADMAP.md for the full memory map, sources, and
+// what's still missing (video, sound, PIO, keyboard, ABCbus).
+//
+// No video/keyboard is emulated yet, so there's nothing for the ROM's own
+// code to naturally return control to a user for - this just proves the
+// shared core correctly executes real, unmodified ABC80 firmware: it runs
+// until either an unimplemented opcode halts execution (a real bug) or a
+// safety instruction cap is hit (expected - real ABC80 ROM code busy-loops
+// waiting for video sync / keyboard scan / a timer interrupt, none of
+// which exist here yet), printing an early instruction trace plus a final
+// summary of the address range actually executed.
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+
+#include "../../../cpm/emu/src/z80.h"
+
+// Real ABC80 ROM chip layout (see abc80/docs/ABC80_ROADMAP.md's memory map,
+// grounded against MAME's src/mame/luxor/abc80.cpp): four 4Kx8 chips
+// filling 0x0000-0x3FFF, in address order.
+typedef struct {
+    const char *filename;
+    uint16_t address;
+} RomImage;
+
+static const RomImage ROM_IMAGES[] = {
+    {"3506_3.a5.bin", 0x0000},
+    {"3507_3.a3.bin", 0x1000},
+    {"3508_3.a4.bin", 0x2000},
+    {"3509_3.a2.bin", 0x3000},
+};
+#define ROM_CHIP_SIZE 4096
+#define NUM_ROM_IMAGES (sizeof(ROM_IMAGES) / sizeof(ROM_IMAGES[0]))
+
+// Default instruction cap for a milestone-1 debug run: no video/keyboard
+// exists yet to naturally end execution, and real ABC80 ROM boot code is
+// expected to settle into a busy-loop (waiting on hardware this emulator
+// doesn't implement yet) rather than halt on its own. This is generous
+// enough to run well past ROM init into whatever steady-state loop it
+// reaches, without burning unbounded CPU on a debug run.
+#define DEFAULT_MAX_INSTRUCTIONS 5000000
+
+// Number of leading instructions to print a full PC/opcode trace for -
+// enough to see the reset vector, initial jumps, and early ROM init flow
+// by eye, without flooding the terminal for the full multi-million-step run.
+#define TRACE_INSTRUCTIONS 100
+
+static bool load_rom(const char *rom_dir, const RomImage *rom, uint8_t *ram) {
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/%s", rom_dir, rom->filename);
+
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "Failed to open ROM image '%s': ", path);
+        perror(NULL);
+        return false;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (size != ROM_CHIP_SIZE) {
+        fprintf(stderr, "ROM image '%s' is %ld bytes, expected exactly %d\n",
+                path, size, ROM_CHIP_SIZE);
+        fclose(f);
+        return false;
+    }
+
+    size_t read = fread(&ram[rom->address], 1, ROM_CHIP_SIZE, f);
+    fclose(f);
+    if (read != ROM_CHIP_SIZE) {
+        fprintf(stderr, "Short read loading '%s'\n", path);
+        return false;
+    }
+
+    printf("Loaded '%s' (%d bytes) at 0x%04X\n", path, ROM_CHIP_SIZE, rom->address);
+    return true;
+}
+
+static void print_usage(const char *prog) {
+    printf("Usage:\n");
+    printf("  %s [rom_dir] [max_instructions]\n", prog);
+    printf("\n");
+    printf("  rom_dir            Directory containing the four ROM images\n");
+    printf("                     (default: resources/rom - run from inside abc80/)\n");
+    printf("  max_instructions   Safety cap for this debug run\n");
+    printf("                     (default: %d)\n", DEFAULT_MAX_INSTRUCTIONS);
+}
+
+int main(int argc, char *argv[]) {
+    if (argc > 1 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
+        print_usage(argv[0]);
+        return EXIT_SUCCESS;
+    }
+
+    const char *rom_dir = (argc > 1) ? argv[1] : "resources/rom";
+    long max_instructions = (argc > 2) ? atol(argv[2]) : DEFAULT_MAX_INSTRUCTIONS;
+
+    static uint8_t ram[RAM_SIZE];
+
+    for (size_t i = 0; i < NUM_ROM_IMAGES; i++) {
+        if (!load_rom(rom_dir, &ROM_IMAGES[i], ram)) {
+            return EXIT_FAILURE;
+        }
+    }
+
+    Z80 cpu = {0};
+    // cpu.memory and the `ram` argument passed to z80_execute() must be the
+    // *same* buffer: opcode fetch reads the `ram` parameter directly, while
+    // (HL)/(nn)/etc. operand access goes through z80_read_byte(), which
+    // indexes cpu.memory instead - two separate pointers that only behave
+    // consistently if they alias (see cpm/emu/src/main.c for the same
+    // requirement on the CP/M side).
+    cpu.memory = ram;
+    z80_init_tables();
+
+    // Real Z80 SP is undefined out of reset - unlike the CP/M target (which
+    // must pre-seed SP itself, since a .com file has no reset-time init
+    // code of its own), the real ABC80 ROM's own reset code sets SP before
+    // it's ever needed, so it's deliberately left at its zero-initialized
+    // value here rather than guessed at.
+    cpu.pc = 0x0000;
+
+    printf("\nStarting ABC80 ROM execution at PC=0x0000 (cap: %ld instructions)...\n\n",
+           max_instructions);
+
+    // Coarse "did execution wander somewhere sane" check: every address
+    // z80_execute() ever fetched an opcode from. A 64KB bool array is cheap
+    // and simple for a debug tool - no need for anything smarter here.
+    static bool visited[RAM_SIZE];
+    uint16_t min_pc = 0xFFFF, max_pc = 0x0000;
+    long distinct_addresses = 0;
+
+    long instructions = 0;
+    uint64_t total_cycles = 0;
+    bool halted = false;
+
+    while (instructions < max_instructions) {
+        uint16_t pc_before = cpu.pc;
+
+        if (instructions < TRACE_INSTRUCTIONS) {
+            printf("  [%6ld] PC=0x%04X  opcode=0x%02X\n", instructions, pc_before, ram[pc_before]);
+        }
+
+        int cycles = z80_execute(&cpu, ram);
+        instructions++;
+
+        if (cycles < 0) {
+            fprintf(stderr, "Execution halted: unimplemented opcode at PC=0x%04X\n", pc_before);
+            halted = true;
+            break;
+        }
+        total_cycles += (uint64_t)cycles;
+
+        if (!visited[pc_before]) {
+            visited[pc_before] = true;
+            distinct_addresses++;
+            if (pc_before < min_pc) min_pc = pc_before;
+            if (pc_before > max_pc) max_pc = pc_before;
+        }
+    }
+
+    printf("\n--- Run summary ---\n");
+    printf("Instructions executed: %ld%s\n", instructions,
+           halted ? " (halted on unimplemented opcode)" : " (reached instruction cap)");
+    printf("Total T-states:        %llu\n", (unsigned long long)total_cycles);
+    printf("Final PC:              0x%04X\n", cpu.pc);
+    printf("Distinct PCs visited:  %ld (range 0x%04X-0x%04X)\n",
+           distinct_addresses, min_pc, max_pc);
+
+    return halted ? EXIT_FAILURE : EXIT_SUCCESS;
+}

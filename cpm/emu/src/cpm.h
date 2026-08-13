@@ -8,6 +8,10 @@ void cpm_fileio_init(void);
 void cpm_bios_init(uint8_t *ram);
 void check_cpm_bdos(Z80 *cpu, uint8_t *ram);
 void check_cpm_bios(Z80 *cpu, uint8_t *ram);
+// CP/M's own driver of the generic z80_execute() core (z80.h/z80.c) -
+// intercepts BDOS/BIOS calls, then hands off. See its own comment in
+// cpm.c for why this lives here rather than in z80.c.
+int z80_step(Z80 *cpu, uint8_t *ram);
 // Address a CCP is loaded at when booting one (see cpm_set_ccp_mode) -
 // main.c needs this to know where to load the CCP image and set the
 // initial PC.

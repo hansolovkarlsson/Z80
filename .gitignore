@@ -3,6 +3,7 @@ cpm/emu/src/*.o
 cpm/asm/src/*.o
 cpm/disasm/src/*.o
 cpm/gtk/src/*.o
+abc80/emu/src/*.o
 .claude/
 cpm_disk/
 !/cpm/cpm_disk/

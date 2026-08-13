@@ -1125,3 +1125,33 @@ void check_cpm_bdos(Z80 *cpu, uint8_t *ram) {
         cpu->pc = (high << 8) | low;
     }
 }
+
+// CP/M's own driver of the generic z80_execute() core (z80.c): intercepts
+// BDOS/BIOS calls before each instruction, then hands off. Split out of
+// what used to be a single combined z80_step() so a non-CP/M machine
+// target (e.g. abc80/) can call z80_execute() directly instead - its own
+// ROM code legitimately executes at addresses (0x0000, 0x0005) that
+// check_cpm_bdos()/check_cpm_bios() below would otherwise misinterpret as
+// BDOS/BIOS calls.
+int z80_step(Z80 *cpu, uint8_t *ram) {
+    // 1. Intercept CP/M BDOS/BIOS calls before fetching
+    check_cpm_bdos(cpu, ram);
+    check_cpm_bios(cpu, ram);
+
+    // BDOS function 0 (P_TERMCPM) and the BIOS WBOOT vector both set PC to
+    // 0x0000 directly rather than returning to the caller - main.c's run
+    // loop checks for PC==0x0000 at the top of its *next* iteration, but
+    // without this check here, this function would immediately fetch and
+    // execute the JP-to-WBOOT main.c preloads at address 0, undoing the
+    // termination before that check ever runs.
+    //
+    // In CCP mode this guard would instead be a permanent hang: nothing
+    // would ever advance PC off of 0, since main.c no longer breaks its
+    // loop on PC==0 there either (see its own comment) - a warm boot
+    // needs the JP-to-WBOOT at address 0 to actually execute so
+    // check_cpm_bios() can catch it at the real WBOOT vector address and
+    // redirect back into the CCP.
+    if (cpu->pc == 0x0000 && !cpm_is_ccp_mode()) return 0;
+
+    return z80_execute(cpu, ram);
+}
