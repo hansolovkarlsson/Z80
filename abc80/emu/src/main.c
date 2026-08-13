@@ -4,7 +4,7 @@
 // since that's CP/M's own wrapper and intercepts addresses (0x0000,
 // 0x0005) that legitimately hold real ABC80 ROM code. See
 // abc80/docs/ABC80_ROADMAP.md for the full memory map, sources, and what's
-// still missing (sound, ABCbus).
+// still missing (ABCbus expansion).
 //
 // Keyboard input (Milestone 3, keyboard.c) reads stdin non-blockingly and
 // feeds PIO Port A, the register the real ROM's own steady-state polling
@@ -12,11 +12,16 @@
 // keyboard.c's top comment for the exact instructions). Cassette storage
 // (Milestone 4, cassette.c) is a "quickload"/"quicksave" bypass of BASIC's
 // own program-storage pointers rather than real analog tape emulation -
-// see cassette.c's own top comment for why. Renders whatever the ROM
-// wrote to video RAM (0x7C00-0x7FFF, directly addressable within the flat
-// `ram` array - no separate buffer needed) via render.c's terminal
-// backend once the run ends, either from an unimplemented-opcode halt (a
-// real bug) or the safety instruction cap (expected if nothing was typed).
+// see cassette.c's own top comment for why. Sound (Milestone 5, sound.c)
+// logs every real write to the SN76477 control port (0x06) and, if
+// requested, renders the resulting tone activity to a WAV file - there's
+// no live audio output in this environment, so a WAV file is the
+// practical, verifiable deliverable (see sound.c's own top comment).
+// Renders whatever the ROM wrote to video RAM (0x7C00-0x7FFF, directly
+// addressable within the flat `ram` array - no separate buffer needed)
+// via render.c's terminal backend once the run ends, either from an
+// unimplemented-opcode halt (a real bug) or the safety instruction cap
+// (expected if nothing was typed).
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +36,13 @@
 #include "video_timing.h"
 #include "keyboard.h"
 #include "cassette.h"
+#include "sound.h"
+
+// Real ABC80 Z80 clock (11.9808 MHz crystal / 2 / 2 - see MAME's
+// abc80_state::abc80_common(): `Z80(config, m_maincpu,
+// XTAL(11'980'800)/2/2)`), needed to convert T-states into real seconds
+// for sound.c's WAV rendering.
+#define ABC80_CLOCK_HZ 2995200.0
 
 // Every I/O port address that aliases PIO Port A's data register under
 // ABC80's real hardware address decoding (MAME's `map.global_mask(0x17)` -
@@ -166,6 +178,8 @@ static void print_usage(const char *prog) {
     printf("                     storage area once boot init has run (see cassette.h)\n");
     printf("  --quicksave FILE   Dump BASIC's current program storage (BOFA..EOFA)\n");
     printf("                     to FILE at the end of the run\n");
+    printf("  --wav FILE         Render the SN76477 sound register's activity (port\n");
+    printf("                     0x06) to a WAV file at the end of the run (see sound.h)\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -173,6 +187,7 @@ int main(int argc, char *argv[]) {
     long max_instructions = -1;
     const char *quickload_path = NULL;
     const char *quicksave_path = NULL;
+    const char *wav_path = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
@@ -182,6 +197,8 @@ int main(int argc, char *argv[]) {
             quickload_path = argv[++i];
         } else if (strcmp(argv[i], "--quicksave") == 0 && i + 1 < argc) {
             quicksave_path = argv[++i];
+        } else if (strcmp(argv[i], "--wav") == 0 && i + 1 < argc) {
+            wav_path = argv[++i];
         } else if (!rom_dir) {
             rom_dir = argv[i];
         } else if (max_instructions < 0) {
@@ -243,6 +260,9 @@ int main(int argc, char *argv[]) {
     bool halted = false;
     bool quickload_done = (quickload_path == NULL);
 
+    Abc80SoundLog sound_log;
+    abc80_sound_log_init(&sound_log);
+
     while (instructions < max_instructions) {
         uint16_t pc_before = cpu.pc;
 
@@ -278,10 +298,49 @@ int main(int argc, char *argv[]) {
         // after a single poll.
         bool about_to_consume_key = pc_before == 0x0316;
 
+        // OUT (n),A (0xD3) targeting the SN76477 sound register alias
+        // (see sound.c's own top comment for the port-0x06 bit layout;
+        // masked by the same 0x17 hardware address decode as the PIO -
+        // video_timing.c's port-map comment). A doesn't change across
+        // OUT, so it's still readable after z80_execute() runs.
+        // OUT targeting the SN76477 sound register alias (port 0x06,
+        // masked - see sound.c's own top comment). Two real opcode forms
+        // both matter here, confirmed by tracing actual BASIC-compiled
+        // code, not assumed: `OUT (n),A` (0xD3, immediate port) for
+        // hand-written assembly, but BASIC's own compiled `OUT port,value`
+        // statement uses the ED-prefixed register-indirect form instead
+        // (port from BC, value from whichever of B/C/D/E/H/L/A the
+        // instruction names - BASIC's own generated code was traced
+        // using `OUT (C),L`) since a general two-expression BASIC
+        // statement can't rely on the port being a compile-time constant
+        // the way `OUT (n),A` requires.
+        bool about_to_write_sound = false;
+        uint8_t sound_out_value = 0;
+        if (ram[pc_before] == 0xD3 && (ram[(uint16_t)(pc_before + 1)] & 0x17) == 0x06) {
+            about_to_write_sound = true;
+            sound_out_value = cpu.a;
+        } else if (ram[pc_before] == 0xED && (ram[(uint16_t)(pc_before + 1)] & 0xC7) == 0x41 &&
+                   (cpu.c & 0x17) == 0x06) {
+            about_to_write_sound = true;
+            switch ((ram[(uint16_t)(pc_before + 1)] >> 3) & 0x07) {
+                case 0: sound_out_value = cpu.b; break;
+                case 1: sound_out_value = cpu.c; break;
+                case 2: sound_out_value = cpu.d; break;
+                case 3: sound_out_value = cpu.e; break;
+                case 4: sound_out_value = cpu.h; break;
+                case 5: sound_out_value = cpu.l; break;
+                case 6: sound_out_value = 0; break; // undocumented OUT (C),0
+                case 7: sound_out_value = cpu.a; break;
+            }
+        }
+
         int cycles = z80_execute(&cpu, ram);
         instructions++;
         if (about_to_consume_key) {
             abc80_keyboard_consumed();
+        }
+        if (about_to_write_sound) {
+            abc80_sound_write(&sound_log, total_cycles, sound_out_value);
         }
 
         if (cycles < 0) {
@@ -301,6 +360,10 @@ int main(int argc, char *argv[]) {
 
     if (quicksave_path) {
         abc80_cassette_quicksave(ram, quicksave_path);
+    }
+
+    if (wav_path) {
+        abc80_sound_render_wav(&sound_log, total_cycles, ABC80_CLOCK_HZ, wav_path);
     }
 
     printf("\n--- Run summary ---\n");

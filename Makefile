@@ -37,7 +37,7 @@ ABC80_SRC_DIR := abc80/emu/src
 # for that final render - not chargen.o, since render.c's terminal backend
 # prints whole Unicode glyphs per cell rather than reconstructing pixels
 # from the chargen ROM (see render.c's own top comment).
-ABC80_OBJS := $(ABC80_SRC_DIR)/main.o $(ABC80_SRC_DIR)/render.o $(ABC80_SRC_DIR)/charset.o $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/cassette.o $(EMU_SRC_DIR)/z80.o $(EMU_SRC_DIR)/alu.o
+ABC80_OBJS := $(ABC80_SRC_DIR)/main.o $(ABC80_SRC_DIR)/render.o $(ABC80_SRC_DIR)/charset.o $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/cassette.o $(ABC80_SRC_DIR)/sound.o $(EMU_SRC_DIR)/z80.o $(EMU_SRC_DIR)/alu.o
 ABC80_TARGET := $(BIN_DIR)/abc80
 
 # bin/abc80-chargen-dump: the chargen.c decode-verification tool (see its
@@ -57,6 +57,12 @@ ABC80_VIDEO_TIMING_DUMP_TARGET := $(BIN_DIR)/abc80-video-timing-dump
 # alongside render.o/charset.o, not the CPU core.
 ABC80_RENDER_DEMO_OBJS := $(ABC80_SRC_DIR)/render_demo.o $(ABC80_SRC_DIR)/render.o $(ABC80_SRC_DIR)/charset.o $(ABC80_SRC_DIR)/video_timing.o
 ABC80_RENDER_DEMO_TARGET := $(BIN_DIR)/abc80-render-demo
+
+# bin/abc80-sound-demo: sound.c's verification tool (see its own top
+# comment) - feeds a known synthetic register-event sequence, no CPU
+# core needed. Links -lm for sound.c's fmod() call.
+ABC80_SOUND_DEMO_OBJS := $(ABC80_SRC_DIR)/sound_demo.o $(ABC80_SRC_DIR)/sound.o
+ABC80_SOUND_DEMO_TARGET := $(BIN_DIR)/abc80-sound-demo
 
 # z80.c's own interrupt-acceptance unit test (cpm/tests/test_interrupts.c) -
 # a direct C-level test, not a .asm program run through run_tests.sh like
@@ -78,7 +84,7 @@ GTK_PKGS := gtk4 vte-2.91-gtk4
 GTK_CFLAGS := $(shell pkg-config --cflags $(GTK_PKGS) 2>/dev/null)
 GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 
-.PHONY: all emulator assembler disassembler gtk abc80 abc80-chargen-dump abc80-video-timing-dump abc80-render-demo run test clean
+.PHONY: all emulator assembler disassembler gtk abc80 abc80-chargen-dump abc80-video-timing-dump abc80-render-demo abc80-sound-demo run test clean
 
 all: emulator assembler disassembler
 
@@ -98,6 +104,8 @@ abc80-video-timing-dump: $(ABC80_VIDEO_TIMING_DUMP_TARGET)
 
 abc80-render-demo: $(ABC80_RENDER_DEMO_TARGET)
 
+abc80-sound-demo: $(ABC80_SOUND_DEMO_TARGET)
+
 $(EMU_TARGET): $(EMU_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(EMU_OBJS)
 
@@ -108,7 +116,7 @@ $(DASM_TARGET): $(DASM_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(DASM_OBJS)
 
 $(ABC80_TARGET): $(ABC80_OBJS) | $(BIN_DIR)
-	$(CC) $(CFLAGS) -o $@ $(ABC80_OBJS)
+	$(CC) $(CFLAGS) -o $@ $(ABC80_OBJS) -lm
 
 $(ABC80_CHARGEN_DUMP_TARGET): $(ABC80_CHARGEN_DUMP_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(ABC80_CHARGEN_DUMP_OBJS)
@@ -118,6 +126,9 @@ $(ABC80_VIDEO_TIMING_DUMP_TARGET): $(ABC80_VIDEO_TIMING_DUMP_OBJS) | $(BIN_DIR)
 
 $(ABC80_RENDER_DEMO_TARGET): $(ABC80_RENDER_DEMO_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(ABC80_RENDER_DEMO_OBJS)
+
+$(ABC80_SOUND_DEMO_TARGET): $(ABC80_SOUND_DEMO_OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $(ABC80_SOUND_DEMO_OBJS) -lm
 
 $(EMU_TEST_INTERRUPTS_TARGET): cpm/tests/test_interrupts.c $(EMU_SRC_DIR)/z80.c $(EMU_SRC_DIR)/alu.c $(EMU_SRC_DIR)/cpm.c | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ cpm/tests/test_interrupts.c $(EMU_SRC_DIR)/z80.c $(EMU_SRC_DIR)/alu.c $(EMU_SRC_DIR)/cpm.c
@@ -141,4 +152,4 @@ test: emulator assembler $(EMU_TEST_INTERRUPTS_TARGET)
 	./cpm/tests/run_tests.sh
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(ABC80_OBJS) $(ABC80_CHARGEN_DUMP_OBJS) $(ABC80_VIDEO_TIMING_DUMP_OBJS) $(ABC80_RENDER_DEMO_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(ABC80_TARGET) $(ABC80_CHARGEN_DUMP_TARGET) $(ABC80_VIDEO_TIMING_DUMP_TARGET) $(ABC80_RENDER_DEMO_TARGET) $(EMU_TEST_INTERRUPTS_TARGET)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(ABC80_OBJS) $(ABC80_CHARGEN_DUMP_OBJS) $(ABC80_VIDEO_TIMING_DUMP_OBJS) $(ABC80_RENDER_DEMO_OBJS) $(ABC80_SOUND_DEMO_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(ABC80_TARGET) $(ABC80_CHARGEN_DUMP_TARGET) $(ABC80_VIDEO_TIMING_DUMP_TARGET) $(ABC80_RENDER_DEMO_TARGET) $(ABC80_SOUND_DEMO_TARGET) $(EMU_TEST_INTERRUPTS_TARGET)

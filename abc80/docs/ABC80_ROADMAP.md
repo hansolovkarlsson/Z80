@@ -331,14 +331,80 @@ MAME does too).
       in one session, execution reaching the same deep ROM addresses
       (`0x376A`) either way.
 
-## Milestone 5: SN76477 sound
+## Milestone 5: SN76477 sound — done (scoped)
 
 **Goal**: port `0x06` produces audible output matching the real complex
 sound generator chip. Lower priority than 2-4 — cosmetic, not needed to
 reach a usable interactive machine.
 
-- [ ] Model the SN76477's relevant control bits (tone/noise/envelope) well
-      enough for recognizable BASIC `SOUND`-statement output.
+**No live audio in this environment**: unlike video (renderable as
+terminal text) and keyboard (drivable via piped stdin), there's no way to
+play or hear real-time audio here. `bin/abc80`'s `--wav FILE` flag renders
+the SN76477 register's activity to a WAV file instead — the practical,
+independently-verifiable deliverable, checked via zero-crossing frequency
+analysis rather than by ear.
+
+**Scoped deliberately, not attempted in full**: real SN76477 emulation
+(MAME's own `src/devices/sound/sn76477.cpp`) is a genuine per-sample
+analog simulation of four interacting RC-timed subsystems (VCO, SLF noise-
+warble oscillator, noise generator, envelope/one-shot generator) — a large
+undertaking for the roadmap's own lowest-priority, purely cosmetic
+milestone. This implementation (`abc80/emu/src/sound.c`/`.h`) synthesizes
+real audio for exactly one case: a steady tone at a fixed pitch (mixer
+selecting VCO alone, envelope in "Mixer Only" continuous mode, VCO pitch
+not SLF-swept) — the single most directly useful case for a BASIC-driven
+beep, and the case this project's own real-ROM test below happened to
+exercise. Every other register combination (noise, SLF, one-shot attack/
+decay envelopes, alternating polarity, SLF-swept warble) produces silence
+in this model rather than incorrect audio - documented as a known,
+deliberate gap, not silently approximated.
+
+- [x] **The register bit layout** — ported from MAME's `abc80_state::
+      csg_w()`, and the mixer/envelope mode meanings from `sn76477.cpp`'s
+      own `mixer_a_w`/`mixer_b_w`/`mixer_c_w`/`envelope_1_w`/
+      `envelope_2_w` bit-packing and `log_mixer_mode()`/
+      `log_envelope_mode()`'s mode-name tables — not guessed from the pin
+      names alone. See `sound.c`'s own top comment for the full bit-by-bit
+      derivation.
+- [x] **The VCO frequency** — grounded against ABC80's real board
+      component values (`R=100kΩ`, `C=10nF`, from MAME's own
+      `machine_config`: `set_vco_params(0, CAP_N(10), RES_K(100))`), not
+      an arbitrary/pleasant-sounding pitch. Derived by hand from MAME's own
+      general analog-simulation formula
+      (`compute_vco_cap_charging_discharging_rate()`), specialized for
+      this board's actual fixed 0V control-voltage case (where the duty
+      cycle is exactly 50%, so the general per-sample simulation reduces
+      to a clean closed form): **f = 0.64 / (R × C) = 640 Hz**.
+- [x] **Verified twice, isolated module first** — the same "prove it
+      against known input before trusting real CPU output" discipline this
+      project has used since Milestone 2's `render_demo.c`:
+      1. `bin/abc80-sound-demo` (new tool) feeds a known synthetic
+         register-event sequence (silence → tone → silence) and renders a
+         WAV. Zero-crossing frequency analysis on the tone segment measured
+         **639.39 Hz against the 640.00 Hz prediction** (0.1% error, well
+         within sampling-quantization tolerance) — and the silent segments
+         measured exactly 0 RMS, confirming the gating logic too.
+      2. Wired into `main.c`'s real execution loop, detecting writes to
+         port `0x06` (masked the same way as the PIO — `video_timing.c`'s
+         port-map comment). Found and fixed a real gap while wiring this
+         up, not assumed correct: the first version only recognized the
+         `OUT (n),A` immediate-port opcode (`0xD3`) — real ABC80 BASIC
+         actually has a working `OUT port,value` statement (confirmed by
+         typing `OUT 6,64` at a real prompt and seeing no syntax error),
+         but its *compiled* code uses the register-indirect `OUT (C),r`
+         form instead (port from `BC`, value from whichever register the
+         opcode names — traced via this project's own disassembly to
+         `OUT (C),L`), since a general two-expression statement can't
+         assume its port argument is a compile-time constant the way
+         hand-written `OUT (n),A` assembly can. Fixed by decoding both
+         real opcode forms generically (not hardcoded to the one traced
+         instance). With that fix, typing `OUT 6,64` at a real prompt and
+         letting the ROM run produced a genuine WAV tone starting a few
+         seconds in (matching real BASIC command-processing time) at
+         **639.95 Hz measured against the same 640.00 Hz prediction**
+         (0.008% error) — real, unmodified ABC80 BASIC driving this
+         project's own from-scratch sound model to the theoretically
+         correct frequency.
 
 ## Milestone 6: ABCbus expansion
 
@@ -384,12 +450,13 @@ Everything not yet implemented is tracked as a concrete Milestone above
 (2-6), not just listed here — this section is a quick-scan summary, not
 where the real detail lives:
 
-- Video generation (Milestone 2), keyboard input (Milestone 3), and
-  cassette quickload/quicksave (Milestone 4) are done. No sound or
-  ABCbus/floppy yet (Milestones 5-6). Cassette storage is a host-file
-  bypass of BASIC's own program-storage pointers, not real analog tape
-  emulation - see Milestone 4's own write-up for why and what that means
-  for compatibility with real historical `.bac` files.
+- Video generation (Milestone 2), keyboard input (Milestone 3), cassette
+  quickload/quicksave (Milestone 4), and a scoped SN76477 tone model
+  (Milestone 5) are done. No ABCbus/floppy yet (Milestone 6). Cassette
+  storage is a host-file bypass of BASIC's own program-storage pointers,
+  not real analog tape emulation, and sound only synthesizes a single
+  steady-tone case (no noise/SLF-warble/envelope shaping) rendered to a
+  WAV file rather than played live - see each milestone's own write-up.
 - **No periodic interrupt / timer model**: real ABC80 hardware raises a
   regular interrupt (tied to video scanline timing via the PIO's ASTB pin -
   see MAME's `scanline_tick()`) that the ROM uses for at least cursor-blink
