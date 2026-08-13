@@ -156,7 +156,7 @@ having Unicode sextant-glyph coverage (not yet true of every terminal).
       "grounded in real firmware behavior" bar Milestone 1 set, now
       confirmed visually rather than only via a PC trace.
 
-## Milestone 3: Z80 PIO + keyboard input — in progress
+## Milestone 3: Z80 PIO + keyboard input — done
 
 **Goal**: reach an actually interactive BASIC prompt — the first milestone
 where a person can type something and see a response.
@@ -199,36 +199,63 @@ where a person can type something and see a response.
       simplification above) rather than the real Swedish scan-matrix
       layout — typing a literal Å/Ä/Ö from a host keyboard isn't wired up
       yet, a known gap, not a claim of completeness.
-- [x] **Verified against real ROM execution, not just "it compiles"** — and
-      an important false start along the way, worth keeping: the strobe
-      was first held for a fixed 64 instructions (long enough to outlast
-      one poll-loop iteration, ~6 instructions), which turned out to be
-      far too short and silently dropped every test keystroke, since the
-      ROM doesn't reach this poll loop at all until well after reset —
-      RAM-size detection runs first. Bisecting with real runs (not
-      guessing) found the actual threshold: a keystroke fed at reset
-      survives to be read once the hold covers roughly 500,000
-      instructions; 200,000 was still too short. Settled on 1,000,000 (2x
-      that measured threshold) - see `keyboard.c`'s own comment for the
-      full numbers. With that fixed, feeding a single Enter keystroke via
-      piped stdin (`printf '\r' | bin/abc80`) drove real, visible change:
-      `PC` reached `0x0302` (exactly the "process key" branch the
-      disassembly above predicted), distinct addresses visited grew from
-      191 to 239 (range extending to `0x25C3`), and — reading the actual
-      rendered screen, not just addresses — the cursor moved to a new
-      line and, over the full 5,000,000-instruction run, the "ABC80"
-      splash text was cleared entirely, consistent with the ROM moving
-      well past its splash screen into further real initialization. A
-      no-input control run over the same full instruction count stayed
-      byte-for-byte identical to the pre-keyboard baseline (191 addresses,
-      same `0x0000`-`0x20D0` range) — confirming this is a real, keyboard-
-      driven effect, not noise.
-- [ ] Regression check: real, typed BASIC input (e.g. `PRINT 1+1`) produces
-      correct output — the ABC80 equivalent of Phase 3's Tasty Basic
-      real-software validation milestone in `cpm/docs/ROADMAP.md`. Not yet
-      attempted beyond the single-keystroke verification above; reaching an
-      actual `READY`-style prompt and a full typed command is the natural
-      next step now that the underlying mechanism is confirmed working.
+- [x] **Verified against real ROM execution, not just "it compiles"** —
+      two genuine false starts along the way, both kept here rather than
+      quietly fixed and forgotten, since each taught something real about
+      the hardware:
+      1. The strobe was first held for a fixed 64 instructions (long
+         enough to outlast one poll-loop iteration, ~6 instructions),
+         which turned out far too short - the ROM doesn't reach this poll
+         loop at all until well after reset (RAM-size detection runs
+         first). Bisecting with real runs (not guessing) found the actual
+         threshold: ~500,000 instructions. A single Enter keystroke with a
+         1,000,000-instruction hold (2x margin) worked - `PC` reached
+         `0x0302`, the cursor moved, the splash cleared.
+      2. Extending to a full typed line (`PRINT 1+1\r`) broke that same
+         fixed-hold approach in the opposite direction: holding long
+         enough to survive the *first* character's wait made it far too
+         long for *later* characters, whose poll loop re-enters almost
+         immediately - the ROM read the *same* still-asserted strobe
+         several times over, silently repeating keystrokes and overflowing
+         its input line (`ERR 11`, visibly corrupted screen text like
+         `PPPPPPPP...RRRRRR...`). Switching to "clear the strobe the
+         instant *any* `IN A,(n)` reads PIO Port A" (true edge-triggering)
+         looked like the obvious fix but was *also* wrong, for a genuinely
+         interesting reason: this ROM's key-read routine is itself a
+         **debounce loop** requiring the strobe to stay asserted across
+         *several consecutive polls* - `L0302`'s `DEC (IX+3)`/`DEC (IX+4)`
+         counters - before accepting a key, and one of those counters is
+         normally refreshed by a **real periodic interrupt**
+         (`RETI` at `0x0336`, resetting `(IX+4)` to `0x46`) that this
+         emulator doesn't generate. Clearing on the very first poll cut
+         that debounce off before it could ever converge, so the key was
+         never accepted at all. Fixed by clearing the strobe only at the
+         *specific* address the disassembly shows the debounce actually
+         converging at (`PC == 0x0316`: `IN A,(38h); AND 7Fh; RES
+         7,(HL); ...`), not on generic port-match detection - letting the
+         debounce genuinely run its course.
+- [x] **Regression check: real, typed BASIC input produces correct
+      output** — done, and it's the exact example this checklist item
+      named: piping `PRINT 1+1\r` to `bin/abc80` and letting it run
+      produces a rendered screen showing
+      ```
+      ABC80
+      PRINT 1+1
+       2
+      ```
+      — the real ROM echoing the typed command exactly as typed, then
+      evaluating `1+1` and printing the correct result, on the very next
+      line, exactly the ABC80 equivalent of Phase 3's Tasty Basic
+      real-software validation milestone in `cpm/docs/ROADMAP.md`. All ten
+      characters were read correctly, in order, with no repeats or drops
+      (confirmed via instruction-level tracing during development, not
+      just eyeballing the final screen). Execution reached `PC` addresses
+      up to `0x376A` - deep into the fourth ROM chip, code never
+      previously exercised by this project - and visited 1,074 distinct
+      addresses, up from 191 with no input. A no-input control run over
+      the same instruction count stayed byte-for-byte identical to the
+      original pre-keyboard baseline, confirming this is a real,
+      keyboard-driven effect.
 
 ## Milestone 4: cassette storage (SAVE/LOAD)
 
@@ -293,10 +320,21 @@ Everything not yet implemented is tracked as a concrete Milestone above
 (2-6), not just listed here — this section is a quick-scan summary, not
 where the real detail lives:
 
-- Video generation (Milestone 2) is done. No PIO/keyboard, cassette, sound,
-  or ABCbus/floppy yet (Milestones 3-6) — the reason the emulator can show
-  the ROM's real boot screen but still can't be typed at or reach a usable
-  BASIC prompt.
+- Video generation (Milestone 2) and keyboard input (Milestone 3) are done.
+  No cassette, sound, or ABCbus/floppy yet (Milestones 4-6).
+- **No periodic interrupt / timer model**: real ABC80 hardware raises a
+  regular interrupt (tied to video scanline timing via the PIO's ASTB pin -
+  see MAME's `scanline_tick()`) that the ROM uses for at least cursor-blink
+  timing - a real interrupt handler exists in the ROM at `0x032C`-`0x0336`
+  (ending in `RETI`), refreshing a counter Milestone 3's own keyboard-
+  debounce loop reads. Worked around there by triggering strobe consumption
+  at the ROM's actual debounce-convergence address instead of modeling the
+  interrupt for real - see that milestone's write-up for the full story.
+  Will need real interrupt delivery (the underlying mechanism already exists
+  in `cpm/emu/src/z80.c` - `z80_request_int()` etc., built for CP/M's own
+  Known Gaps list) if a future milestone needs cursor blinking to look
+  right, or hits ROM code that depends on it more directly than the
+  keyboard debounce did.
 - **Memory-map fidelity for `0x4000`-`0xBFFF`**: modeled as ordinary flat RAM
   for now rather than correctly floating/unmapped when no expansion card is
   present — a deliberate, documented simplification (see Milestone 1 above),

@@ -225,9 +225,26 @@ int main(int argc, char *argv[]) {
         }
         sync_pio_port_a(&cpu);
 
+        // Edge-triggered strobe consumption, at the *specific* address
+        // where this ROM actually finishes reading a key - not the first
+        // instruction that merely detects the strobe is set. See
+        // keyboard.h's own comment for why: this ROM's keyboard read is a
+        // debounce loop requiring the strobe to stay asserted across
+        // several consecutive polls (a counter this emulator can't
+        // otherwise satisfy, since it decrements via a real periodic
+        // interrupt this emulator doesn't generate yet - see
+        // abc80/docs/ABC80_ROADMAP.md's Milestone 3 section), converging
+        // on 0x0316 (`IN A,(38h); AND 7Fh; RES 7,(HL); ...`) once the
+        // debounce settles. Clearing there instead of on first detection
+        // lets that debounce actually complete rather than being cut off
+        // after a single poll.
+        bool about_to_consume_key = pc_before == 0x0316;
+
         int cycles = z80_execute(&cpu, ram);
         instructions++;
-        abc80_keyboard_tick();
+        if (about_to_consume_key) {
+            abc80_keyboard_consumed();
+        }
 
         if (cycles < 0) {
             fprintf(stderr, "Execution halted: unimplemented opcode at PC=0x%04X\n", pc_before);

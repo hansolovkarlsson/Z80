@@ -39,22 +39,21 @@
 #include "keyboard.h"
 
 static uint8_t key_data = 0;
-static int strobe_countdown = 0; // 0 = no pending strobe
+static int strobe_pending = 0;
 
 void abc80_keyboard_press(uint8_t ascii) {
     key_data = ascii & 0x7F;
-    strobe_countdown = ABC80_KEY_STROBE_HOLD_INSTRUCTIONS;
+    strobe_pending = 1;
 }
 
 uint8_t abc80_keyboard_port_a(void) {
-    uint8_t strobe = (strobe_countdown > 0) ? 1 : 0;
-    return (uint8_t)(key_data | (strobe << 7));
+    return (uint8_t)(key_data | (uint8_t)(strobe_pending << 7));
 }
 
-void abc80_keyboard_tick(void) {
-    if (strobe_countdown > 0) strobe_countdown--;
+void abc80_keyboard_consumed(void) {
+    strobe_pending = 0;
 }
 
 int abc80_keyboard_ready_for_next(void) {
-    return strobe_countdown == 0;
+    return !strobe_pending;
 }
