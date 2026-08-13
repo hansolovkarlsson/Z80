@@ -164,6 +164,71 @@ Neither this emulator nor MAME implements the real hardware scan-matrix
 PROM (`abc80-keyboard.bin`/N82S141) — both forward host-ASCII keypresses
 directly, a well-precedented simplification.
 
+## Periodic PIO interrupt (timer)
+
+Real hardware repurposes the Z80 PIO's Port A *strobe* input pin (normally
+a keyboard handshake line) as a free-running clock: MAME's
+`scanline_tick()` toggles it once per scanline. Since the PIO's `MODE_INPUT`
+only fires an interrupt on a *rising* edge, and the toggle produces one
+rising edge every two scanlines, the real interrupt rate is:
+
+| Quantity | Value | Derivation |
+|---|---|---|
+| Pixel clock | 5,990,400 Hz | `XTAL(11'980'800)/2` |
+| Line rate | 15,600 Hz | pixel clock / `ABC80_HTOTAL` (384) |
+| T-states/scanline | 192 | CPU clock (2,995,200 Hz) / line rate |
+| Interrupt period | 384 T-states | 2 scanlines (one full toggle cycle) |
+| Interrupt rate | 7800 Hz | 1 / interrupt period |
+
+**Boot configuration**, confirmed via this ROM's own disassembly
+(`0x0068`-`0x00C5`):
+
+| Setting | Value | How set |
+|---|---|---|
+| Interrupt mode | IM 2 | `IM 2` at `0x006A` |
+| `I` register | `0x00` | `LD I,A` (A=0) at `0x008C` |
+| Port A mode | Input (hardware reset default) | Never overridden — no mode-control word sent to Port A |
+| Interrupt vector | `0x34` | `OUT (39h),A` (port `0x11`, Port A control) — any control-word byte with bit 0 clear loads the vector |
+| Interrupt control word | `0xB7` | Enable=1, mask-follows=1 |
+| Mask byte | `0x7F` | Required by mask-follows above; inert for Port A's Input mode |
+
+With `I=0` and vector `0x34`, the real IM2 vector-table entry is at
+`0x0034`; this ROM's own bytes there (`0x1E 0x03`, little-endian) point to
+the real interrupt handler at `0x031E` (confirmed by its own `RETI` at
+`0x0336`):
+
+```
+0x031E: PUSH AF
+0x031F: IN A,(38h)        ; read Port A directly
+0x0321: CP 83h             ; Ctrl-C-style break combo?
+0x0323: JR NZ,L032C
+0x0325: LD (0FE07h),A      ; latch break-pending flag
+0x0328: LD A,80h
+0x032A: OUT (06h),A        ; beep (SN76477)
+L032C:  LD (0FDF5h),A      ; unconditional: pre-latch last-read Port A byte
+0x032F: LD A,46h
+0x0331: LD (0FDF7h),A      ; unconditional: reload keyboard debounce counter
+0x0334: POP AF
+0x0335: EI
+0x0336: RETI
+```
+
+`0xFDF7` is `IX+4` in the keyboard poll loop's own `IX=0xFDF3` base
+(confirmed at `0x02A5`) — this refresh is what lets that loop's debounce
+(`DEC (IX+3)` / `DEC (IX+4)`) actually converge on real hardware.
+`0xFDF5` (`IX+2`) is read by the poll loop's very first check
+(`BIT 7,(IX+2)`); if the interrupt has already seen a strobed key, the poll
+loop skips its own decrement-based debounce entirely and consumes the key
+immediately — an interrupt-driven fast path alongside the direct-polling
+fallback, both funneling through the same real consumption point,
+`0x0316`.
+
+This emulator delivers the interrupt via a plain periodic scheduler
+(`z80_request_int()`, already built and proven for CP/M's own interrupt
+handling) rather than modeling `scanline_tick()`/PIO strobe edges
+individually — functionally equivalent for every real interrupt this ROM
+observes, since nothing here depends on the toggle's *falling* half.
+
 ## Video generation
 
 ### Character-generator ROM addressing

@@ -44,6 +44,52 @@
 // for sound.c's WAV rendering.
 #define ABC80_CLOCK_HZ 2995200.0
 
+// Real ABC80 hardware ties the Z80 PIO's Port A ASTB (strobe) pin to the
+// video scanline clock (MAME's abc80_state::scanline_tick(), toggled once
+// per scanline) rather than to a real keyboard handshake signal - a
+// hardware trick that turns Port A's normal "input-mode strobe rising edge
+// -> interrupt" behavior into a genuine periodic timer interrupt, entirely
+// independent of actual keystrokes. Derived, not guessed: real screen
+// timing (MAME's abc80.h: ABC80_HTOTAL=384 pixels, pixel clock
+// XTAL(11'980'800)/2 = 5,990,400Hz) gives a 15,600Hz line rate
+// (5,990,400/384); at the real 2,995,200Hz CPU clock (ABC80_CLOCK_HZ
+// above), that's exactly 192 T-states per scanline. Since scanline_tick()
+// *toggles* the strobe on every call rather than pulsing it once per line,
+// only every *other* call is a rising edge - the actual interrupt-
+// triggering event (MAME's z80pio_device::pio_port::strobe(), MODE_INPUT
+// case) - so real interrupts arrive every 384 T-states (2 scanlines), a
+// 7800Hz rate.
+//
+// Confirmed against this ROM's own real disassembly (bin/z80dasm), not
+// just MAME's driver comment: boot init (0x0068-0x00C5, see main()'s own
+// trace at TRACE_INSTRUCTIONS) sets IM 2, I=0 (`LD I,A` with A=0 at
+// 0x008C), and writes exactly one Z80 PIO Port A control sequence via
+// `OUT (39h),A` three times (0x39 & 0x17 == 0x11, Port A control under the
+// 0x17 hardware address mask - see video_timing.c's port-map comment):
+// 0x34 (interrupt vector - MAME's z80pio.cpp control_write() treats any
+// control-port byte with bit0=0 as a vector load, regardless of mode),
+// 0xB7 (interrupt control word: D7 enable=1, D4 mask-follows=1), 0x7F (the
+// mask byte the mask-follows bit above requires next). With I=0 and
+// vector=0x34, the real IM2 vector-table entry is at 0x0034; this ROM's
+// own bytes there (0x1E 0x03, little-endian) point to 0x031E - a real
+// interrupt handler, confirmed by its own RETI at 0x0336. It reads Port A
+// directly, checks for a Ctrl-C-style break combo (0x83), and - regardless
+// of that check - unconditionally reloads a fixed value (0x46) into
+// 0xFDF7 (IX+4 in the keyboard poll loop's own IX=0xFDF3 base, confirmed
+// at 0x02A5) before EI/RETI: exactly the debounce-counter refresh
+// Milestone 3's own keyboard.h comment already identified from indirect
+// evidence (a periodic refresh this emulator couldn't yet supply), now
+// grounded directly by finding and reading the real handler. Milestone 3's
+// own PC==0x0316 strobe-consumption hook (main.c's own `about_to_consume_
+// key` below) is unaffected by this and still needed regardless: it tracks
+// *this emulator's own* host-keystroke queue, not the ROM's internal
+// debounce state, and 0x0316 remains the single real address where the
+// ROM's poll loop - via either its interrupt-driven fast path or its
+// direct-polling decrement fallback - genuinely finishes consuming a key,
+// confirmed by both paths in the disassembly funneling through it.
+#define ABC80_PIO_INTERRUPT_PERIOD_TSTATES 384
+#define ABC80_PIO_INTERRUPT_VECTOR 0x34
+
 // Every I/O port address that aliases PIO Port A's data register under
 // ABC80's real hardware address decoding (MAME's `map.global_mask(0x17)` -
 // see video_timing.c's port-map comment): only bits 0,1,2,4 of the port
@@ -122,22 +168,42 @@ static const RomImage ROM_IMAGES[] = {
 // by eye, without flooding the terminal for the full multi-million-step run.
 #define TRACE_INSTRUCTIONS 100
 
-// How long to wait before injecting a --quickload file into BOFA -
-// BASIC's own program-storage pointers (cassette.h) aren't meaningful
-// until the ROM's boot init sets them. Measured empirically (see
-// abc80/docs/ABC80_ROADMAP.md's Milestone 4 section): BOFA/EOFA settle to
-// their real value within the first 1,000 instructions on a base 16K
-// machine (0xC000, empty program) - nowhere near as long as the
-// ~500,000-instruction wait keyboard.c's own comment documents for the
-// keyboard poll loop. Re-measured after Milestone 6's floating-bus fix
-// (abc80/docs/ABC80_ROADMAP.md's own section): settling got *faster*, not
-// slower, since the RAM-detection loop now hits real floating-bus 0xFF
-// reads immediately above 0xC000 instead of continuing to probe further
-// down through what used to be Milestone 1's un-fixed, accidentally-
-// writable flat RAM. 50,000 gives a comfortable margin either way (also
-// covers --ram32k, whose own detection loop runs longer but still settles
-// well under this).
-#define QUICKLOAD_INJECT_AFTER_INSTRUCTIONS 50000
+// Where to inject a --quickload file into BOFA - BASIC's own program-
+// storage pointers (cassette.h). Originally a fixed instruction-count wait
+// (50,000), matching the same reasoning keyboard.c's own comment used for
+// the keyboard poll loop. That stopped being safe once real periodic
+// interrupts existed (see ABC80_PIO_INTERRUPT_PERIOD_TSTATES's own
+// comment): this ROM's interrupt handler can pre-latch an already-pending
+// keystroke into a fixed RAM cell the very first time it runs (shortly
+// after boot init's own `EI`), letting a key typed at the very start of a
+// run get consumed thousands of instructions earlier than the old
+// ~500,000-instruction estimate assumed - a real regression caught by this
+// project's own quickload regression test, not hypothetical: with the
+// fixed 50,000-instruction wait, a fresh run piping `LIST\rRUN\r` straight
+// after `--quickload` consumed and ran both commands before the file was
+// ever injected, against BASIC's still-empty program.
+//
+// The first real fix attempt - inject the instant BOFA first reads
+// non-zero (BASIC's boot init sets it once, right after RAM detection,
+// well before `EI`) - turned out to be *provably* race-free against
+// keyboard timing yet still wrong, for an unrelated reason found by the
+// same regression test: shortly after `EI`, this ROM unconditionally
+// re-initializes BOFA's *program* to empty (0x0A79-0x0A9B: `EOFA := BOFA`,
+// a terminator byte written at BOFA itself, `HEAD := EOFA+1`) inside a
+// wait loop (`0x00CC: BIT 5,(IY+15) / JR NZ,L00C6`) that re-runs it an
+// unpredictable number of times - injecting right after BOFA settles
+// (long before `EI`) let this later reset silently clobber the freshly
+// quickloaded program before anything ever read it.
+//
+// Fixed for real by injecting at the one ROM address that's both
+// guaranteed to run *after* that reset loop has fully exited *and*
+// guaranteed to run *before* any keyboard input can possibly be read:
+// 0x02AA, the entry point of the ROM's own line-reading routine (`L02AA`,
+// called exactly once from the boot sequence right after the "ABC80"
+// banner prints, and the sole call chain leading into the keyboard poll
+// loop at 0x02F1/0x0316 - confirmed via this project's own disassembler,
+// not assumed). No margin to get right or re-verify if boot timing ever
+// changes again - the ordering is structural, not timed.
 
 // Milestone 6 (ABCbus expansion, RAM sub-step): 0x4000-0xBFFF (minus the
 // 0x7C00-0x7FFF video RAM window, which real hardware wires to dedicated
@@ -324,6 +390,7 @@ int main(int argc, char *argv[]) {
     uint64_t total_cycles = 0;
     bool halted = false;
     bool quickload_done = (quickload_path == NULL);
+    uint64_t next_pio_interrupt_at = ABC80_PIO_INTERRUPT_PERIOD_TSTATES;
 
     Abc80SoundLog sound_log;
     abc80_sound_log_init(&sound_log);
@@ -335,7 +402,7 @@ int main(int argc, char *argv[]) {
             printf("  [%6ld] PC=0x%04X  opcode=0x%02X\n", instructions, pc_before, ram[pc_before]);
         }
 
-        if (!quickload_done && instructions >= QUICKLOAD_INJECT_AFTER_INSTRUCTIONS) {
+        if (!quickload_done && pc_before == 0x02AA) {
             abc80_cassette_quickload(ram, quickload_path);
             quickload_done = true;
         }
@@ -348,20 +415,44 @@ int main(int argc, char *argv[]) {
         }
         sync_pio_port_a(&cpu);
 
+        // Whether the *upcoming* z80_execute() call will actually fetch
+        // and run the opcode at pc_before, or instead divert into
+        // interrupt-acceptance and leave pc_before's real instruction
+        // un-executed until some later call reaches this same PC again -
+        // mirrors z80_execute()'s own acceptance check (z80.c) exactly, so
+        // it has to be evaluated *before* that call, from the same CPU
+        // state. Needed once real periodic interrupts existed (see
+        // ABC80_PIO_INTERRUPT_PERIOD_TSTATES's own comment): every
+        // `ram[pc_before]`-based prediction below silently assumed
+        // z80_execute() always executes that exact instruction, which
+        // stopped being true the moment interrupts could intercept a step
+        // instead - caught by this project's own regression testing, not
+        // hypothetical: typing `10 PRINT 1+1` after enabling the interrupt
+        // dropped the "N" and produced a real `ERR 11`, from a spurious
+        // abc80_keyboard_consumed() firing on a step that predicted
+        // PC==0x0316 but actually served an interrupt that instruction
+        // boundary instead, releasing the next host keystroke too early.
+        bool interrupt_will_intercept_this_step =
+            cpu.nmi_pending || (cpu.int_pending && cpu.iff1 && !cpu.ei_delay);
+
         // Edge-triggered strobe consumption, at the *specific* address
         // where this ROM actually finishes reading a key - not the first
         // instruction that merely detects the strobe is set. See
         // keyboard.h's own comment for why: this ROM's keyboard read is a
         // debounce loop requiring the strobe to stay asserted across
-        // several consecutive polls (a counter this emulator can't
-        // otherwise satisfy, since it decrements via a real periodic
-        // interrupt this emulator doesn't generate yet - see
-        // abc80/docs/ABC80_ROADMAP.md's Milestone 3 section), converging
-        // on 0x0316 (`IN A,(38h); AND 7Fh; RES 7,(HL); ...`) once the
-        // debounce settles. Clearing there instead of on first detection
-        // lets that debounce actually complete rather than being cut off
-        // after a single poll.
-        bool about_to_consume_key = pc_before == 0x0316;
+        // several consecutive polls, converging on 0x0316
+        // (`IN A,(38h); AND 7Fh; RES 7,(HL); ...`) once the debounce
+        // settles - now via either the real periodic interrupt's fast
+        // path or the direct-polling decrement fallback (see
+        // ABC80_PIO_INTERRUPT_PERIOD_TSTATES's own comment for the full
+        // disassembly-grounded story of both paths). Clearing there
+        // instead of on first detection lets that debounce actually
+        // complete rather than being cut off after a single poll; gated
+        // by interrupt_will_intercept_this_step above so an intercepted
+        // step (pc_before==0x0316 predicted, but not actually executed
+        // this call) doesn't fire early.
+        bool about_to_consume_key =
+            pc_before == 0x0316 && !interrupt_will_intercept_this_step;
 
         // OUT (n),A (0xD3) targeting the SN76477 sound register alias
         // (see sound.c's own top comment for the port-0x06 bit layout;
@@ -379,9 +470,16 @@ int main(int argc, char *argv[]) {
         // using `OUT (C),L`) since a general two-expression BASIC
         // statement can't rely on the port being a compile-time constant
         // the way `OUT (n),A` requires.
+        // Same interrupt-interception hazard as about_to_consume_key above
+        // applies here too: gated by interrupt_will_intercept_this_step so
+        // a step that only *predicted* an OUT-to-sound-port at pc_before,
+        // but actually diverted into an interrupt instead, doesn't log a
+        // phantom sound-register write.
         bool about_to_write_sound = false;
         uint8_t sound_out_value = 0;
-        if (ram[pc_before] == 0xD3 && (ram[(uint16_t)(pc_before + 1)] & 0x17) == 0x06) {
+        if (interrupt_will_intercept_this_step) {
+            // handled: leave about_to_write_sound false
+        } else if (ram[pc_before] == 0xD3 && (ram[(uint16_t)(pc_before + 1)] & 0x17) == 0x06) {
             about_to_write_sound = true;
             sound_out_value = cpu.a;
         } else if (ram[pc_before] == 0xED && (ram[(uint16_t)(pc_before + 1)] & 0xC7) == 0x41 &&
@@ -414,6 +512,21 @@ int main(int argc, char *argv[]) {
             break;
         }
         total_cycles += (uint64_t)cycles;
+
+        // Real hardware's video-scanline-driven PIO interrupt (see this
+        // constant's own top comment) runs unconditionally from power-on,
+        // regardless of whether the ROM has enabled interrupts yet -
+        // z80_request_int() is level-held (cpu.int_pending stays set until
+        // actually serviced), so requesting it early/often is harmless and
+        // correctly mirrors real hardware: the CPU simply won't service it
+        // until its own IFF1 allows (the ROM's `EI` at 0x00C5). A `while`
+        // (not `if`) keeps the schedule from drifting even in the
+        // impossible case of a single instruction taking longer than one
+        // period.
+        while (total_cycles >= next_pio_interrupt_at) {
+            z80_request_int(&cpu, ABC80_PIO_INTERRUPT_VECTOR);
+            next_pio_interrupt_at += ABC80_PIO_INTERRUPT_PERIOD_TSTATES;
+        }
 
         if (!visited[pc_before]) {
             visited[pc_before] = true;

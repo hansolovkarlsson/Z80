@@ -510,6 +510,118 @@ directly, both under the corrected default `0xC000` config and under
 `--ram32k`. No regression from moving `BOFA` off its old, accidental
 `0x8000` value.
 
+## Milestone 7: periodic PIO interrupt (timer model) — done
+
+**Goal**: implement the real periodic interrupt this ROM's boot init
+configures (`IM 2`, a Z80 PIO Port A interrupt vector) but this emulator
+never delivered, retiring the "No periodic interrupt / timer model" Known
+Gap below with the real hardware mechanism rather than leaving it as a
+permanent, growing pile of PC-address workarounds.
+
+**Grounded, not guessed** — three independent sources cross-checked before
+writing any code:
+
+- **MAME's own driver** (`src/mame/luxor/abc80.cpp`): `scanline_tick()`
+  (a `TIMER_CALLBACK_MEMBER`, scheduled once per scanline via
+  `m_scanline_timer->adjust(..., m_screen->scan_period())` in
+  `abc80_v.cpp`) toggles `m_pio_astb` and calls `m_pio->strobe_a(...)`
+  every call — the real Z80 PIO's Port A *strobe* input pin, normally a
+  keyboard handshake line, repurposed as a free-running clock. Screen
+  timing constants (`abc80.h`: `ABC80_HTOTAL=384`, pixel clock
+  `XTAL(11'980'800)/2` = 5,990,400Hz) give a 15,600Hz line rate and,
+  against the real 2,995,200Hz CPU clock, exactly 192 T-states/scanline —
+  a clean whole number, not a coincidence of the crystal choice.
+- **MAME's Z80 PIO device** (`src/devices/machine/z80pio.cpp`): Port A
+  defaults to `MODE_INPUT` on reset (never overridden by this ROM — its
+  own control-port writes, found below, only touch the vector/interrupt-
+  control/mask registers). In `MODE_INPUT`, `strobe()`'s rising-edge case
+  unconditionally calls `trigger_interrupt()` — so only every *other*
+  `scanline_tick()` call (the toggle's rising half) is a real interrupt
+  event: 384 T-states apart, a 7800Hz rate.
+- **This ROM's own disassembly** (`bin/z80dasm` on the real, committed
+  BASIC ROM, not the Perl-generated MAME source): boot init
+  (`0x0068`-`0x00C5`) sets `IM 2`, `I=0` (`LD I,A` with `A=0` at `0x008C`),
+  and writes exactly one Z80 PIO Port A control sequence via
+  `OUT (39h),A` — `0x39 & 0x17 == 0x11`, Port A control under the same
+  `0x17` hardware address mask the keyboard/sound ports use — three bytes:
+  `0x34` (interrupt vector — any control-port byte with bit 0 clear loads
+  the vector register, confirmed from `z80pio.cpp`'s own `control_write()`
+  regardless of mode), `0xB7` (interrupt control word: enable=1,
+  mask-follows=1), `0x7F` (the mask byte mask-follows requires next). With
+  `I=0` and vector `0x34`, the real IM2 table entry sits at `0x0034`; this
+  ROM's own bytes there (`0x1E 0x03`, little-endian) point to `0x031E` — a
+  genuine interrupt handler, confirmed by its own `RETI` at `0x0336`. It
+  reads Port A directly, checks for a Ctrl-C-style break combo (`0x83`,
+  latching a break flag and beeping the SN76477 if matched), and —
+  unconditionally, regardless of that check — reloads a fixed value
+  (`0x46`) into `0xFDF7` (`IX+4` in the keyboard poll loop's own
+  `IX=0xFDF3` base, confirmed at `0x02A5`): exactly the debounce-counter
+  refresh Milestone 3's own writeup already inferred from indirect
+  evidence, now confirmed directly.
+
+**Implementation**: a periodic scheduler in `abc80/emu/src/main.c`'s main
+loop calls `z80_request_int(&cpu, 0x34)` every 384 T-states of accumulated
+CPU time (`total_cycles`), unconditionally from power-on — matching real
+hardware, since `z80_request_int()` is level-held (`cpu.int_pending` stays
+set until serviced) and the ROM's own `IFF1` naturally gates delivery until
+its `EI`. No changes to the shared, ZEXALL/ZEXDOC-proven core beyond what
+already existed — `z80_request_int()`/IM2 vectoring were already built and
+tested for CP/M's own Known Gaps list.
+
+**Two real bugs found by this project's own regression testing, not
+assumed correct from the mechanism alone**:
+
+1. **Interrupt interception silently broke the existing keyboard/sound
+   `pc_before`-prediction hooks.** `main.c` already inspected
+   `ram[pc_before]` *before* calling `z80_execute()` to predict upcoming
+   keyboard-consumption (`PC==0x0316`) and sound-register writes (for
+   Milestones 3/5) — a pattern that implicitly assumed `z80_execute()`
+   always executes the instruction at `pc_before`. That stopped being true
+   the moment interrupts could intercept a step instead (`z80_execute()`
+   services a pending interrupt *without* fetching the predicted opcode,
+   deferring it to a later call). Caught concretely: typing
+   `10 PRINT 1+1` after enabling the interrupt dropped the `N` and produced
+   a real `ERR 11`, from a spurious `abc80_keyboard_consumed()` firing on a
+   step that predicted `PC==0x0316` but actually serviced an interrupt
+   instead, releasing the next host keystroke too early. Fixed by computing
+   `interrupt_will_intercept_this_step` (mirroring `z80_execute()`'s own
+   acceptance check exactly) *before* the predictions and gating both on it.
+2. **`--quickload`'s timing needed fixing twice.** The original fixed
+   50,000-instruction wait assumed keyboard consumption couldn't happen
+   before ~500,000 instructions (Milestone 3's own idle-boot measurement).
+   With real interrupts, this ROM's interrupt handler can pre-latch an
+   already-pending keystroke into a fixed RAM cell (`0xFDF5`) the very
+   first time it runs, letting a key typed at the very start of a run get
+   consumed thousands of instructions earlier — a fresh run piping
+   `LIST\rRUN\r` right after `--quickload` now consumed and ran both
+   commands *before* the file was ever injected, against BASIC's still-
+   empty program. The first fix attempt — inject the instant `BOFA` first
+   reads non-zero, providably race-free against keyboard timing — was
+   *still* wrong, for a second, unrelated reason the same regression test
+   caught: shortly after `EI`, this ROM unconditionally re-initializes the
+   program to empty (`0x0A79`-`0x0A9B`: `EOFA := BOFA`, a terminator byte
+   written at `BOFA` itself, `HEAD := EOFA+1`) inside a wait loop
+   (`0x00CC: BIT 5,(IY+15) / JR NZ,L00C6`) that re-runs it an unpredictable
+   number of times — injecting right after `BOFA` settles let this later
+   reset silently clobber the freshly quickloaded program before anything
+   ever read it. Fixed for real by injecting at `0x02AA` instead — the
+   entry point of the ROM's own line-reading routine, called exactly once
+   right after the "ABC80" banner prints and the sole call chain leading
+   into the keyboard poll loop, so the ordering (reset-loop-already-done,
+   input-not-yet-possible) is structural, not timed, with no margin to
+   re-verify if boot timing ever changes again.
+
+**Verified end-to-end**: distinct PCs visited on a plain boot run rose
+from 191 to 201 — the ~10 instructions of the real ISR (`0x031E`-`0x0336`),
+now genuinely executed for the first time, not just present in ROM. Full
+`make test` still passes (hook-free for CP/M, unaffected). Re-ran every
+prior milestone's own regression check against the interrupt-enabled
+build: typing a program then `LIST`/`RUN`, the full quicksave → fresh run
+→ quickload → `LIST`/`RUN` round-trip (base 16K and `--ram32k`), and the
+sound WAV render (frequency re-measured at 640.01Hz via zero-crossing
+analysis, still matching the 640.00Hz prediction) — all pass with no
+regressions from before this milestone.
+
 ## Memory map (grounded, not guessed)
 
 Cross-checked between MAME's current mainline driver
@@ -544,26 +656,21 @@ where the real detail lives:
 
 - Video generation (Milestone 2), keyboard input (Milestone 3), cassette
   quickload/quicksave (Milestone 4), a scoped SN76477 tone model
-  (Milestone 5), and RAM expansion / floating-bus fidelity (Milestone 6's
-  first sub-step) are done. No floppy/DOS controller yet (rest of
-  Milestone 6). Cassette storage is a host-file bypass of BASIC's own
-  program-storage pointers, not real analog tape emulation, and sound only
-  synthesizes a single steady-tone case (no noise/SLF-warble/envelope
-  shaping) rendered to a WAV file rather than played live - see each
-  milestone's own write-up.
-- **No periodic interrupt / timer model**: real ABC80 hardware raises a
-  regular interrupt (tied to video scanline timing via the PIO's ASTB pin -
-  see MAME's `scanline_tick()`) that the ROM uses for at least cursor-blink
-  timing - a real interrupt handler exists in the ROM at `0x032C`-`0x0336`
-  (ending in `RETI`), refreshing a counter Milestone 3's own keyboard-
-  debounce loop reads. Worked around there by triggering strobe consumption
-  at the ROM's actual debounce-convergence address instead of modeling the
-  interrupt for real - see that milestone's write-up for the full story.
-  Will need real interrupt delivery (the underlying mechanism already exists
-  in `cpm/emu/src/z80.c` - `z80_request_int()` etc., built for CP/M's own
-  Known Gaps list) if a future milestone needs cursor blinking to look
-  right, or hits ROM code that depends on it more directly than the
-  keyboard debounce did.
+  (Milestone 5), RAM expansion / floating-bus fidelity (Milestone 6's first
+  sub-step), and the real periodic PIO interrupt (Milestone 7) are done.
+  No floppy/DOS controller yet (Milestone 6's remaining second half).
+  Cassette storage is a host-file bypass of BASIC's own program-storage
+  pointers, not real analog tape emulation, and sound only synthesizes a
+  single steady-tone case (no noise/SLF-warble/envelope shaping) rendered
+  to a WAV file rather than played live - see each milestone's own
+  write-up.
+- **Cursor blink still isn't live**: Milestone 7 delivers the real periodic
+  interrupt this ROM's keyboard debounce depends on, but this emulator's
+  own renderer is still a one-shot end-of-run snapshot
+  (`abc80_render_frame()`, `blink_phase=1` hardcoded in `main.c`), not a
+  live display loop - so there's no ongoing rendering for a blink to be
+  visible in regardless of interrupt timing. Revisit only if a future
+  milestone adds live/interactive rendering.
 - **Memory-map fidelity for `0x4000`-`0xBFFF`**: fixed by Milestone 6's RAM
   expansion sub-step (see above) — `0x4000`-`0x7BFF` and, by default,
   `0x8000`-`0xBFFF` now correctly float (fixed `0xFF` reads, matching MAME's
