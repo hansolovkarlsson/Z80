@@ -25,10 +25,13 @@ a real Z80-based Swedish home computer from 1978 - and unlike `gameboy/`
 it *does* share code: its `abc80/emu/src/main.c` links directly against
 `cpm/emu/src/z80.o`/`alu.o`, the same proven core `bin/z80` uses, so it
 stays in this repo rather than being a future split candidate. See
-`abc80/docs/ABC80_ROADMAP.md` for its status and known gaps, and
+`abc80/docs/ABC80_ROADMAP.md` for its status and known gaps,
 `abc80/docs/ABC80_REFERENCE.md` for a consolidated hardware reference
 (memory map, I/O ports, ROM/PROM inventory, per-subsystem register
-layouts) — as of Milestone 8, it boots the real BASIC ROM images
+layouts), and `abc80/docs/ABC80_BASIC_REFERENCE.md` for the BASIC
+language itself (commands, statements, functions, operators — the
+language `bin/abc80` actually runs, not the `z80asm` syntax
+`cpm/docs/ASSEMBLER.md` covers) — as of Milestone 8, it boots the real BASIC ROM images
 (committed under `abc80/resources/rom/`) with working video, keyboard
 input (including genuine real-time interactive keyboard input and a live,
 real-time-paced screen via `bin/abc80 --interactive`, not just scripted/
