@@ -28,12 +28,15 @@ stays in this repo rather than being a future split candidate. See
 `abc80/docs/ABC80_ROADMAP.md` for its status and known gaps, and
 `abc80/docs/ABC80_REFERENCE.md` for a consolidated hardware reference
 (memory map, I/O ports, ROM/PROM inventory, per-subsystem register
-layouts) — as of Milestone 6's RAM-expansion sub-step, it boots the real
-BASIC ROM images (committed under `abc80/resources/rom/`) with working
-video, keyboard input, cassette quickload/quicksave, a scoped SN76477
-sound model, and a correctly-modeled (floating-bus-by-default, optional
-`--ram32k`) memory map; only the floppy/DOS controller (the rest of
-Milestone 6) remains.
+layouts) — as of Milestone 8, it boots the real BASIC ROM images
+(committed under `abc80/resources/rom/`) with working video, keyboard
+input (including genuine real-time interactive keyboard input and a live,
+real-time-paced screen via `bin/abc80 --interactive`, not just scripted/
+piped input), cassette quickload/quicksave, a scoped SN76477 sound model,
+a real periodic PIO interrupt, and a correctly-modeled (floating-bus-by-
+default, optional `--ram32k`) memory map; only the floppy/DOS controller
+(the rest of Milestone 6) remains, with real protocol facts already
+derived from disassembling the actual ABC-DOS ROM.
 
 Three reference docs live in `cpm/docs/` alongside the roadmap:
 `Z80_REFERENCE.md` (the Z80 instruction set, including undocumented

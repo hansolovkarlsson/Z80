@@ -30,6 +30,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/select.h>
+#include <termios.h>
+#include <signal.h>
+#include <time.h>
+#include <math.h>
+#include <limits.h>
 
 #include "../../../cpm/emu/src/z80.h"
 #include "render.h"
@@ -41,8 +46,37 @@
 // Real ABC80 Z80 clock (11.9808 MHz crystal / 2 / 2 - see MAME's
 // abc80_state::abc80_common(): `Z80(config, m_maincpu,
 // XTAL(11'980'800)/2/2)`), needed to convert T-states into real seconds
-// for sound.c's WAV rendering.
+// for sound.c's WAV rendering and, below, for --interactive's real-time
+// pacing and cursor blink.
 #define ABC80_CLOCK_HZ 2995200.0
+
+// --interactive real-time pacing/rendering. Batch (default) mode runs
+// z80_execute() as fast as the host can go - fine for a one-shot debug
+// run, but wrong for a live session: at full host speed, the default
+// 5,000,000-instruction cap alone would complete in well under a second
+// of wall-clock time, ending the "interactive" session before a human
+// could ever react. --interactive instead throttles execution to real
+// ABC80 speed and removes the fixed cap (see main()'s own argument
+// handling), checked/corrected every ABC80_PACING_CHECK_INTERVAL
+// instructions rather than after every single one - clock_gettime() and
+// nanosleep() are real syscalls, and 2,995,200 of them a second would
+// swamp actual emulation work. At ABC80_CLOCK_HZ's own ~13 T-states/
+// instruction average, this interval is roughly 2ms of emulated time
+// between pacing corrections/render checks - fine-grained enough for
+// smooth output and prompt keyboard response (poll_stdin_byte() itself
+// still runs every single loop iteration, not gated by this interval).
+#define ABC80_PACING_CHECK_INTERVAL 500
+#define ABC80_RENDER_INTERVAL_SEC (1.0 / 30.0)
+
+// Real cursor-blink rate, not guessed: MAME's own abc80_v.cpp allocates
+// m_blink_timer at `attotime::from_hz(XTAL(11'980'800)/2/6/64/312/16)` -
+// 11,980,800 / (2*6*64*312*16) = 3.125Hz exactly, i.e. the cursor's on/off
+// phase flips every 160ms (a full on-off cycle every 320ms). Used below to
+// drive blink_phase in --interactive's live render loop - Milestone 7's
+// own Known Gaps note ("Cursor blink still isn't live... Revisit only if
+// a future milestone adds live/interactive rendering") is exactly what
+// this is.
+#define ABC80_BLINK_HZ 3.125
 
 // Real ABC80 hardware ties the Z80 PIO's Port A ASTB (strobe) pin to the
 // video scanline clock (MAME's abc80_state::scanline_tick(), toggled once
@@ -119,12 +153,84 @@ static void sync_pio_port_a(Z80 *cpu) {
     }
 }
 
-// Non-blocking single-byte stdin read (works identically for a piped or
-// interactive stdin - no termios raw-mode setup here yet, unlike
-// cpm/emu/src/cpm.c's console handling, so an interactive terminal will
-// still line-buffer until Enter; piped input, used by this project's own
-// regression testing, is unaffected by that). Returns -1 if nothing is
-// available right now.
+// --interactive: raw terminal keyboard input + a live, periodically-
+// redrawn screen, instead of batch execution to a fixed instruction cap
+// followed by one final snapshot render. Everything below is gated on
+// this flag and touches nothing about the existing default (batch/piped-
+// input) behavior every regression test in this project already relies
+// on - see main()'s own argument parsing and main loop for exactly where.
+static bool interactive_mode = false;
+
+// Mirrors cpm/emu/src/cpm.c's cpm_console_init()/cpm_console_shutdown()
+// almost exactly - the same real terminal-mode problem (character-at-a-
+// time input, no host-side echo since the ROM does its own via video RAM,
+// real Enter arriving as a genuine 0x0D rather than being silently
+// rewritten to 0x0A, Ctrl-S not being swallowed as XOFF) applies here
+// identically, so the fix is the same. Deliberately duplicated rather
+// than shared: this is ABC80-only code, and cpm.c is CP/M-specific by
+// design (see CLAUDE.md's Architecture section on why the two targets'
+// machine-specific glue stays separate from the shared core, and from
+// each other).
+//
+// One real difference from cpm.c's version: ISIG is deliberately left
+// *enabled* (unlike what a byte-for-byte "real raw mode" would do), so
+// host Ctrl-C still raises SIGINT rather than being delivered to the
+// emulated ROM as a genuine 0x03 keystroke. This is a deliberate scope
+// choice, not an oversight: it keeps Ctrl-C as this tool's own "quit
+// cleanly" mechanism (identical to how the CP/M target's console already
+// behaves today), at the cost of there being no way to send a real
+// Ctrl-C break to BASIC through this emulator yet - a known, documented
+// gap (see abc80/docs/ABC80_ROADMAP.md), not something worth solving
+// speculatively in the same pass as making keyboard input interactive at
+// all.
+static struct termios abc80_orig_termios;
+static int abc80_termios_saved = 0;
+
+static void abc80_console_shutdown(void) {
+    if (abc80_termios_saved) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &abc80_orig_termios);
+    }
+}
+
+static void abc80_console_init(void) {
+    if (!isatty(STDIN_FILENO)) return;
+
+    if (tcgetattr(STDIN_FILENO, &abc80_orig_termios) != 0) return;
+    abc80_termios_saved = 1;
+    atexit(abc80_console_shutdown);
+
+    struct termios raw = abc80_orig_termios;
+    raw.c_lflag &= ~(ICANON | ECHO); // no line buffering, no local echo
+    raw.c_iflag &= ~(ICRNL | INLCR | IGNCR); // real Enter must arrive as 0x0D
+    raw.c_iflag &= ~IXON;                    // don't swallow Ctrl-S/Ctrl-Q
+    raw.c_cc[VMIN] = 1;
+    raw.c_cc[VTIME] = 0;
+    tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+}
+
+// Set by abc80_handle_sigint() (registered only in --interactive mode);
+// checked by the main loop so it can exit through its normal end-of-main
+// path (final render, run summary, and - critically - the atexit-
+// registered abc80_console_shutdown() above that restores the host
+// terminal). The default SIGINT action skips atexit handlers entirely,
+// which would otherwise leave a real user's shell in raw mode (no local
+// echo, no line buffering) until they ran `reset`/`stty sane` themselves -
+// a real, practical bug for an interactive tool, not a hypothetical one.
+static volatile sig_atomic_t abc80_quit_requested = 0;
+
+static void abc80_handle_sigint(int sig) {
+    (void)sig;
+    abc80_quit_requested = 1;
+}
+
+// Non-blocking single-byte stdin read - works identically for a piped or
+// interactive stdin either way: in --interactive mode, abc80_console_init()
+// above has already put an interactive terminal into raw (character-at-a-
+// time) mode, so this sees real keystrokes immediately rather than only
+// after Enter; a piped stdin (used by this project's own regression
+// testing, and by non-interactive default mode always) was never
+// line-buffered in the first place. Returns -1 if nothing is available
+// right now.
 static int poll_stdin_byte(void) {
     fd_set fds;
     FD_ZERO(&fds);
@@ -297,6 +403,10 @@ static void print_usage(const char *prog) {
     printf("                     0x06) to a WAV file at the end of the run (see sound.h)\n");
     printf("  --ram32k           Model the real 16KB RAM-expansion mod at 0x8000-0xBFFF\n");
     printf("                     (default: base 16K machine - that range floats)\n");
+    printf("  --interactive      Real keyboard input (raw terminal mode) and a live,\n");
+    printf("                     continuously redrawn screen, paced to real ABC80 speed,\n");
+    printf("                     instead of a one-shot batch run to max_instructions.\n");
+    printf("                     Press Ctrl-C to exit. Ignored if stdin isn't a terminal.\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -318,6 +428,8 @@ int main(int argc, char *argv[]) {
             wav_path = argv[++i];
         } else if (strcmp(argv[i], "--ram32k") == 0) {
             abc80_ram32k_enabled = true;
+        } else if (strcmp(argv[i], "--interactive") == 0) {
+            interactive_mode = true;
         } else if (!rom_dir) {
             rom_dir = argv[i];
         } else if (max_instructions < 0) {
@@ -325,7 +437,13 @@ int main(int argc, char *argv[]) {
         }
     }
     if (!rom_dir) rom_dir = "resources/rom";
-    if (max_instructions < 0) max_instructions = DEFAULT_MAX_INSTRUCTIONS;
+    // No fixed cap in interactive mode unless the caller explicitly asked
+    // for one - real-time pacing below already bounds how much CPU a live
+    // session burns, so there's no need for --interactive to also end the
+    // session partway through like the batch-mode default cap would.
+    if (max_instructions < 0) {
+        max_instructions = interactive_mode ? LONG_MAX : DEFAULT_MAX_INSTRUCTIONS;
+    }
 
     static uint8_t ram[RAM_SIZE];
 
@@ -376,8 +494,17 @@ int main(int argc, char *argv[]) {
     // value here rather than guessed at.
     cpu.pc = 0x0000;
 
-    printf("\nStarting ABC80 ROM execution at PC=0x0000 (cap: %ld instructions)...\n\n",
-           max_instructions);
+    if (interactive_mode) {
+        abc80_console_init();
+        struct sigaction sa = {0};
+        sa.sa_handler = abc80_handle_sigint;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGINT, &sa, NULL);
+        printf("\nStarting ABC80 ROM execution at PC=0x0000 (interactive - Ctrl-C to exit)...\n");
+    } else {
+        printf("\nStarting ABC80 ROM execution at PC=0x0000 (cap: %ld instructions)...\n\n",
+               max_instructions);
+    }
 
     // Coarse "did execution wander somewhere sane" check: every address
     // z80_execute() ever fetched an opcode from. A 64KB bool array is cheap
@@ -395,10 +522,21 @@ int main(int argc, char *argv[]) {
     Abc80SoundLog sound_log;
     abc80_sound_log_init(&sound_log);
 
-    while (instructions < max_instructions) {
+    // --interactive-only real-time pacing/rendering state. run_start_time
+    // is the wall-clock origin total_cycles/ABC80_CLOCK_HZ is paced
+    // against; last_render_sec is the last elapsed-real-seconds value a
+    // frame was drawn at, so ABC80_RENDER_INTERVAL_SEC throttles redraws
+    // independently of how often the pacing check itself runs.
+    struct timespec run_start_time = {0, 0};
+    double last_render_sec = -1.0;
+    if (interactive_mode) {
+        clock_gettime(CLOCK_MONOTONIC, &run_start_time);
+    }
+
+    while (!abc80_quit_requested && instructions < max_instructions) {
         uint16_t pc_before = cpu.pc;
 
-        if (instructions < TRACE_INSTRUCTIONS) {
+        if (!interactive_mode && instructions < TRACE_INSTRUCTIONS) {
             printf("  [%6ld] PC=0x%04X  opcode=0x%02X\n", instructions, pc_before, ram[pc_before]);
         }
 
@@ -528,6 +666,37 @@ int main(int argc, char *argv[]) {
             next_pio_interrupt_at += ABC80_PIO_INTERRUPT_PERIOD_TSTATES;
         }
 
+        // --interactive real-time pacing and live rendering (see
+        // ABC80_PACING_CHECK_INTERVAL's own comment for why this only
+        // runs periodically rather than every instruction). If the
+        // emulated ABC80 has raced ahead of real elapsed time, sleep off
+        // the difference; either way, redraw the screen at most every
+        // ABC80_RENDER_INTERVAL_SEC, with a cursor blink phase computed
+        // from the real 3.125Hz rate (ABC80_BLINK_HZ) rather than the
+        // hardcoded "always on" main.c used before this existed.
+        if (interactive_mode && (instructions % ABC80_PACING_CHECK_INTERVAL) == 0) {
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            double elapsed_real = (double)(now.tv_sec - run_start_time.tv_sec) +
+                                   (double)(now.tv_nsec - run_start_time.tv_nsec) / 1e9;
+            double elapsed_emulated = (double)total_cycles / ABC80_CLOCK_HZ;
+
+            if (elapsed_emulated > elapsed_real) {
+                double sleep_sec = elapsed_emulated - elapsed_real;
+                struct timespec req;
+                req.tv_sec = (time_t)sleep_sec;
+                req.tv_nsec = (long)((sleep_sec - (double)req.tv_sec) * 1e9);
+                nanosleep(&req, NULL);
+                elapsed_real = elapsed_emulated;
+            }
+
+            if (elapsed_real - last_render_sec >= ABC80_RENDER_INTERVAL_SEC) {
+                int blink_phase = fmod(elapsed_real, 1.0 / ABC80_BLINK_HZ) < (0.5 / ABC80_BLINK_HZ);
+                abc80_render_frame(stdout, &ram[0x7C00], attr_rom, blink_phase);
+                last_render_sec = elapsed_real;
+            }
+        }
+
         if (!visited[pc_before]) {
             visited[pc_before] = true;
             distinct_addresses++;
@@ -544,9 +713,25 @@ int main(int argc, char *argv[]) {
         abc80_sound_render_wav(&sound_log, total_cycles, ABC80_CLOCK_HZ, wav_path);
     }
 
+    // Video RAM (0x7C00-0x7FFF, see abc80/docs/ABC80_ROADMAP.md's memory
+    // map) is directly addressable within `ram` - real hardware maps it at
+    // that fixed offset, so no copy/translation is needed here, just a
+    // pointer into the same flat array z80_execute() was already writing
+    // through. blink_phase=1 (cursor shown, not blinked) - matches
+    // non-interactive mode's original one-shot-snapshot behavior; a live
+    // --interactive session already showed real blinking (ABC80_BLINK_HZ)
+    // throughout the run, this is just its final frame. Printed *before*
+    // the run summary below, not after: abc80_render_frame() clears the
+    // screen first thing, which would otherwise wipe the summary text a
+    // real interactive user is trying to read after pressing Ctrl-C.
+    printf("\n--- Final video RAM render ---\n");
+    abc80_render_frame(stdout, &ram[0x7C00], attr_rom, 1);
+
     printf("\n--- Run summary ---\n");
-    printf("Instructions executed: %ld%s\n", instructions,
-           halted ? " (halted on unimplemented opcode)" : " (reached instruction cap)");
+    const char *stop_reason = halted ? "halted on unimplemented opcode"
+                             : abc80_quit_requested ? "user requested exit (Ctrl-C)"
+                             : "reached instruction cap";
+    printf("Instructions executed: %ld (%s)\n", instructions, stop_reason);
     printf("Total T-states:        %llu\n", (unsigned long long)total_cycles);
     printf("Final PC:              0x%04X\n", cpu.pc);
     printf("Distinct PCs visited:  %ld (range 0x%04X-0x%04X)\n",
@@ -559,16 +744,6 @@ int main(int argc, char *argv[]) {
     uint16_t bofa = ram[ABC80_BOFA_ADDR] | (ram[ABC80_BOFA_ADDR + 1] << 8);
     printf("BOFA (top of ROM/detected RAM floor): 0x%04X (%s)\n", bofa,
            abc80_ram32k_enabled ? "32K RAM" : "base 16K RAM");
-
-    // Video RAM (0x7C00-0x7FFF, see abc80/docs/ABC80_ROADMAP.md's memory
-    // map) is directly addressable within `ram` - real hardware maps it at
-    // that fixed offset, so no copy/translation is needed here, just a
-    // pointer into the same flat array z80_execute() was already writing
-    // through. blink_phase=1 (cursor shown, not blinked) - a real blink
-    // needs a live/periodic render loop, out of scope for this one-shot
-    // end-of-run snapshot.
-    printf("\n--- Final video RAM render ---\n");
-    abc80_render_frame(stdout, &ram[0x7C00], attr_rom, 1);
 
     return halted ? EXIT_FAILURE : EXIT_SUCCESS;
 }

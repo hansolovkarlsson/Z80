@@ -713,6 +713,98 @@ jump targets throughout `0x6000`-`0x6FFF`):
   been examined at all yet — unknown whether it shares this same
   low-level protocol or differs.
 
+## Milestone 8: `--interactive` — real keyboard input and a live screen — done
+
+**Goal**: close the gap between "this emulator can execute real ABC80
+firmware" and "this is usable as an actual interactive machine." Every
+earlier milestone verified correctness by piping a whole scripted
+keystroke sequence through stdin and inspecting one final end-of-run
+screen snapshot — genuinely useful for regression testing, but not what
+"take input from the keyboard" means for a real user sitting at a real
+terminal.
+
+**Two real gaps, both closed together, since neither alone would have been
+usable**:
+
+1. **No raw terminal mode.** `poll_stdin_byte()` already read stdin
+   non-blockingly, but with a real interactive terminal left in its
+   default (canonical) mode, keystrokes wouldn't reach the emulator until
+   Enter was pressed, and the host terminal would echo them a second time
+   on top of whatever the ROM itself draws. Fixed by
+   `abc80_console_init()`/`abc80_console_shutdown()` — a direct port of
+   `cpm/emu/src/cpm.c`'s own already-proven `cpm_console_init()` (same
+   `ICANON`/`ECHO` clearing, same `ICRNL`/`INLCR`/`IGNCR`/`IXON` fixes for
+   the identical real reasons documented there), gated behind `isatty()`
+   exactly like the CP/M target's version. One deliberate divergence from
+   a byte-for-byte port: `ISIG` is left *enabled*, so host Ctrl-C still
+   raises `SIGINT` (this tool's own "quit cleanly" mechanism, consistent
+   with how the CP/M target's console already behaves) rather than
+   reaching the emulated ROM as a genuine `0x03` keystroke — a deliberate,
+   documented scope boundary (see Known Gaps below), not an oversight.
+2. **No live display.** `abc80_render_frame()` was only ever called once,
+   after the entire run ended — meaning even with real per-keystroke
+   input working, a user would see nothing on screen until they killed
+   the process. Fixed with a periodic render inside the main loop itself,
+   throttled to real time rather than checked every instruction (a
+   `clock_gettime()`/potential `nanosleep()` pair every instruction would
+   swamp actual emulation work): every `ABC80_PACING_CHECK_INTERVAL`
+   (500) instructions, compare elapsed wall-clock time against elapsed
+   *emulated* time (`total_cycles / ABC80_CLOCK_HZ`) and sleep off any
+   difference, then redraw at most every `1/30` second. This closes a
+   second problem for free: at full host speed, the existing 5,000,000-
+   instruction default cap would complete in well under a real second,
+   ending an "interactive" session before a human could ever react.
+   `--interactive` instead removes the fixed cap entirely (runs until
+   `SIGINT`) — real-time pacing already bounds how much wall-clock time
+   (and CPU) a live session consumes, so a separate instruction limit
+   would only get in the way.
+
+**A genuine side effect, not a separate feature**: cursor blink is now
+real. `blink_phase` was hardcoded to `1` (always on) for the old one-shot
+snapshot; the live render loop instead computes it from real elapsed time
+against `ABC80_BLINK_HZ` (3.125Hz — MAME's own `m_blink_timer`,
+`attotime::from_hz(XTAL(11'980'800)/2/6/64/312/16)`, not guessed). This is
+exactly the "Cursor blink still isn't live... revisit only if a future
+milestone adds live/interactive rendering" gap Milestone 7 left open,
+closed as a direct consequence of adding the live loop this needed anyway.
+
+**Verified, not just "compiles and doesn't crash"**: this sandboxed
+environment has no real controlling TTY to test raw-mode keystrokes
+against directly, but every other mechanic was verified concretely —
+- Real-time pacing: a 2-second `--interactive` run (killed via `SIGINT`
+  after a measured wall-clock delay) accumulated 5,998,571 T-states —
+  against a predicted 5,990,400 (2 real seconds × `ABC80_CLOCK_HZ`), a
+  0.14% difference, confirming the emulator is genuinely throttled to real
+  ABC80 speed rather than running at full host speed.
+- Live rendering: the same run's output contained 59 distinct
+  clear-screen sequences, matching the expected ~60 redraws for 2 seconds
+  at the 30Hz render throttle.
+- Keyboard input still works end-to-end through the new paced loop (not
+  just the old batch loop): piping `10 PRINT 1+1` then `LIST` through
+  `--interactive` (with `sleep`s between chunks to simulate real typing
+  pace) produced the identical correct output as the existing non-
+  interactive regression check.
+- Clean shutdown: `SIGINT` during a live run exits with status 0, prints
+  the same final render + run summary as a normal batch-mode end (now
+  printed in the opposite order - render first, then summary - so the
+  summary text a real user is trying to read doesn't get wiped by the
+  render's own clear-screen escape code), and correctly reports "user
+  requested exit (Ctrl-C)" as the stop reason.
+- Full regression: every existing default-mode (non-`--interactive`) test
+  in this milestone's own history re-verified byte-for-byte identical
+  after this change (boot trace, typed-program `LIST`/`RUN`, full
+  quicksave/quickload round-trip) - `--interactive` is strictly additive,
+  gated behind its own flag throughout.
+
+**Known gap, deliberately not solved here**: with `ISIG` left enabled,
+there is currently no way to send a real Ctrl-C *break* keystroke through
+to BASIC via `--interactive` - host Ctrl-C always quits this tool instead.
+Solving that would need either disabling `ISIG` (and then inventing some
+other, non-colliding host-level "quit the emulator" mechanism, since
+Ctrl-C would no longer be available for that) or a distinct escape
+sequence, and wasn't part of what this milestone set out to fix - see
+Known Gaps below.
+
 ## Memory map (grounded, not guessed)
 
 Cross-checked between MAME's current mainline driver
@@ -748,8 +840,10 @@ where the real detail lives:
 - Video generation (Milestone 2), keyboard input (Milestone 3), cassette
   quickload/quicksave (Milestone 4), a scoped SN76477 tone model
   (Milestone 5), RAM expansion / floating-bus fidelity (Milestone 6's first
-  sub-step), and the real periodic PIO interrupt (Milestone 7) are done.
-  No floppy/DOS controller yet (Milestone 6's remaining second half) —
+  sub-step), the real periodic PIO interrupt (Milestone 7), and real
+  interactive keyboard input with a live, real-time-paced screen
+  (Milestone 8, `bin/abc80 --interactive`) are done. No floppy/DOS
+  controller yet (Milestone 6's remaining second half) —
   real protocol facts have been derived by disassembling the actual ABC-DOS
   ROM (card-select address, port roles, command packet format, two
   identified operations), but the parameter encoding, transfer-length
@@ -760,13 +854,20 @@ where the real detail lives:
   single steady-tone case (no noise/SLF-warble/envelope shaping) rendered
   to a WAV file rather than played live - see each milestone's own
   write-up.
-- **Cursor blink still isn't live**: Milestone 7 delivers the real periodic
-  interrupt this ROM's keyboard debounce depends on, but this emulator's
-  own renderer is still a one-shot end-of-run snapshot
-  (`abc80_render_frame()`, `blink_phase=1` hardcoded in `main.c`), not a
-  live display loop - so there's no ongoing rendering for a blink to be
-  visible in regardless of interrupt timing. Revisit only if a future
-  milestone adds live/interactive rendering.
+- **Cursor blink is now live** (Milestone 8) in `--interactive` mode,
+  computed from real elapsed time against the real 3.125Hz rate MAME's own
+  `m_blink_timer` uses. Default (non-`--interactive`) mode is still a
+  one-shot end-of-run snapshot with `blink_phase=1` hardcoded, unchanged -
+  a deliberate difference between the two modes' purposes, not a gap.
+- **No real Ctrl-C break through `--interactive`** (Milestone 8): host
+  Ctrl-C quits this emulator tool (`ISIG` deliberately left enabled,
+  mirroring the CP/M target's own console handling) rather than being
+  delivered to the emulated ROM as a genuine `0x03` keystroke, so BASIC's
+  own Ctrl-C-break handling (the `0x83` check in the real interrupt
+  handler at `0x031E` - see Milestone 7) can't currently be exercised
+  interactively. Would need either disabling `ISIG` and inventing a
+  different, non-colliding host-level quit mechanism, or a distinct escape
+  sequence - not attempted here.
 - **Memory-map fidelity for `0x4000`-`0xBFFF`**: fixed by Milestone 6's RAM
   expansion sub-step (see above) — `0x4000`-`0x7BFF` and, by default,
   `0x8000`-`0xBFFF` now correctly float (fixed `0xFF` reads, matching MAME's
