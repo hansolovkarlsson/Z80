@@ -56,8 +56,28 @@ split, with no new compiler warnings.
 **Goal**: render `0x7C00`-`0x7FFF` (video RAM) to actual on-screen text, so
 ROM boot progress becomes visible instead of only inferable from a PC trace.
 
-- [ ] Decode the character-generator PROM (`char-rom.bin`, archived at
-      abc80.net alongside the BASIC ROMs) into a glyph bitmap table.
+- [x] **Decode the character-generator PROM** — done. The chip (SN74S263N,
+      "H2") is mask-programmed, so its content isn't dumped the way the
+      BASIC ROMs were; instead `abc80/resources/rom/chargen.bin` was
+      downloaded from the same abc80.net archive and verified byte-identical
+      (CRC32 `9e064e91`) to the reconstruction embedded in MAME's
+      `src/devices/video/sn74s262.cpp` — grounding, though MAME's own source
+      marks that reconstruction `BAD_DUMP`/"created by hand" itself (no
+      claim of perfection here, just "same as the community-standard
+      reference"). Address formula and dimensions lifted directly from
+      `sn74s262_device::read()`: 128 characters (7-bit code) × 10 bytes,
+      only rows 0-8 real (row 9 always blank), 6 pixels wide, MSB-first —
+      implemented in `abc80/emu/src/chargen.c`/`.h`. Verified two ways, not
+      just "the formula compiles": `bin/abc80-chargen-dump` (new standalone
+      tool) prints every character as ASCII art, and by eye `A`/`B`/`0`/`S`/
+      `!` are clean, correct letterforms. More tellingly, character `0x5B`
+      (`[` in plain ASCII) decodes to an unambiguous **Ä** (umlaut dots over
+      a rounded A) — independent confirmation of *both* the formula and the
+      ROM's identity, since MAME's own device-type registration documents
+      the SN74S263 specifically as the Swedish/Finnish national-charset
+      variant, not plain ASCII. Worth remembering for later text-handling
+      work: the punctuation range (`0x40`, `0x5B`-`0x5E`, `0x60`, `0x7B`-
+      `0x7E`) is Swedish ISO646, not ASCII.
 - [ ] Decode the sync/attribute/line-address PROMs (checksums documented in
       MAME's driver) enough to reproduce the 40×24 text-mode layout and any
       per-character attribute bits (the ABC80's "Teletext"-style attributes) —

@@ -19,17 +19,27 @@ DASM_OBJS := $(DASM_SRCS:.c=.o)
 DASM_TARGET := $(BIN_DIR)/z80dasm
 
 # Luxor ABC80 machine target (Milestone 1: boots the real BASIC ROM on the
-# shared core - see abc80/docs/ABC80_ROADMAP.md). Reuses cpm/emu/src/z80.o
-# and alu.o directly rather than recompiling them under a different name -
-# both are already machine-agnostic (z80_execute(), not the CP/M-specific
-# z80_step()) and built with identical flags, so there's nothing to
-# duplicate. Opt-in only (never part of `all`/`test`), same as `gtk` below -
-# with no video/keyboard emulated yet, there's nothing test-suite-verifiable
-# about it yet.
+# shared core; Milestone 2 in progress: video generation - see
+# abc80/docs/ABC80_ROADMAP.md). Two separate binaries live in
+# $(ABC80_SRC_DIR), each with its own main() - not one wildcard-built
+# binary like the other targets above, since chargen_dump is a standalone
+# ROM-decode verification tool with no need for (or business linking) the
+# CPU core at all.
 ABC80_SRC_DIR := abc80/emu/src
-ABC80_SRCS := $(wildcard $(ABC80_SRC_DIR)/*.c)
-ABC80_OBJS := $(ABC80_SRCS:.c=.o) $(EMU_SRC_DIR)/z80.o $(EMU_SRC_DIR)/alu.o
+
+# bin/abc80: reuses cpm/emu/src/z80.o and alu.o directly rather than
+# recompiling them under a different name - both are already
+# machine-agnostic (z80_execute(), not the CP/M-specific z80_step()) and
+# built with identical flags, so there's nothing to duplicate. Opt-in only
+# (never part of `all`/`test`), same as `gtk` below - with no video/
+# keyboard emulated yet, there's nothing test-suite-verifiable about it yet.
+ABC80_OBJS := $(ABC80_SRC_DIR)/main.o $(ABC80_SRC_DIR)/chargen.o $(EMU_SRC_DIR)/z80.o $(EMU_SRC_DIR)/alu.o
 ABC80_TARGET := $(BIN_DIR)/abc80
+
+# bin/abc80-chargen-dump: the chargen.c decode-verification tool (see its
+# own top comment) - no CPU core needed, just the ROM decode itself.
+ABC80_CHARGEN_DUMP_OBJS := $(ABC80_SRC_DIR)/chargen_dump.o $(ABC80_SRC_DIR)/chargen.o
+ABC80_CHARGEN_DUMP_TARGET := $(BIN_DIR)/abc80-chargen-dump
 
 # z80.c's own interrupt-acceptance unit test (cpm/tests/test_interrupts.c) -
 # a direct C-level test, not a .asm program run through run_tests.sh like
@@ -51,7 +61,7 @@ GTK_PKGS := gtk4 vte-2.91-gtk4
 GTK_CFLAGS := $(shell pkg-config --cflags $(GTK_PKGS) 2>/dev/null)
 GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 
-.PHONY: all emulator assembler disassembler gtk abc80 run test clean
+.PHONY: all emulator assembler disassembler gtk abc80 abc80-chargen-dump run test clean
 
 all: emulator assembler disassembler
 
@@ -65,6 +75,8 @@ gtk: $(GTK_TARGET)
 
 abc80: $(ABC80_TARGET)
 
+abc80-chargen-dump: $(ABC80_CHARGEN_DUMP_TARGET)
+
 $(EMU_TARGET): $(EMU_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(EMU_OBJS)
 
@@ -76,6 +88,9 @@ $(DASM_TARGET): $(DASM_OBJS) | $(BIN_DIR)
 
 $(ABC80_TARGET): $(ABC80_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(ABC80_OBJS)
+
+$(ABC80_CHARGEN_DUMP_TARGET): $(ABC80_CHARGEN_DUMP_OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $(ABC80_CHARGEN_DUMP_OBJS)
 
 $(EMU_TEST_INTERRUPTS_TARGET): cpm/tests/test_interrupts.c $(EMU_SRC_DIR)/z80.c $(EMU_SRC_DIR)/alu.c $(EMU_SRC_DIR)/cpm.c | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ cpm/tests/test_interrupts.c $(EMU_SRC_DIR)/z80.c $(EMU_SRC_DIR)/alu.c $(EMU_SRC_DIR)/cpm.c
@@ -99,4 +114,4 @@ test: emulator assembler $(EMU_TEST_INTERRUPTS_TARGET)
 	./cpm/tests/run_tests.sh
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(ABC80_SRCS:.c=.o) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(ABC80_TARGET) $(EMU_TEST_INTERRUPTS_TARGET)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(ABC80_OBJS) $(ABC80_CHARGEN_DUMP_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(ABC80_TARGET) $(ABC80_CHARGEN_DUMP_TARGET) $(EMU_TEST_INTERRUPTS_TARGET)
