@@ -46,3 +46,24 @@ ASCII) decodes to a clear **Ä** (umlaut dots over a rounded A), matching the
 real chip's documented identity as the Swedish/Finnish national-charset
 variant (`DEFINE_DEVICE_TYPE(SN74S263, ..., "sn74s263", ...) // Swedish/Finnish`
 in MAME's own source) rather than plain ASCII.
+
+## Video timing/attribute PROMs (Milestone 2)
+
+Four small TTL PROMs, decoded in `abc80/emu/src/video_timing.c` (see its own
+top comment for the full address-formula grounding and verification).
+
+| File         | Board position | Chip   | CRC32      |
+|--------------|-----------------|--------|------------|
+| `hsync.bin`  | K5              | 82S129 | `e4f7e018` |
+| `vsync.bin`  | K2              | 82S131 | `445a45b9` |
+| `attr.bin`   | J3              | 82S129 | `6c46811c` |
+| `line.bin`   | K1              | 82S131 | `74de7a0b` |
+
+Downloaded from the same abc80.net archive. Filenames there
+(`abc8011.bin`/`abc8012.bin`/`abc8021.bin`/`abc8022.bin`) are keyed by chip
+part number, not function — matched to these four by cross-referencing that
+archive's own `00index.txt` board-position notes ("position 'K5'", "'J3'",
+etc.) against MAME's `abc80.cpp` `ROM_LOAD` comments, which name the same
+board positions for the same real part numbers. All four verified
+byte-identical to the checksums MAME's driver documents.
+

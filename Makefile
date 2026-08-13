@@ -41,6 +41,12 @@ ABC80_TARGET := $(BIN_DIR)/abc80
 ABC80_CHARGEN_DUMP_OBJS := $(ABC80_SRC_DIR)/chargen_dump.o $(ABC80_SRC_DIR)/chargen.o
 ABC80_CHARGEN_DUMP_TARGET := $(BIN_DIR)/abc80-chargen-dump
 
+# bin/abc80-video-timing-dump: the video_timing.c PROM-decode/address-
+# mapping verification tool (see its own top comment) - same reasoning as
+# chargen_dump above.
+ABC80_VIDEO_TIMING_DUMP_OBJS := $(ABC80_SRC_DIR)/video_timing_dump.o $(ABC80_SRC_DIR)/video_timing.o
+ABC80_VIDEO_TIMING_DUMP_TARGET := $(BIN_DIR)/abc80-video-timing-dump
+
 # z80.c's own interrupt-acceptance unit test (cpm/tests/test_interrupts.c) -
 # a direct C-level test, not a .asm program run through run_tests.sh like
 # every other regression check here, since no CP/M-executable instruction
@@ -61,7 +67,7 @@ GTK_PKGS := gtk4 vte-2.91-gtk4
 GTK_CFLAGS := $(shell pkg-config --cflags $(GTK_PKGS) 2>/dev/null)
 GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 
-.PHONY: all emulator assembler disassembler gtk abc80 abc80-chargen-dump run test clean
+.PHONY: all emulator assembler disassembler gtk abc80 abc80-chargen-dump abc80-video-timing-dump run test clean
 
 all: emulator assembler disassembler
 
@@ -77,6 +83,8 @@ abc80: $(ABC80_TARGET)
 
 abc80-chargen-dump: $(ABC80_CHARGEN_DUMP_TARGET)
 
+abc80-video-timing-dump: $(ABC80_VIDEO_TIMING_DUMP_TARGET)
+
 $(EMU_TARGET): $(EMU_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(EMU_OBJS)
 
@@ -91,6 +99,9 @@ $(ABC80_TARGET): $(ABC80_OBJS) | $(BIN_DIR)
 
 $(ABC80_CHARGEN_DUMP_TARGET): $(ABC80_CHARGEN_DUMP_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(ABC80_CHARGEN_DUMP_OBJS)
+
+$(ABC80_VIDEO_TIMING_DUMP_TARGET): $(ABC80_VIDEO_TIMING_DUMP_OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $(ABC80_VIDEO_TIMING_DUMP_OBJS)
 
 $(EMU_TEST_INTERRUPTS_TARGET): cpm/tests/test_interrupts.c $(EMU_SRC_DIR)/z80.c $(EMU_SRC_DIR)/alu.c $(EMU_SRC_DIR)/cpm.c | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ cpm/tests/test_interrupts.c $(EMU_SRC_DIR)/z80.c $(EMU_SRC_DIR)/alu.c $(EMU_SRC_DIR)/cpm.c
@@ -114,4 +125,4 @@ test: emulator assembler $(EMU_TEST_INTERRUPTS_TARGET)
 	./cpm/tests/run_tests.sh
 
 clean:
-	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(ABC80_OBJS) $(ABC80_CHARGEN_DUMP_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(ABC80_TARGET) $(ABC80_CHARGEN_DUMP_TARGET) $(EMU_TEST_INTERRUPTS_TARGET)
+	rm -f $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(ABC80_OBJS) $(ABC80_CHARGEN_DUMP_OBJS) $(ABC80_VIDEO_TIMING_DUMP_OBJS) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(ABC80_TARGET) $(ABC80_CHARGEN_DUMP_TARGET) $(ABC80_VIDEO_TIMING_DUMP_TARGET) $(EMU_TEST_INTERRUPTS_TARGET)

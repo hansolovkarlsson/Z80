@@ -78,11 +78,32 @@ ROM boot progress becomes visible instead of only inferable from a PC trace.
       variant, not plain ASCII. Worth remembering for later text-handling
       work: the punctuation range (`0x40`, `0x5B`-`0x5E`, `0x60`, `0x7B`-
       `0x7E`) is Swedish ISO646, not ASCII.
-- [ ] Decode the sync/attribute/line-address PROMs (checksums documented in
-      MAME's driver) enough to reproduce the 40×24 text-mode layout and any
-      per-character attribute bits (the ABC80's "Teletext"-style attributes) —
-      not full analog-timing accuracy, just the logical row/column/attribute
-      mapping video RAM bytes go through.
+- [x] **Decode the sync/attribute/line-address PROMs** — done, for the
+      logical row/column/attribute mapping specifically (not yet the actual
+      pixel-rendering loop — that's next, once a display backend is
+      chosen). Four PROMs (`hsync`/`vsync`/`attr`/`line`, all in
+      `abc80/resources/rom/`, provenance in that directory's own
+      `README.md`), address formulas ported from MAME's
+      `src/mame/luxor/abc80_v.cpp` into `abc80/emu/src/video_timing.c`/`.h`.
+      Verified programmatically against the real ROM bytes via
+      `bin/abc80-video-timing-dump` (5/5 checks pass), not just narrative
+      claims: the hsync PROM's `ROW_START` bit is set for exactly 40
+      columns (`sx=15..54`); the vsync PROM's `FRAME_END` bit fires 23
+      times, every 10 lines, giving 24 character rows; the line PROM cycles
+      `0..9` once per character row, feeding `chargen.c`'s row parameter
+      directly; the attr PROM's `BLANK` bit is clear in the border region
+      and set for real characters in the active display area (an initial
+      "looks inverted" read turned out to be checking the wrong half of the
+      attribute address — resolved once `dh`/`dv`'s real meaning, "active
+      display area" rather than a rare special case, became clear: 240/313
+      scanlines and 40/64 column-slots have it set); and
+      `abc80_videoram_addr()` (video RAM address from character row/column)
+      is a genuine bijection across all 24×40=960 real character cells —
+      zero address collisions, confirmed by brute-force enumeration.
+      Deliberately not yet ported: the TEXT/GRAPHICS row-attribute state
+      machine and the actual per-pixel chargen-vs-block-graphics selection
+      loop, since both are inherently part of the rendering loop rather
+      than a stateless PROM-decode primitive — left for the next step.
 - [ ] Pick and wire up a display backend. Two real options, not yet decided:
       a terminal-based renderer (cheapest, consistent with how `bin/z80`
       already does console I/O) vs. a real windowed framebuffer (closer to
