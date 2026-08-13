@@ -257,15 +257,79 @@ where a person can type something and see a response.
       original pre-keyboard baseline, confirming this is a real,
       keyboard-driven effect.
 
-## Milestone 4: cassette storage (SAVE/LOAD)
+## Milestone 4: cassette storage (SAVE/LOAD) — done
 
 **Goal**: load and save real BASIC programs, the ABC80's standard storage
 medium (no disk drive without an ABCbus expansion card — Milestone 6).
 
-- [ ] Cassette read/write via the Z80 PIO (shared hardware with Milestone 3,
-      so sequenced after it).
-- [ ] A host-file-backed cassette image, the natural equivalent of `bin/z80`'s
-      own `cpm_disk/` host-directory mapping for CP/M file I/O.
+**Scope decision, made deliberately rather than defaulting to the original
+plan**: real ABC80 cassette I/O is analog — MAME's own `abc80_state::
+cassette_update()` samples actual audio waveforms at 44.1kHz to decode tape
+input (Kansas-City-style FSK), which would need real tape-encoding research
+to emulate faithfully, well beyond what a PIO Port B implementation alone
+gets you. MAME itself doesn't require that for everyday use: alongside its
+real (incomplete/best-effort) cassette device, it wires up a
+`QUICKLOAD_LOAD_MEMBER` (`abc80_state::quickload_cb`) that bypasses the
+analog path entirely — read BASIC's own program-storage pointer, inject a
+file's bytes directly into RAM there, fix up the end-pointer. This
+milestone ports that exact mechanism (`abc80/emu/src/cassette.c`/`.h`, new
+`--quickload FILE`/`--quicksave FILE` flags on `bin/abc80`) rather than the
+originally-planned "cassette read/write via the Z80 PIO" — the same
+well-precedented kind of simplification already used for the keyboard
+(Milestone 3 bypassed the real scan-matrix PROM the identical way, since
+MAME does too).
+
+- [x] **The injection mechanism**: `BOFA`/`EOFA`/`HEAD` (`0xFE1C`/`0xFE1E`/
+      `0xFE20`) are BASIC's own program-storage pointers, addresses ported
+      directly from MAME's `abc80.h` (`BOFA = 0xfe1c`, etc.) — "Beginning/
+      End Of File Area". Verified empirically against this project's own
+      real ROM run, not just trusted from MAME's naming: typing a numbered
+      line (`10 PRINT 1+1`) moved `EOFA` forward by exactly the stored
+      line's length (19 bytes), and dumping that memory range showed
+      genuine, well-formed BASIC tokens — a length byte matching the
+      line's own size, a little-endian line number, a `PRINT` token, a
+      repeated 6-byte numeric-literal encoding for each `1`, a `+` operator
+      token, ending in the same `0x0D` line-input uses.
+- [x] **A host-file-backed "cassette" image** — `abc80/resources/rom/`-
+      adjacent `.bac`-style files, not a directory mapping like `bin/z80`'s
+      `cpm_disk/` (there's no filesystem/directory concept on a real
+      cassette, just one program per tape position, matching one file per
+      quickload/quicksave here). One reserved header byte, matching MAME's
+      own "skip the file's first byte" convention exactly, precedes the raw
+      program bytes.
+      **Honest caveat, not glossed over**: MAME's driver source doesn't
+      explain what that header byte means, and this project could not find
+      a definitive primary source for it despite real effort (abc80.net's
+      archive, the TOSEC ABC80 software set, and the abc80.org mailing
+      list were all checked - none had a byte-level answer). This
+      implementation writes a fixed `0x00` placeholder there rather than
+      guess at a real convention. Round-tripping through this emulator's
+      own quicksave/quickload is fully verified (below); loading a real
+      historical `.bac` file downloaded from an archive is untested and
+      may need that header byte's real meaning figured out first if it
+      turns out to matter.
+- [x] **Verified end-to-end, including a real bug caught by testing, not
+      assumed correct from the mechanism alone**: typing `10 PRINT 1+1` then
+      quicksaving produced a 20-byte file; quickloading it into a *fresh*
+      run (no typed program at all) and typing `LIST` correctly
+      de-tokenized it back to `10 PRINT 1+1` on screen — proving the core
+      byte-capture/injection is genuinely correct. But the first version
+      tried, capturing exactly `[BOFA, EOFA)`, *looked* complete (`LIST`
+      already worked) while `RUN` silently did nothing after a quickload,
+      despite working perfectly when the same program was typed directly.
+      Found by direct comparison, not guesswork: dumping the byte
+      immediately *at* `EOFA` after each path showed a real difference —
+      `0x01` after typing a program normally, `0x00` (this emulator's RAM
+      zero-init, untouched by the naive quickload) after a quickload. That
+      byte is a terminator BASIC's `RUN` depends on but `LIST` apparently
+      doesn't. Fixed by capturing `[BOFA, EOFA]` *inclusive* (one byte
+      more) in quicksave, and having quickload set the new `EOFA` to point
+      at that restored terminator rather than just past the raw data.
+      With that fix, the full round-trip — type a program, quicksave,
+      start a genuinely fresh run, quickload, `RUN` — now produces the
+      exact same output (`2`) as typing and running the program directly
+      in one session, execution reaching the same deep ROM addresses
+      (`0x376A`) either way.
 
 ## Milestone 5: SN76477 sound
 
@@ -320,8 +384,12 @@ Everything not yet implemented is tracked as a concrete Milestone above
 (2-6), not just listed here — this section is a quick-scan summary, not
 where the real detail lives:
 
-- Video generation (Milestone 2) and keyboard input (Milestone 3) are done.
-  No cassette, sound, or ABCbus/floppy yet (Milestones 4-6).
+- Video generation (Milestone 2), keyboard input (Milestone 3), and
+  cassette quickload/quicksave (Milestone 4) are done. No sound or
+  ABCbus/floppy yet (Milestones 5-6). Cassette storage is a host-file
+  bypass of BASIC's own program-storage pointers, not real analog tape
+  emulation - see Milestone 4's own write-up for why and what that means
+  for compatibility with real historical `.bac` files.
 - **No periodic interrupt / timer model**: real ABC80 hardware raises a
   regular interrupt (tied to video scanline timing via the PIO's ASTB pin -
   see MAME's `scanline_tick()`) that the ROM uses for at least cursor-blink

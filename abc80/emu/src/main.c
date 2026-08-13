@@ -4,17 +4,19 @@
 // since that's CP/M's own wrapper and intercepts addresses (0x0000,
 // 0x0005) that legitimately hold real ABC80 ROM code. See
 // abc80/docs/ABC80_ROADMAP.md for the full memory map, sources, and what's
-// still missing (sound, cassette, ABCbus).
+// still missing (sound, ABCbus).
 //
 // Keyboard input (Milestone 3, keyboard.c) reads stdin non-blockingly and
 // feeds PIO Port A, the register the real ROM's own steady-state polling
 // loop reads (confirmed via this project's own disassembler - see
-// keyboard.c's top comment for the exact instructions). Renders whatever
-// the ROM wrote to video RAM (0x7C00-0x7FFF, directly addressable within
-// the flat `ram` array - no separate buffer needed) via render.c's
-// terminal backend once the run ends, either from an unimplemented-opcode
-// halt (a real bug) or the safety instruction cap (expected if nothing
-// was typed - no sound/cassette exists yet to do anything else useful).
+// keyboard.c's top comment for the exact instructions). Cassette storage
+// (Milestone 4, cassette.c) is a "quickload"/"quicksave" bypass of BASIC's
+// own program-storage pointers rather than real analog tape emulation -
+// see cassette.c's own top comment for why. Renders whatever the ROM
+// wrote to video RAM (0x7C00-0x7FFF, directly addressable within the flat
+// `ram` array - no separate buffer needed) via render.c's terminal
+// backend once the run ends, either from an unimplemented-opcode halt (a
+// real bug) or the safety instruction cap (expected if nothing was typed).
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +30,7 @@
 #include "render.h"
 #include "video_timing.h"
 #include "keyboard.h"
+#include "cassette.h"
 
 // Every I/O port address that aliases PIO Port A's data register under
 // ABC80's real hardware address decoding (MAME's `map.global_mask(0x17)` -
@@ -107,6 +110,17 @@ static const RomImage ROM_IMAGES[] = {
 // by eye, without flooding the terminal for the full multi-million-step run.
 #define TRACE_INSTRUCTIONS 100
 
+// How long to wait before injecting a --quickload file into BOFA -
+// BASIC's own program-storage pointers (cassette.h) aren't meaningful
+// until the ROM's boot init sets them. Measured empirically (see
+// abc80/docs/ABC80_ROADMAP.md's Milestone 4 section): BOFA/EOFA settle to
+// their real value (0x8000, empty program) within the first 10,000
+// instructions - nowhere near as long as the ~500,000-instruction wait
+// keyboard.c's own comment documents for the keyboard poll loop. 50,000
+// gives a comfortable 5x margin over the measured point without
+// meaningfully delaying the injection.
+#define QUICKLOAD_INJECT_AFTER_INSTRUCTIONS 50000
+
 static bool load_rom(const char *rom_dir, const RomImage *rom, uint8_t *ram) {
     char path[1024];
     snprintf(path, sizeof(path), "%s/%s", rom_dir, rom->filename);
@@ -142,22 +156,40 @@ static bool load_rom(const char *rom_dir, const RomImage *rom, uint8_t *ram) {
 
 static void print_usage(const char *prog) {
     printf("Usage:\n");
-    printf("  %s [rom_dir] [max_instructions]\n", prog);
+    printf("  %s [rom_dir] [max_instructions] [--quickload FILE] [--quicksave FILE]\n", prog);
     printf("\n");
     printf("  rom_dir            Directory containing the four ROM images\n");
     printf("                     (default: resources/rom - run from inside abc80/)\n");
     printf("  max_instructions   Safety cap for this debug run\n");
     printf("                     (default: %d)\n", DEFAULT_MAX_INSTRUCTIONS);
+    printf("  --quickload FILE   Inject a saved program into BASIC's program\n");
+    printf("                     storage area once boot init has run (see cassette.h)\n");
+    printf("  --quicksave FILE   Dump BASIC's current program storage (BOFA..EOFA)\n");
+    printf("                     to FILE at the end of the run\n");
 }
 
 int main(int argc, char *argv[]) {
-    if (argc > 1 && (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
-        print_usage(argv[0]);
-        return EXIT_SUCCESS;
-    }
+    const char *rom_dir = NULL;
+    long max_instructions = -1;
+    const char *quickload_path = NULL;
+    const char *quicksave_path = NULL;
 
-    const char *rom_dir = (argc > 1) ? argv[1] : "resources/rom";
-    long max_instructions = (argc > 2) ? atol(argv[2]) : DEFAULT_MAX_INSTRUCTIONS;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return EXIT_SUCCESS;
+        } else if (strcmp(argv[i], "--quickload") == 0 && i + 1 < argc) {
+            quickload_path = argv[++i];
+        } else if (strcmp(argv[i], "--quicksave") == 0 && i + 1 < argc) {
+            quicksave_path = argv[++i];
+        } else if (!rom_dir) {
+            rom_dir = argv[i];
+        } else if (max_instructions < 0) {
+            max_instructions = atol(argv[i]);
+        }
+    }
+    if (!rom_dir) rom_dir = "resources/rom";
+    if (max_instructions < 0) max_instructions = DEFAULT_MAX_INSTRUCTIONS;
 
     static uint8_t ram[RAM_SIZE];
 
@@ -209,12 +241,18 @@ int main(int argc, char *argv[]) {
     long instructions = 0;
     uint64_t total_cycles = 0;
     bool halted = false;
+    bool quickload_done = (quickload_path == NULL);
 
     while (instructions < max_instructions) {
         uint16_t pc_before = cpu.pc;
 
         if (instructions < TRACE_INSTRUCTIONS) {
             printf("  [%6ld] PC=0x%04X  opcode=0x%02X\n", instructions, pc_before, ram[pc_before]);
+        }
+
+        if (!quickload_done && instructions >= QUICKLOAD_INJECT_AFTER_INSTRUCTIONS) {
+            abc80_cassette_quickload(ram, quickload_path);
+            quickload_done = true;
         }
 
         if (abc80_keyboard_ready_for_next()) {
@@ -259,6 +297,10 @@ int main(int argc, char *argv[]) {
             if (pc_before < min_pc) min_pc = pc_before;
             if (pc_before > max_pc) max_pc = pc_before;
         }
+    }
+
+    if (quicksave_path) {
+        abc80_cassette_quicksave(ram, quicksave_path);
     }
 
     printf("\n--- Run summary ---\n");
