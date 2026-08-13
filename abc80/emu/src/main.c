@@ -172,17 +172,21 @@ static bool interactive_mode = false;
 // machine-specific glue stays separate from the shared core, and from
 // each other).
 //
-// One real difference from cpm.c's version: ISIG is deliberately left
-// *enabled* (unlike what a byte-for-byte "real raw mode" would do), so
-// host Ctrl-C still raises SIGINT rather than being delivered to the
-// emulated ROM as a genuine 0x03 keystroke. This is a deliberate scope
-// choice, not an oversight: it keeps Ctrl-C as this tool's own "quit
-// cleanly" mechanism (identical to how the CP/M target's console already
-// behaves today), at the cost of there being no way to send a real
-// Ctrl-C break to BASIC through this emulator yet - a known, documented
-// gap (see abc80/docs/ABC80_ROADMAP.md), not something worth solving
-// speculatively in the same pass as making keyboard input interactive at
-// all.
+// One real difference from cpm.c's version: VINTR (the character that
+// normally raises SIGINT - Ctrl-C on every common terminal) is disabled
+// via _POSIX_VDISABLE rather than left at its default. ISIG itself stays
+// enabled, so Ctrl-\ (SIGQUIT) and Ctrl-Z (SIGTSTP) still behave
+// normally - only Ctrl-C's own signal-raising is turned off. That lets a
+// real Ctrl-C keystroke instead arrive as a plain 0x03 byte through
+// read(), exactly like every other key, reaching abc80_keyboard_press()
+// and from there the ROM's own real interrupt handler's break-combo check
+// (0x83 = 0x03 with the PIO strobe bit set - see
+// ABC80_PIO_INTERRUPT_PERIOD_TSTATES's own comment for that handler) -
+// the genuine hardware behavior, not an emulator-only substitute. This
+// closes the gap the initial --interactive milestone deliberately left
+// open (see abc80/docs/ABC80_ROADMAP.md's Milestone 8 write-up): quitting
+// this *tool* now needs a different key, since Ctrl-C is spoken for -
+// Ctrl-\ (SIGQUIT), handled below exactly like SIGINT used to be.
 static struct termios abc80_orig_termios;
 static int abc80_termios_saved = 0;
 
@@ -203,24 +207,30 @@ static void abc80_console_init(void) {
     raw.c_lflag &= ~(ICANON | ECHO); // no line buffering, no local echo
     raw.c_iflag &= ~(ICRNL | INLCR | IGNCR); // real Enter must arrive as 0x0D
     raw.c_iflag &= ~IXON;                    // don't swallow Ctrl-S/Ctrl-Q
+    raw.c_cc[VINTR] = _POSIX_VDISABLE;       // Ctrl-C reaches the ROM instead
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSANOW, &raw);
 }
 
-// Set by abc80_handle_sigint() (registered only in --interactive mode);
+// Set by abc80_handle_quit_signal() (registered only in --interactive
+// mode, for SIGINT and SIGQUIT - see abc80_console_init()'s own comment
+// for why SIGQUIT/Ctrl-\ is this tool's quit key now instead of Ctrl-C);
 // checked by the main loop so it can exit through its normal end-of-main
 // path (final render, run summary, and - critically - the atexit-
 // registered abc80_console_shutdown() above that restores the host
-// terminal). The default SIGINT action skips atexit handlers entirely,
+// terminal). SIGINT is still handled too, not just SIGQUIT: VINTR being
+// disabled only stops the *terminal driver* from raising it via Ctrl-C,
+// but nothing stops an external `kill -INT` from sending it directly, and
+// the default action for either signal skips atexit handlers entirely -
 // which would otherwise leave a real user's shell in raw mode (no local
-// echo, no line buffering) until they ran `reset`/`stty sane` themselves -
-// a real, practical bug for an interactive tool, not a hypothetical one.
+// echo, no line buffering) until they ran `reset`/`stty sane` themselves.
 static volatile sig_atomic_t abc80_quit_requested = 0;
+static volatile sig_atomic_t abc80_quit_signal = 0;
 
-static void abc80_handle_sigint(int sig) {
-    (void)sig;
+static void abc80_handle_quit_signal(int sig) {
     abc80_quit_requested = 1;
+    abc80_quit_signal = sig;
 }
 
 // Non-blocking single-byte stdin read - works identically for a piped or
@@ -406,7 +416,8 @@ static void print_usage(const char *prog) {
     printf("  --interactive      Real keyboard input (raw terminal mode) and a live,\n");
     printf("                     continuously redrawn screen, paced to real ABC80 speed,\n");
     printf("                     instead of a one-shot batch run to max_instructions.\n");
-    printf("                     Press Ctrl-C to exit. Ignored if stdin isn't a terminal.\n");
+    printf("                     Ctrl-C reaches BASIC as a real break keystroke; press\n");
+    printf("                     Ctrl-\\ to exit this tool. Ignored if stdin isn't a terminal.\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -497,10 +508,12 @@ int main(int argc, char *argv[]) {
     if (interactive_mode) {
         abc80_console_init();
         struct sigaction sa = {0};
-        sa.sa_handler = abc80_handle_sigint;
+        sa.sa_handler = abc80_handle_quit_signal;
         sigemptyset(&sa.sa_mask);
         sigaction(SIGINT, &sa, NULL);
-        printf("\nStarting ABC80 ROM execution at PC=0x0000 (interactive - Ctrl-C to exit)...\n");
+        sigaction(SIGQUIT, &sa, NULL);
+        printf("\nStarting ABC80 ROM execution at PC=0x0000 "
+               "(interactive - Ctrl-C reaches BASIC, Ctrl-\\ exits)...\n");
     } else {
         printf("\nStarting ABC80 ROM execution at PC=0x0000 (cap: %ld instructions)...\n\n",
                max_instructions);
@@ -723,13 +736,15 @@ int main(int argc, char *argv[]) {
     // throughout the run, this is just its final frame. Printed *before*
     // the run summary below, not after: abc80_render_frame() clears the
     // screen first thing, which would otherwise wipe the summary text a
-    // real interactive user is trying to read after pressing Ctrl-C.
+    // real interactive user is trying to read after pressing Ctrl-\.
     printf("\n--- Final video RAM render ---\n");
     abc80_render_frame(stdout, &ram[0x7C00], attr_rom, 1);
 
     printf("\n--- Run summary ---\n");
     const char *stop_reason = halted ? "halted on unimplemented opcode"
-                             : abc80_quit_requested ? "user requested exit (Ctrl-C)"
+                             : abc80_quit_requested ?
+                               (abc80_quit_signal == SIGQUIT ? "user requested exit (Ctrl-\\)"
+                                                              : "user requested exit (SIGINT)")
                              : "reached instruction cap";
     printf("Instructions executed: %ld (%s)\n", instructions, stop_reason);
     printf("Total T-states:        %llu\n", (unsigned long long)total_cycles);

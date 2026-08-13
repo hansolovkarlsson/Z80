@@ -796,14 +796,61 @@ against directly, but every other mechanic was verified concretely —
   quicksave/quickload round-trip) - `--interactive` is strictly additive,
   gated behind its own flag throughout.
 
-**Known gap, deliberately not solved here**: with `ISIG` left enabled,
-there is currently no way to send a real Ctrl-C *break* keystroke through
-to BASIC via `--interactive` - host Ctrl-C always quits this tool instead.
-Solving that would need either disabling `ISIG` (and then inventing some
-other, non-colliding host-level "quit the emulator" mechanism, since
-Ctrl-C would no longer be available for that) or a distinct escape
-sequence, and wasn't part of what this milestone set out to fix - see
-Known Gaps below.
+**Known gap at the time, since fixed**: this milestone originally shipped
+with `ISIG` left enabled, so host Ctrl-C always quit this tool rather than
+reaching BASIC as a real break keystroke - see Milestone 9 immediately
+below for the fix.
+
+## Milestone 9: real Ctrl-C break through `--interactive` — done
+
+**Goal**: close Milestone 8's own documented gap - let a genuine Ctrl-C
+keystroke reach BASIC's own break handling, the way real hardware would,
+instead of always just quitting this emulator tool.
+
+**Fix**: rather than disabling `ISIG` outright (which would also silence
+Ctrl-\ and Ctrl-Z), `abc80_console_init()` now disables only `VINTR` (the
+specific control character that raises `SIGINT` - Ctrl-C on essentially
+every terminal) via `_POSIX_VDISABLE`, a standard POSIX termios mechanism
+for turning off one control character without touching `ISIG` itself.
+`ISIG` stays enabled, so Ctrl-\ (`SIGQUIT`) still behaves as a real
+signal - repurposed as this tool's own "quit cleanly" key now that Ctrl-C
+is freed up for the emulated ROM. Both `SIGINT` (still reachable via an
+external `kill -INT`, even though the terminal itself won't generate it
+via Ctrl-C anymore) and `SIGQUIT` are handled identically (same flag, same
+clean-exit path through the end of `main()`), and the final run summary
+now reports which one actually fired.
+
+Once `VINTR` is disabled, Ctrl-C simply arrives as a plain `0x03` byte
+through `read()`, indistinguishable from any other keystroke - no special-
+casing needed anywhere in `poll_stdin_byte()`/`abc80_keyboard_press()`,
+since neither ever treated any byte value specially to begin with.
+
+**Verified end-to-end against the real ROM, not just "the byte gets
+through"**: piped a program defining an infinite loop
+(`10 PRINT 1` / `20 GOTO 10`), started it with `RUN`, then sent a real
+`0x03` byte partway through. Traced the full real consequence via this
+ROM's own disassembly-confirmed code paths:
+- The periodic interrupt handler (`0x031E`, Milestone 7) saw the
+  keystroke and set the real break-pending flag at `0xFE07` to `0x83`.
+- The BASIC line-execution dispatch loop (found via disassembly:
+  `L0D6F`/`L0D90` at `0x0D6F`/`0x0D90`, called once per executed program
+  line) calls a real check-and-clear routine at `0x033E`
+  (`LD A,(0FE07h) / AND A / LD A,00h / LD (0FE07h),A / RET`, returning
+  with the Z flag reflecting the flag's value *before* clearing it) and
+  jumps to a real break handler (`0x2321`) when it finds the flag set.
+- That handler executes `RST 10h` (a real BDOS-style restart vector) and
+  eventually returns to the READY prompt - confirmed not by assumption
+  but by the actual final screen content: **`STOP LINE 10`**, the
+  authentic ABC80 BASIC break message, printed at exactly the line the
+  loop was interrupted on.
+- A first test run appeared to show no break at all (the loop just kept
+  printing), which turned out to be a test-methodology artifact, not a
+  bug: the process was killed and its output captured too early, before
+  the ROM had finished printing `STOP LINE 10` - a longer observation
+  window showed the correct behavior clearly.
+
+Full regression suite (`make test`, plus every existing `--interactive`
+and default-mode ABC80 check from Milestones 1-8) still passes unchanged.
 
 ## Memory map (grounded, not guessed)
 
@@ -840,10 +887,11 @@ where the real detail lives:
 - Video generation (Milestone 2), keyboard input (Milestone 3), cassette
   quickload/quicksave (Milestone 4), a scoped SN76477 tone model
   (Milestone 5), RAM expansion / floating-bus fidelity (Milestone 6's first
-  sub-step), the real periodic PIO interrupt (Milestone 7), and real
-  interactive keyboard input with a live, real-time-paced screen
-  (Milestone 8, `bin/abc80 --interactive`) are done. No floppy/DOS
-  controller yet (Milestone 6's remaining second half) —
+  sub-step), the real periodic PIO interrupt (Milestone 7), real
+  interactive keyboard input with a live, real-time-paced screen including
+  a genuine Ctrl-C break to BASIC (Milestones 8-9, `bin/abc80
+  --interactive`) are done. No floppy/DOS controller yet (Milestone 6's
+  remaining second half) —
   real protocol facts have been derived by disassembling the actual ABC-DOS
   ROM (card-select address, port roles, command packet format, two
   identified operations), but the parameter encoding, transfer-length
@@ -859,15 +907,8 @@ where the real detail lives:
   `m_blink_timer` uses. Default (non-`--interactive`) mode is still a
   one-shot end-of-run snapshot with `blink_phase=1` hardcoded, unchanged -
   a deliberate difference between the two modes' purposes, not a gap.
-- **No real Ctrl-C break through `--interactive`** (Milestone 8): host
-  Ctrl-C quits this emulator tool (`ISIG` deliberately left enabled,
-  mirroring the CP/M target's own console handling) rather than being
-  delivered to the emulated ROM as a genuine `0x03` keystroke, so BASIC's
-  own Ctrl-C-break handling (the `0x83` check in the real interrupt
-  handler at `0x031E` - see Milestone 7) can't currently be exercised
-  interactively. Would need either disabling `ISIG` and inventing a
-  different, non-colliding host-level quit mechanism, or a distinct escape
-  sequence - not attempted here.
+- **Real Ctrl-C break now reaches BASIC** (Milestone 9, closing the gap
+  Milestone 8 left open) - see that milestone's own write-up below.
 - **Memory-map fidelity for `0x4000`-`0xBFFF`**: fixed by Milestone 6's RAM
   expansion sub-step (see above) — `0x4000`-`0x7BFF` and, by default,
   `0x8000`-`0xBFFF` now correctly float (fixed `0xFF` reads, matching MAME's
