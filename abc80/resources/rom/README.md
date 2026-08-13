@@ -67,3 +67,24 @@ etc.) against MAME's `abc80.cpp` `ROM_LOAD` comments, which name the same
 board positions for the same real part numbers. All four verified
 byte-identical to the checksums MAME's driver documents.
 
+## Floppy/DOS controller ROMs (Milestone 6, disk support — research in progress)
+
+Not yet wired into `bin/abc80` (no code reads these yet) — committed ahead
+of the implementation itself, matching this project's usual approach of
+downloading and checksumming real ROMs before writing any code against
+them. See `abc80/docs/ABC80_ROADMAP.md`'s Milestone 6 section for what's
+been derived from disassembling `ABCDOS80.bin` so far and what's still
+open.
+
+| File | Description | Size | CRC32 |
+|---|---|---|---|
+| `ABCDOS80.bin` | ABC-DOS for ABC80 — the host-side DOS ROM, real base address `0x6000` (confirmed by disassembling it there and finding internally-consistent jump targets throughout the full 4KB range) | 4096 | `2cb2192f` |
+| `UFD80V20.bin` | UFD-DOS v2.0 for ABC80 — the alternate real DOS variant, not yet examined | 4096 | `69b09c0b` |
+| `FIO-V3.2.bin` | "PROM on FIO board" (2708, 1KB) — firmware for the floppy controller card's *own* internal Z80 (see the FD2/FD2U technical manual's `FLOPPY DISKENS DATOR` section), not the ABC80 host; not relevant to a host-side bypass, since it never executes on this emulator's own CPU |
+
+All three downloaded from abc80.net's archive
+(`https://www.abc80.net/archive/luxor/Prom/fw/ABC80/ABCDOS80.bin`,
+`UFD80V20.ITH.bin`, `FIO-V3.2-8d36.bin`), identified via that archive's own
+`00index.txt` descriptions (`"ABCDOS80.bin ABC-DOS for ABC 80"`, `"FIO-V3.2-8d36.bin
+PROM on FIO board 2708"`).
+

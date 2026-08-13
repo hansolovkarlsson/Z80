@@ -415,9 +415,9 @@ storage.
       simplification for `0x4000`-`0xBFFF` with genuine floating-bus
       behavior by default, plus an opt-in `--ram32k` flag modeling a real,
       well-documented 16KB expansion.
-- [ ] Floppy/DOS controller card + ABC-DOS or UFD-DOS ROM loading (both
-      already archived at abc80.net, alongside the BASIC ROMs already in
-      `abc80/resources/rom/`).
+- [ ] **Floppy/DOS controller card + ABC-DOS or UFD-DOS ROM loading —
+      scoping and protocol research in progress, not yet implemented.**
+      See its own section below.
 
 ### RAM expansion sub-step (grounded, not guessed)
 
@@ -622,6 +622,97 @@ sound WAV render (frequency re-measured at 640.01Hz via zero-crossing
 analysis, still matching the 640.00Hz prediction) — all pass with no
 regressions from before this milestone.
 
+### Floppy/DOS controller sub-step — protocol research (in progress, no code yet)
+
+**Why this is scoped differently from every other sub-step here**: a real
+ABC830/832/838-class controller (the family the `abc80_cards` slot list's
+"abc830"/"fd2" options represent, per MAME's `src/devices/bus/abcbus/
+lux21046.h`) is not a simple memory-mapped FDC register set — it's a whole
+second, autonomous computer, with its own Z80 CPU, its own Z80 DMA
+controller, and its own FD1793/WD1771-class floppy disk controller chip,
+all running the card's own separate firmware
+(`abc80/resources/rom/FIO-V3.2.bin`, confirmed as "PROM on FIO board 2708"
+per abc80.net's own index — the FD2/FD2U technical manual's own
+`FLOPPY DISKENS DATOR` section independently confirms this: "Datorn
+administreras av en Zilog Z80:CPU... En Zilog Z80:PIO används som en
+buffer mellan det interna datorsystemet och floppydiskelektroniken" -
+"[the controller's internal] computer is managed by a Zilog Z80 CPU... a
+Zilog Z80 PIO is used as a buffer between the internal computer system and
+the floppy disk electronics"). Faithfully emulating that hardware would
+mean building two entirely new peripheral-chip emulators (a Z80 DMA
+controller and an FD1793-class FDC, neither of which this project has ever
+needed before) plus a second CPU instance, before the actual DOS ROM
+(which runs on the *host* CPU, not the controller's) could do anything at
+all — a different scale of undertaking than any milestone so far.
+
+**Deliberate scope decision**: bypass the controller's internal hardware
+entirely (mirroring Milestone 4's cassette quickload precedent — skip the
+real, complex device and intercept at the boundary real software already
+crosses) rather than build it. Concretely: intercept the *byte-level
+command protocol* the ABC80 host CPU exchanges with the controller card
+over the ABCbus, and answer it directly from a host-file-backed virtual
+disk image — the controller's own internal Z80/DMA/FDC never needs to
+exist in this emulator if the bytes it would have produced on the bus are
+faithfully reproduced. This is a bigger bypass than cassette's (which just
+copies bytes at a known RAM address) since it requires understanding a
+real, undocumented-by-MAME-comments protocol — grounded by disassembling
+the actual ABC-DOS ROM, exactly the same methodology used for every other
+subsystem in this project.
+
+**Confirmed via direct disassembly of `ABCDOS80.bin`** (the real,
+committed, checksum-recorded "ABC-DOS for ABC 80" ROM — see
+`abc80/resources/rom/README.md` — disassembled with `bin/z80dasm ... -o
+0x6000`, its real base address per `ABC80-minneskort-bruksanvisning.pdf`;
+the load address is independently self-confirmed by the disassembly
+holding together as coherent code across the full 4KB image, including
+jump targets throughout `0x6000`-`0x6FFF`):
+
+- **Card select**: `LD A,2Dh` (45 decimal) / `OUT (01h),A` — an exact
+  match to MAME's own `ADDRESS_ABC830 = 45` constant
+  (`src/devices/bus/abcbus/lux21046.h`) *and* to the FD2 technical
+  manual's own worked example (`"KORTETS ADRESS ÄR 45... OUT 1,45"`) —
+  three independent sources agreeing, not a guess.
+- **Port roles**: port `0x00` = data byte transfer; port `0x01` = status
+  (read) / card-select (write); port `0x02` = a control line, written once
+  per command. Status bit 7 = card ready; bit 0 = per-byte ready during a
+  transfer; bit 1 = a second ready gate checked before a transfer starts.
+- **Command packet**: a real 4-byte structure, `[function_code,
+  drive_number, D, E]`, sent byte-by-byte with a ready-bit handshake per
+  byte (`L612B`/`L6143` in the ROM's own code, `0x612B`-`0x614C`). Drive
+  number comes from a fixed RAM cell (`0xFD01`, masked to 3 bits — an
+  0-7 drive select). `D`/`E` are caller-supplied and not yet decoded (see
+  below).
+- **Two concrete operations identified by function code and data
+  direction**: function `3` (`L6068`/`L60A1` at `0x6068`, entered via the
+  ROM's own jump table at `0x600F`) reads a run of bytes *from* the
+  controller into a host buffer (`L614D` receive-loop); function `0x0C`
+  (12) (`L609F`/`L60A1`, jump table `0x6012`) sends a run of bytes *to*
+  the controller from a host buffer (`L60B4` send-loop) — almost
+  certainly "read sector" and "write sector" respectively, given the
+  data-direction match and that both are reached via the ROM's own public
+  jump table (i.e., these are real, externally-callable DOS entry
+  points, not internal helpers).
+
+**Still open, not yet resolved — the real remaining work**:
+- The exact meaning of the command packet's `D`/`E` bytes (track+sector
+  vs. a linear block/sector number) — not yet traced back to a caller
+  that supplies concrete values.
+- The transfer-length encoding: routed through a lookup table addressed
+  via a RAM pointer at `0xFD12`, referenced in well over a dozen places
+  across the ROM (`0x61C0`, `0x61E8`, `0x620F`, `0x6253`, `0x6258`,
+  `0x6326`, `0x637E`, `0x639A`, `0x63BE`, `0x63CD`, `0x6613`, `0x69CC`,
+  `0x6C75`, `0x6C7E`, `0x6D42`, and more) — clearly central to the ROM's
+  whole buffer/track model, not a one-off detail worth guessing at.
+- The response/error convention (carry-flag-based on return, per
+  `L60D7`/`L6068`'s own `SCF`/`RET`/`RET Z` pattern, but the specific
+  error codes aren't pinned down).
+- The disk image's own filesystem layout (directory format, sector
+  layout) — needed before anything like `DIR` or a real `LOAD` against a
+  virtual disk could work, not just raw sector I/O in isolation.
+- `UFD80V20.bin` (the alternate real DOS variant, also committed) hasn't
+  been examined at all yet — unknown whether it shares this same
+  low-level protocol or differs.
+
 ## Memory map (grounded, not guessed)
 
 Cross-checked between MAME's current mainline driver
@@ -658,7 +749,12 @@ where the real detail lives:
   quickload/quicksave (Milestone 4), a scoped SN76477 tone model
   (Milestone 5), RAM expansion / floating-bus fidelity (Milestone 6's first
   sub-step), and the real periodic PIO interrupt (Milestone 7) are done.
-  No floppy/DOS controller yet (Milestone 6's remaining second half).
+  No floppy/DOS controller yet (Milestone 6's remaining second half) —
+  real protocol facts have been derived by disassembling the actual ABC-DOS
+  ROM (card-select address, port roles, command packet format, two
+  identified operations), but the parameter encoding, transfer-length
+  table, and disk filesystem layout are still open; see that sub-step's
+  own write-up above before resuming this.
   Cassette storage is a host-file bypass of BASIC's own program-storage
   pointers, not real analog tape emulation, and sound only synthesizes a
   single steady-tone case (no noise/SLF-warble/envelope shaping) rendered
