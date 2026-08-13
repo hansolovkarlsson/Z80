@@ -1,19 +1,21 @@
-// abc80/emu/src/main.c - Milestone 1 entry point for the Luxor ABC80
-// machine target: loads the real BASIC ROM images and runs them on the
-// shared Z80 core (cpm/emu/src/z80.c/alu.c) via z80_execute() directly -
-// never z80_step(), since that's CP/M's own wrapper and intercepts
-// addresses (0x0000, 0x0005) that legitimately hold real ABC80 ROM code.
-// See abc80/docs/ABC80_ROADMAP.md for the full memory map, sources, and
-// what's still missing (video, sound, PIO, keyboard, ABCbus).
+// abc80/emu/src/main.c - entry point for the Luxor ABC80 machine target:
+// loads the real BASIC ROM images and runs them on the shared Z80 core
+// (cpm/emu/src/z80.c/alu.c) via z80_execute() directly - never z80_step(),
+// since that's CP/M's own wrapper and intercepts addresses (0x0000,
+// 0x0005) that legitimately hold real ABC80 ROM code. See
+// abc80/docs/ABC80_ROADMAP.md for the full memory map, sources, and what's
+// still missing (sound, PIO, keyboard, ABCbus).
 //
-// No video/keyboard is emulated yet, so there's nothing for the ROM's own
-// code to naturally return control to a user for - this just proves the
-// shared core correctly executes real, unmodified ABC80 firmware: it runs
-// until either an unimplemented opcode halts execution (a real bug) or a
-// safety instruction cap is hit (expected - real ABC80 ROM code busy-loops
-// waiting for video sync / keyboard scan / a timer interrupt, none of
-// which exist here yet), printing an early instruction trace plus a final
-// summary of the address range actually executed.
+// No keyboard is emulated yet, so there's nothing for the ROM's own code
+// to naturally return control to a user for - this runs until either an
+// unimplemented opcode halts execution (a real bug) or a safety
+// instruction cap is hit (expected - real ABC80 ROM code busy-loops
+// waiting for keyboard scan / a timer interrupt, neither of which exists
+// here yet), printing an early instruction trace, then renders whatever
+// the ROM wrote to video RAM (0x7C00-0x7FFF, directly addressable within
+// the flat `ram` array - no separate buffer needed) via render.c's
+// terminal backend as the actual regression check: does real ROM
+// execution produce a real, readable screen.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +24,8 @@
 #include <string.h>
 
 #include "../../../cpm/emu/src/z80.h"
+#include "render.h"
+#include "video_timing.h"
 
 // Real ABC80 ROM chip layout (see abc80/docs/ABC80_ROADMAP.md's memory map,
 // grounded against MAME's src/mame/luxor/abc80.cpp): four 4Kx8 chips
@@ -113,6 +117,17 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // The attribute PROM isn't part of the CPU's own address space (real
+    // hardware wires it directly into the video-generation logic, not
+    // memory-mapped) - loaded separately here purely for the end-of-run
+    // render() call below.
+    static uint8_t attr_rom[ABC80_ATTR_ROM_SIZE];
+    char attr_path[1024];
+    snprintf(attr_path, sizeof(attr_path), "%s/attr.bin", rom_dir);
+    if (!abc80_video_timing_load(attr_path, attr_rom, ABC80_ATTR_ROM_SIZE)) {
+        return EXIT_FAILURE;
+    }
+
     Z80 cpu = {0};
     // cpu.memory and the `ram` argument passed to z80_execute() must be the
     // *same* buffer: opcode fetch reads the `ram` parameter directly, while
@@ -176,6 +191,16 @@ int main(int argc, char *argv[]) {
     printf("Final PC:              0x%04X\n", cpu.pc);
     printf("Distinct PCs visited:  %ld (range 0x%04X-0x%04X)\n",
            distinct_addresses, min_pc, max_pc);
+
+    // Video RAM (0x7C00-0x7FFF, see abc80/docs/ABC80_ROADMAP.md's memory
+    // map) is directly addressable within `ram` - real hardware maps it at
+    // that fixed offset, so no copy/translation is needed here, just a
+    // pointer into the same flat array z80_execute() was already writing
+    // through. blink_phase=1 (cursor shown, not blinked) - a real blink
+    // needs a live/periodic render loop, out of scope for this one-shot
+    // end-of-run snapshot.
+    printf("\n--- Final video RAM render ---\n");
+    abc80_render_frame(stdout, &ram[0x7C00], attr_rom, 1);
 
     return halted ? EXIT_FAILURE : EXIT_SUCCESS;
 }
