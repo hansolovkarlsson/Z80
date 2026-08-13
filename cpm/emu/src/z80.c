@@ -28,7 +28,11 @@ static int z80_service_int(Z80 *cpu, uint8_t *ram);
 
 // Direct 16-bit memory access helpers
 uint8_t z80_read_byte(Z80 *cpu, uint16_t address) {
-    return cpu->memory[address];
+    uint8_t value = cpu->memory[address];
+    if (cpu->bus_read_hook) {
+        value = cpu->bus_read_hook(cpu, address, value);
+    }
+    return value;
 }
 
 void z80_write_byte(Z80 *cpu, uint16_t address, uint8_t value) {

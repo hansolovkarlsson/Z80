@@ -126,12 +126,61 @@ static const RomImage ROM_IMAGES[] = {
 // BASIC's own program-storage pointers (cassette.h) aren't meaningful
 // until the ROM's boot init sets them. Measured empirically (see
 // abc80/docs/ABC80_ROADMAP.md's Milestone 4 section): BOFA/EOFA settle to
-// their real value (0x8000, empty program) within the first 10,000
-// instructions - nowhere near as long as the ~500,000-instruction wait
-// keyboard.c's own comment documents for the keyboard poll loop. 50,000
-// gives a comfortable 5x margin over the measured point without
-// meaningfully delaying the injection.
+// their real value within the first 1,000 instructions on a base 16K
+// machine (0xC000, empty program) - nowhere near as long as the
+// ~500,000-instruction wait keyboard.c's own comment documents for the
+// keyboard poll loop. Re-measured after Milestone 6's floating-bus fix
+// (abc80/docs/ABC80_ROADMAP.md's own section): settling got *faster*, not
+// slower, since the RAM-detection loop now hits real floating-bus 0xFF
+// reads immediately above 0xC000 instead of continuing to probe further
+// down through what used to be Milestone 1's un-fixed, accidentally-
+// writable flat RAM. 50,000 gives a comfortable margin either way (also
+// covers --ram32k, whose own detection loop runs longer but still settles
+// well under this).
 #define QUICKLOAD_INJECT_AFTER_INSTRUCTIONS 50000
+
+// Milestone 6 (ABCbus expansion, RAM sub-step): 0x4000-0xBFFF (minus the
+// 0x7C00-0x7FFF video RAM window, which real hardware wires to dedicated
+// onboard video RAM regardless of what's on the expansion bus - see
+// video_timing.c) is the ABCbus-delegated address range. MAME's own
+// abcbus_slot_device forwards every read there to abcbus_xmemfl(), whose
+// default (no card attached) implementation is `return 0xff;` unconditionally
+// - a fixed floating-bus value, not "whatever was last written" - confirmed
+// directly from MAME's abcbus.h. This model matches that: reads in the
+// always-unpopulated part of the range are forced to 0xFF via
+// cpu.bus_read_hook regardless of the underlying array contents (see
+// z80.h's own comment on why forcing reads alone, with writes left
+// unintercepted, is sufficient and correct).
+//
+// --ram32k models the specific, real, well-documented 16KB RAM-expansion
+// modification described in Christer Ekman's "Bygg ut din ABC 80 till 32K
+// RAM" (Mikrodatorn nr 7, 1982 - the same "Mikrodatorn" RAM expansion
+// MAME's own driver TODO names but doesn't implement): two banks of eight
+// 4116 DRAM chips piggybacked onto the existing eight, with address-decoder
+// logic modified so the *new* bank answers 0x8000-0xBFFF (32K-48K) while the
+// *original* bank keeps 0xC000-0xFFFF (48K-64K) - not a separate ABCbus
+// expansion card, but this is still the natural place to model it, since it
+// occupies exactly the address range Milestone 1's flat-RAM simplification
+// left too permissive. Verified in the article itself by reading BOFA
+// (PEEK(65052)+PEEK(65053)*256): 49152 (0xC000) on the base 16K machine,
+// 32768 (0x8000) once the mod is wired in - the identical check this
+// project's own verification below uses. 0x4000-0x7BFF is unaffected by
+// this specific mod either way (it stays floating) - real DOS/printer/IEC
+// ROM cards live there instead (base address 24K/0x6000 by default, per
+// ABC80-minneskort-bruksanvisning.pdf), a separate, not-yet-modeled part of
+// Milestone 6.
+static bool abc80_ram32k_enabled = false;
+
+static uint8_t abc80_bus_read_hook(Z80 *cpu, uint16_t address, uint8_t stored_value) {
+    (void)cpu;
+    if (address >= 0x4000 && address <= 0x7BFF) {
+        return 0xFF;
+    }
+    if (address >= 0x8000 && address <= 0xBFFF && !abc80_ram32k_enabled) {
+        return 0xFF;
+    }
+    return stored_value;
+}
 
 static bool load_rom(const char *rom_dir, const RomImage *rom, uint8_t *ram) {
     char path[1024];
@@ -180,6 +229,8 @@ static void print_usage(const char *prog) {
     printf("                     to FILE at the end of the run\n");
     printf("  --wav FILE         Render the SN76477 sound register's activity (port\n");
     printf("                     0x06) to a WAV file at the end of the run (see sound.h)\n");
+    printf("  --ram32k           Model the real 16KB RAM-expansion mod at 0x8000-0xBFFF\n");
+    printf("                     (default: base 16K machine - that range floats)\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -199,6 +250,8 @@ int main(int argc, char *argv[]) {
             quicksave_path = argv[++i];
         } else if (strcmp(argv[i], "--wav") == 0 && i + 1 < argc) {
             wav_path = argv[++i];
+        } else if (strcmp(argv[i], "--ram32k") == 0) {
+            abc80_ram32k_enabled = true;
         } else if (!rom_dir) {
             rom_dir = argv[i];
         } else if (max_instructions < 0) {
@@ -227,6 +280,17 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    // Pre-fill the always-floating part of the ABCbus range (and, unless
+    // --ram32k was given, the whole thing) with 0xFF - not strictly required
+    // for correctness (cpu.bus_read_hook below forces every read there to
+    // 0xFF regardless of the array's actual contents), but keeps a raw
+    // memory dump honest about what a real floating bus would show before
+    // anything ever wrote to it.
+    memset(&ram[0x4000], 0xFF, 0x7C00 - 0x4000);
+    if (!abc80_ram32k_enabled) {
+        memset(&ram[0x8000], 0xFF, 0xC000 - 0x8000);
+    }
+
     Z80 cpu = {0};
     // cpu.memory and the `ram` argument passed to z80_execute() must be the
     // *same* buffer: opcode fetch reads the `ram` parameter directly, while
@@ -235,6 +299,7 @@ int main(int argc, char *argv[]) {
     // consistently if they alias (see cpm/emu/src/main.c for the same
     // requirement on the CP/M side).
     cpu.memory = ram;
+    cpu.bus_read_hook = abc80_bus_read_hook;
     z80_init_tables();
     init_pio_port_a_aliases();
 
@@ -373,6 +438,14 @@ int main(int argc, char *argv[]) {
     printf("Final PC:              0x%04X\n", cpu.pc);
     printf("Distinct PCs visited:  %ld (range 0x%04X-0x%04X)\n",
            distinct_addresses, min_pc, max_pc);
+    // BOFA (see cassette.h) is where BASIC's own boot-time RAM-size
+    // detection settles the bottom of free RAM - the same value Christer
+    // Ekman's magazine article itself reads via PEEK to prove the 32K mod
+    // is wired in (49152/0xC000 base, 32768/0x8000 expanded). Printed here
+    // as this milestone's own concrete, ROM-behavior-derived proof.
+    uint16_t bofa = ram[ABC80_BOFA_ADDR] | (ram[ABC80_BOFA_ADDR + 1] << 8);
+    printf("BOFA (top of ROM/detected RAM floor): 0x%04X (%s)\n", bofa,
+           abc80_ram32k_enabled ? "32K RAM" : "base 16K RAM");
 
     // Video RAM (0x7C00-0x7FFF, see abc80/docs/ABC80_ROADMAP.md's memory
     // map) is directly addressable within `ram` - real hardware maps it at

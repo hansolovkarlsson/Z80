@@ -5,7 +5,7 @@
 
 #define RAM_SIZE 65536
 
-typedef struct {
+typedef struct Z80 {
     // Register pairs using unions for easy 8-bit / 16-bit access
     union { struct { uint8_t f, a; }; uint16_t af; };
     union { struct { uint8_t c, b; }; uint16_t bc; };
@@ -78,6 +78,22 @@ typedef struct {
     // is enough to make IN/OUT round-trip observably rather than being a
     // silent no-op.
     uint8_t io_ports[256];
+
+    // Optional per-machine memory-read override, checked by z80_read_byte()
+    // after it reads the flat array. NULL (its zero-initialized default) on
+    // every existing caller, so behavior is identical to a plain flat-array
+    // read unless a machine target explicitly opts in - added for the ABC80
+    // target (abc80/emu/src/main.c), whose ABCbus-delegated address range
+    // (0x4000-0xBFFF minus video RAM) must read back a fixed floating-bus
+    // value when no expansion card is modeled there, regardless of what was
+    // last written - see abc80/docs/ABC80_ROADMAP.md's Milestone 6 section.
+    // Writes are deliberately left unintercepted: a real unpopulated bus
+    // silently discards writes too, but since this hook already forces
+    // every *read* back to a fixed value regardless of the array's actual
+    // contents, letting a write land in the underlying array anyway is
+    // harmless (nothing ever reads it back correctly) and avoids a second,
+    // symmetric write-hook this project has no actual use for yet.
+    uint8_t (*bus_read_hook)(struct Z80 *cpu, uint16_t address, uint8_t stored_value);
 
 } Z80;
 

@@ -25,10 +25,15 @@ a real Z80-based Swedish home computer from 1978 - and unlike `gameboy/`
 it *does* share code: its `abc80/emu/src/main.c` links directly against
 `cpm/emu/src/z80.o`/`alu.o`, the same proven core `bin/z80` uses, so it
 stays in this repo rather than being a future split candidate. See
-`abc80/docs/ABC80_ROADMAP.md` for its status, hardware-documentation
-sources, and known gaps - as of Milestone 1, it boots the real BASIC ROM
-images (committed under `abc80/resources/rom/`) to a genuine hardware
-RAM-detection loop, with no video/sound/keyboard/PIO emulated yet.
+`abc80/docs/ABC80_ROADMAP.md` for its status and known gaps, and
+`abc80/docs/ABC80_REFERENCE.md` for a consolidated hardware reference
+(memory map, I/O ports, ROM/PROM inventory, per-subsystem register
+layouts) — as of Milestone 6's RAM-expansion sub-step, it boots the real
+BASIC ROM images (committed under `abc80/resources/rom/`) with working
+video, keyboard input, cassette quickload/quicksave, a scoped SN76477
+sound model, and a correctly-modeled (floating-bus-by-default, optional
+`--ram32k`) memory map; only the floppy/DOS controller (the rest of
+Milestone 6) remains.
 
 Three reference docs live in `cpm/docs/` alongside the roadmap:
 `Z80_REFERENCE.md` (the Z80 instruction set, including undocumented
@@ -192,8 +197,15 @@ into these rather than duplicating flag math.
 
 **Memory is a flat 64KB `uint8_t` array** (`RAM_SIZE` in `z80.h`), owned by
 `main.c` and pointed to by `Z80.memory`. `z80_read_byte`/`z80_write_byte` are
-a bus abstraction but currently just index straight into that array (no bank
-switching/MMU). **I/O ports** are a separate 256-entry `cpu->io_ports` array
+a bus abstraction: `z80_write_byte` just indexes straight into that array (no
+bank switching/MMU), and `z80_read_byte` does too *unless* `Z80.bus_read_hook`
+is set — an optional per-machine function pointer, `NULL` by default (every
+existing caller, CP/M included), checked after the flat-array read so it can
+override specific addresses' values without the shared core knowing anything
+about why. Added for `abc80/`'s own memory-mapped-bus needs (see that
+project's own `docs/ABC80_ROADMAP.md`, Milestone 6) rather than speculatively
+— the CP/M target never sets it, so its behavior is unchanged. **I/O ports**
+are a separate 256-entry `cpu->io_ports` array
 with their own `z80_io_in`/`z80_io_out` bus functions — no real devices are
 attached, so a port read just returns whatever was last written there.
 

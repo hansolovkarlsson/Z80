@@ -411,12 +411,104 @@ deliberate gap, not silently approximated.
 **Goal**: RAM expansion to the real machine's full 32KB, and real disk
 storage.
 
-- [ ] RAM-expansion card emulation, replacing Milestone 1's flat-RAM
-      simplification for `0x4000`-`0xBFFF` with something that actually
-      reflects "card present vs. not" per real hardware.
+- [x] **RAM expansion — done.** Replaces Milestone 1's flat-RAM
+      simplification for `0x4000`-`0xBFFF` with genuine floating-bus
+      behavior by default, plus an opt-in `--ram32k` flag modeling a real,
+      well-documented 16KB expansion.
 - [ ] Floppy/DOS controller card + ABC-DOS or UFD-DOS ROM loading (both
       already archived at abc80.net, alongside the BASIC ROMs already in
       `abc80/resources/rom/`).
+
+### RAM expansion sub-step (grounded, not guessed)
+
+**The bug this fixes**: Milestone 1 modeled the entire ABCbus-delegated
+range (`0x4000`-`0xBFFF`, minus video RAM) as ordinary flat, always-writable
+RAM — a documented simplification at the time, but one that made the
+emulator behave like a real 32K-expanded machine by accident, unconditionally,
+even though nothing had actually implemented the expansion. Confirmed via
+this milestone's own before/after measurement (below): the un-fixed
+emulator's BASIC RAM-detection loop settled on `BOFA = 0x8000`, the real
+*expanded*-machine value, on every run.
+
+**What real hardware does without a card**: MAME's own `abcbus_slot_device`
+forwards every read in this range to the attached card's `abcbus_xmemfl()`;
+its default implementation (no card attached) is `return 0xff;`
+unconditionally — a fixed floating-bus value, not "whatever was last
+written" — confirmed directly from MAME's `abcbus.h`
+(`device_abcbus_card_interface::abcbus_xmemfl()`/
+`abcbus_slot_device::xmemfl_r()`). This project now matches that exactly:
+`cpu.bus_read_hook` (see below) forces every read in the unpopulated part of
+the range to `0xFF` regardless of the underlying array's contents. Writes
+are deliberately left un-intercepted — since reads are already forced,
+letting a write land harmlessly in the backing array needs no matching
+write-side hook.
+
+**The real RAM-expansion mod being modeled** (`--ram32k`): Christer Ekman,
+"Bygg ut din ABC 80 till 32K RAM," *Mikrodatorn* nr 7, 1982 — a primary
+source (the original magazine article, retrieved and read page-by-page from
+abc80.net's archive, not summarized secondhand), and the same "Mikrodatorn"
+RAM expansion MAME's own driver TODO list names but has never implemented.
+Two banks of eight 4116 DRAM chips are piggybacked onto the machine's
+existing eight, with an added OR gate fooling the address decoder into
+starting the RAS/CAS generator across `0x8000`-`0xFFFF` (32K-64K) instead of
+only `0xC000`-`0xFFFF` (48K-64K), and two more OR gates steering the `CAS`
+signal so the *new* bank answers `0x8000`-`0xBFFF` while the *original* bank
+keeps `0xC000`-`0xFFFF`. Not a separate ABCbus expansion card physically,
+but the natural place to model it here regardless, since it occupies
+exactly the address range Milestone 1's flat-RAM simplification left too
+permissive. `0x4000`-`0x7BFF` is unaffected by this specific mod either
+way — real DOS/printer/IEC ROM cards live there instead (default base
+address 24K/`0x6000`, confirmed from a second real primary source,
+`ABC80-minneskort-bruksanvisning.pdf`), a separate, not-yet-modeled part of
+this milestone.
+
+**Implementation**: a new optional `Z80.bus_read_hook` function pointer
+(`cpm/emu/src/z80.h`/`z80.c`) — `NULL` by default (its zero-initialized
+value on every existing caller, including the entire CP/M target), checked
+by `z80_read_byte()` after it reads the flat array. `abc80/emu/src/main.c`
+installs `abc80_bus_read_hook()`, which forces `0xFF` for `0x4000`-`0x7BFF`
+always, and for `0x8000`-`0xBFFF` unless `--ram32k` was given. This is a
+small, deliberately narrow addition to the shared, ZEXALL/ZEXDOC-proven
+core — not a speculative abstraction: `z80_read_byte`/`z80_write_byte` were
+already documented in `CLAUDE.md` as "a bus abstraction ... currently just
+index straight into that array (no bank switching/MMU)," precisely
+anticipating this kind of extension for a second machine target, the same
+reasoning that justified the `z80_execute()`/`z80_step()` split in
+Milestone 1. `make test` (ZEXALL/ZEXDOC/`test_interrupts`/every `.asm`
+example) still passes with zero new warnings after the change, confirming
+it's behavior-preserving for CP/M with the hook left unset.
+
+**Verified against the magazine article's own worked example, not just
+internal consistency**: the article itself proves the mod is wired in
+correctly by reading `BOFA` (`PEEK(65052)+PEEK(65053)*256`) — `49152`
+(`0xC000`) on the base 16K machine, `32768` (`0x8000`) once expanded. This
+project's own `bin/abc80` run summary now prints the identical value (read
+from `ram[ABC80_BOFA_ADDR]`, the same address BASIC's own boot-time
+RAM-size detection loop sets — see `cassette.h`), and it matches exactly in
+both configurations:
+
+| Config | Measured `BOFA` | Magazine article's real-hardware value |
+|---|---|---|
+| default (base 16K) | `0xC000` | `0xC000` (49152) |
+| `--ram32k` | `0x8000` | `0x8000` (32768) |
+
+Settling is fast in both cases (measured directly, by re-running with
+successively larger instruction caps and reading `BOFA` from each run's
+summary): the base-16K detection loop now settles within ~1,000
+instructions (down from the un-fixed version's ~10,000 — it now hits a real
+floating-bus `0xFF` read immediately above `0xC000` instead of continuing to
+probe further down through fake, accidentally-writable RAM), and the
+`--ram32k` loop settles within ~1,500. `QUICKLOAD_INJECT_AFTER_INSTRUCTIONS`
+(50,000) comfortably covers both.
+
+**Full functional regression, not just the BOFA number**: re-ran
+Milestone 3's keyboard flow and Milestone 4's cassette round-trip against
+the corrected default. Typing `10 PRINT 1+1` then `LIST` still
+de-tokenizes correctly; a fresh quicksave → quickload → `LIST`/`RUN` cycle
+still reproduces the exact same output (`2`) as typing the program
+directly, both under the corrected default `0xC000` config and under
+`--ram32k`. No regression from moving `BOFA` off its old, accidental
+`0x8000` value.
 
 ## Memory map (grounded, not guessed)
 
@@ -430,7 +522,7 @@ are recorded here rather than trusting either alone.
 | Range | Contents |
 |---|---|
 | `0x0000`-`0x3FFF` | ROM: four 4Kx8 chips — `3506_3.a5`/`3507_3.a3`/`3508_3.a4`/`3509_3.a2` at `0x0000`/`0x1000`/`0x2000`/`0x3000`. CRC32 `e2afbf48`/`d224412a`/`1502ba5b`/`bc8860b7`. |
-| `0x4000`-`0xBFFF` | External ABCbus expansion (RAM-expansion cards, floppy/DOS controller, etc.), minus the video RAM carve-out below. |
+| `0x4000`-`0xBFFF` | External ABCbus expansion, minus the video RAM carve-out below. `0x4000`-`0x7BFF`: always floating (`0xFF`) — no DOS/printer/IEC ROM card modeled yet. `0x8000`-`0xBFFF`: floating (`0xFF`) by default, or real RAM with `--ram32k` (the real 16KB expansion mod — see Milestone 6). |
 | `0x7C00`-`0x7FFF` | Video RAM (1KB — 40×24 char cells). |
 | `0xC000`-`0xFFFF` | Onboard RAM (16KB base configuration). |
 
@@ -451,12 +543,14 @@ Everything not yet implemented is tracked as a concrete Milestone above
 where the real detail lives:
 
 - Video generation (Milestone 2), keyboard input (Milestone 3), cassette
-  quickload/quicksave (Milestone 4), and a scoped SN76477 tone model
-  (Milestone 5) are done. No ABCbus/floppy yet (Milestone 6). Cassette
-  storage is a host-file bypass of BASIC's own program-storage pointers,
-  not real analog tape emulation, and sound only synthesizes a single
-  steady-tone case (no noise/SLF-warble/envelope shaping) rendered to a
-  WAV file rather than played live - see each milestone's own write-up.
+  quickload/quicksave (Milestone 4), a scoped SN76477 tone model
+  (Milestone 5), and RAM expansion / floating-bus fidelity (Milestone 6's
+  first sub-step) are done. No floppy/DOS controller yet (rest of
+  Milestone 6). Cassette storage is a host-file bypass of BASIC's own
+  program-storage pointers, not real analog tape emulation, and sound only
+  synthesizes a single steady-tone case (no noise/SLF-warble/envelope
+  shaping) rendered to a WAV file rather than played live - see each
+  milestone's own write-up.
 - **No periodic interrupt / timer model**: real ABC80 hardware raises a
   regular interrupt (tied to video scanline timing via the PIO's ASTB pin -
   see MAME's `scanline_tick()`) that the ROM uses for at least cursor-blink
@@ -470,11 +564,13 @@ where the real detail lives:
   Known Gaps list) if a future milestone needs cursor blinking to look
   right, or hits ROM code that depends on it more directly than the
   keyboard debounce did.
-- **Memory-map fidelity for `0x4000`-`0xBFFF`**: modeled as ordinary flat RAM
-  for now rather than correctly floating/unmapped when no expansion card is
-  present — a deliberate, documented simplification (see Milestone 1 above),
-  not an oversight. Real hardware without a RAM-expansion card installed
-  would see inconsistent/floating reads there. Folded into Milestone 6.
+- **Memory-map fidelity for `0x4000`-`0xBFFF`**: fixed by Milestone 6's RAM
+  expansion sub-step (see above) — `0x4000`-`0x7BFF` and, by default,
+  `0x8000`-`0xBFFF` now correctly float (fixed `0xFF` reads, matching MAME's
+  own no-card `abcbus_slot_device` behavior) instead of being ordinary flat
+  RAM. `0x8000`-`0xBFFF` still has no real DOS/printer/IEC ROM card content
+  even with `--ram32k` off — that's the still-open second half of
+  Milestone 6, not this sub-step.
 - **ROM write-protection**: `0x0000`-`0x3FFF` is writable in this model,
   matching this repo's existing flat-memory-model precedent for the CP/M
   target (`CLAUDE.md`'s Architecture section) rather than a new abstraction
@@ -493,3 +589,14 @@ where the real detail lives:
 - ROM images: <https://www.abc80.net/archive/luxor/Prom/fw/ABC80/> — see
   `abc80/resources/rom/README.md` for the exact files and checksum
   cross-check against MAME.
+- Christer Ekman, "Bygg ut din ABC 80 till 32K RAM," *Mikrodatorn* nr 7,
+  1982 — <https://www.abc80.net/archive/luxor/ABC80/ABC80-32K-mod-Mikrodatorn.pdf>
+  (Milestone 6's RAM-expansion sub-step).
+- *Bruksanvisning Minneskort ABC* (Luxor) —
+  <https://www.abc80.net/archive/luxor/ABC80/ABC80-minneskort-bruksanvisning.pdf>
+  (the separate ROM/DOS expansion card, Milestone 6).
+
+See `abc80/docs/ABC80_REFERENCE.md` for a consolidated hardware reference
+(memory map, I/O ports, ROM/PROM inventory, per-subsystem register layouts)
+pulled from all of the above plus this project's own code comments — this
+section only lists sources, not the facts derived from them.
