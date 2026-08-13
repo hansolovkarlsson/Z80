@@ -156,23 +156,79 @@ having Unicode sextant-glyph coverage (not yet true of every terminal).
       "grounded in real firmware behavior" bar Milestone 1 set, now
       confirmed visually rather than only via a PC trace.
 
-## Milestone 3: Z80 PIO + keyboard input
+## Milestone 3: Z80 PIO + keyboard input — in progress
 
 **Goal**: reach an actually interactive BASIC prompt — the first milestone
 where a person can type something and see a response.
 
-- [ ] Implement the Z80 PIO device behind ports `0x10`-`0x13` (mirrored
-      `0x14`-`0x17`): mode control, keyboard scan-matrix reads. The keyboard
-      matrix PROM (`abc80-keyboard.bin`) is already archived at abc80.net.
-- [ ] Map host keystrokes to the ABC80 scan matrix.
-- [ ] Confirm the ROM's current steady-state busy-loop (observed at the end
-      of Milestone 1, `PC≈0x02F7`) is in fact waiting on PIO/keyboard state
-      — verify against the ROM disassembly rather than assuming, since it
-      could equally be waiting on a video timing signal (Milestone 2) or
-      something else not yet identified.
+- [x] **Confirm the ROM's steady-state busy-loop is waiting on PIO/keyboard
+      state** — done first, ahead of implementing anything, using this
+      project's own `bin/z80dasm` on the real committed ROM images rather
+      than assuming. The loop Milestone 1 observed (`PC≈0x02F7`) is exactly:
+      ```
+      L02F1: BIT 7,(IX+2)
+             JR NZ,L0312
+             IN A,(38h)      ; port 0x38, masked to 0x10 by the hardware's
+                             ; 0x17 global address mask - this IS PIO Port A
+             ADD A,A         ; shift bit 7 (strobe) into carry
+             JR C,L0302      ; carry set -> a key is ready, go process it
+             LD (IX+4),46h
+             JR L02F1        ; else keep polling
+      ```
+      confirming with certainty (not inference) that this is a plain
+      polling read of PIO Port A, not an interrupt wait or a video-timing
+      dependency — so a real Z80 PIO interrupt/mode implementation isn't
+      needed to unblock it, just this one port's read value being correct.
+- [x] **Implement the Z80 PIO device behind ports `0x10`-`0x13`** (mirrored
+      `0x14`-`0x17`, `abc80/emu/src/keyboard.c`/`.h`) — scoped to exactly
+      what the disassembly above showed is needed: Port A's bit layout
+      (bits 0-6 = key ASCII code, bit 7 = strobe), grounded against MAME's
+      `abc80_state::pio_pa_r()`. Deliberately **not** the real hardware
+      scan-matrix PROM (`abc80-keyboard.bin`, N82S141) — MAME's own
+      `abc80_common()` machine config doesn't emulate that either; it wires
+      a generic host-ASCII-keyboard device straight to `kbd_w()`, which
+      does the identical byte-plus-strobe forwarding this file implements.
+      Followed as a well-precedented simplification (literally what the
+      most widely used ABC80 emulation does), not an invented shortcut.
+      `abc80/emu/src/main.c` keeps every one of the 16 real hardware
+      address aliases (`port & 0x17 == 0x10`) in sync each instruction,
+      since `z80_io_in()`/`z80_io_out()` (`cpm/emu/src/z80.c`) are a plain
+      flat array with no device/masking logic of their own by design.
+- [x] **Map host keystrokes to the ABC80 input path** — non-blocking stdin
+      polling (`select()`), plain ASCII passthrough (matching MAME's own
+      simplification above) rather than the real Swedish scan-matrix
+      layout — typing a literal Å/Ä/Ö from a host keyboard isn't wired up
+      yet, a known gap, not a claim of completeness.
+- [x] **Verified against real ROM execution, not just "it compiles"** — and
+      an important false start along the way, worth keeping: the strobe
+      was first held for a fixed 64 instructions (long enough to outlast
+      one poll-loop iteration, ~6 instructions), which turned out to be
+      far too short and silently dropped every test keystroke, since the
+      ROM doesn't reach this poll loop at all until well after reset —
+      RAM-size detection runs first. Bisecting with real runs (not
+      guessing) found the actual threshold: a keystroke fed at reset
+      survives to be read once the hold covers roughly 500,000
+      instructions; 200,000 was still too short. Settled on 1,000,000 (2x
+      that measured threshold) - see `keyboard.c`'s own comment for the
+      full numbers. With that fixed, feeding a single Enter keystroke via
+      piped stdin (`printf '\r' | bin/abc80`) drove real, visible change:
+      `PC` reached `0x0302` (exactly the "process key" branch the
+      disassembly above predicted), distinct addresses visited grew from
+      191 to 239 (range extending to `0x25C3`), and — reading the actual
+      rendered screen, not just addresses — the cursor moved to a new
+      line and, over the full 5,000,000-instruction run, the "ABC80"
+      splash text was cleared entirely, consistent with the ROM moving
+      well past its splash screen into further real initialization. A
+      no-input control run over the same full instruction count stayed
+      byte-for-byte identical to the pre-keyboard baseline (191 addresses,
+      same `0x0000`-`0x20D0` range) — confirming this is a real, keyboard-
+      driven effect, not noise.
 - [ ] Regression check: real, typed BASIC input (e.g. `PRINT 1+1`) produces
       correct output — the ABC80 equivalent of Phase 3's Tasty Basic
-      real-software validation milestone in `cpm/docs/ROADMAP.md`.
+      real-software validation milestone in `cpm/docs/ROADMAP.md`. Not yet
+      attempted beyond the single-keystroke verification above; reaching an
+      actual `READY`-style prompt and a full typed command is the natural
+      next step now that the underlying mechanism is confirmed working.
 
 ## Milestone 4: cassette storage (SAVE/LOAD)
 

@@ -4,28 +4,78 @@
 // since that's CP/M's own wrapper and intercepts addresses (0x0000,
 // 0x0005) that legitimately hold real ABC80 ROM code. See
 // abc80/docs/ABC80_ROADMAP.md for the full memory map, sources, and what's
-// still missing (sound, PIO, keyboard, ABCbus).
+// still missing (sound, cassette, ABCbus).
 //
-// No keyboard is emulated yet, so there's nothing for the ROM's own code
-// to naturally return control to a user for - this runs until either an
-// unimplemented opcode halts execution (a real bug) or a safety
-// instruction cap is hit (expected - real ABC80 ROM code busy-loops
-// waiting for keyboard scan / a timer interrupt, neither of which exists
-// here yet), printing an early instruction trace, then renders whatever
+// Keyboard input (Milestone 3, keyboard.c) reads stdin non-blockingly and
+// feeds PIO Port A, the register the real ROM's own steady-state polling
+// loop reads (confirmed via this project's own disassembler - see
+// keyboard.c's top comment for the exact instructions). Renders whatever
 // the ROM wrote to video RAM (0x7C00-0x7FFF, directly addressable within
 // the flat `ram` array - no separate buffer needed) via render.c's
-// terminal backend as the actual regression check: does real ROM
-// execution produce a real, readable screen.
+// terminal backend once the run ends, either from an unimplemented-opcode
+// halt (a real bug) or the safety instruction cap (expected if nothing
+// was typed - no sound/cassette exists yet to do anything else useful).
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/select.h>
 
 #include "../../../cpm/emu/src/z80.h"
 #include "render.h"
 #include "video_timing.h"
+#include "keyboard.h"
+
+// Every I/O port address that aliases PIO Port A's data register under
+// ABC80's real hardware address decoding (MAME's `map.global_mask(0x17)` -
+// see video_timing.c's port-map comment): only bits 0,1,2,4 of the port
+// address are actually wired to anything, so any port P with
+// (P & 0x17) == 0x10 reads/writes the identical register - real software
+// (this ROM included, via `IN A,(38h)`) can and does address it through
+// more than one of these. z80_io_in()/z80_io_out() (cpm/emu/src/z80.c) are
+// a plain flat 256-entry array with no device logic of their own - by
+// design, see that file's own comment - so this machine layer has to keep
+// every alias in sync itself rather than the CPU core knowing anything
+// about the mask.
+static uint8_t pio_port_a_aliases[16];
+static int num_pio_port_a_aliases = 0;
+
+static void init_pio_port_a_aliases(void) {
+    for (int p = 0; p < 256; p++) {
+        if ((p & 0x17) == 0x10) {
+            pio_port_a_aliases[num_pio_port_a_aliases++] = (uint8_t)p;
+        }
+    }
+}
+
+static void sync_pio_port_a(Z80 *cpu) {
+    uint8_t value = abc80_keyboard_port_a();
+    for (int i = 0; i < num_pio_port_a_aliases; i++) {
+        cpu->io_ports[pio_port_a_aliases[i]] = value;
+    }
+}
+
+// Non-blocking single-byte stdin read (works identically for a piped or
+// interactive stdin - no termios raw-mode setup here yet, unlike
+// cpm/emu/src/cpm.c's console handling, so an interactive terminal will
+// still line-buffer until Enter; piped input, used by this project's own
+// regression testing, is unaffected by that). Returns -1 if nothing is
+// available right now.
+static int poll_stdin_byte(void) {
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds);
+    struct timeval tv = {0, 0};
+    if (select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv) <= 0) {
+        return -1;
+    }
+    uint8_t byte;
+    ssize_t n = read(STDIN_FILENO, &byte, 1);
+    return (n == 1) ? byte : -1;
+}
 
 // Real ABC80 ROM chip layout (see abc80/docs/ABC80_ROADMAP.md's memory map,
 // grounded against MAME's src/mame/luxor/abc80.cpp): four 4Kx8 chips
@@ -137,6 +187,7 @@ int main(int argc, char *argv[]) {
     // requirement on the CP/M side).
     cpu.memory = ram;
     z80_init_tables();
+    init_pio_port_a_aliases();
 
     // Real Z80 SP is undefined out of reset - unlike the CP/M target (which
     // must pre-seed SP itself, since a .com file has no reset-time init
@@ -166,8 +217,17 @@ int main(int argc, char *argv[]) {
             printf("  [%6ld] PC=0x%04X  opcode=0x%02X\n", instructions, pc_before, ram[pc_before]);
         }
 
+        if (abc80_keyboard_ready_for_next()) {
+            int stdin_byte = poll_stdin_byte();
+            if (stdin_byte >= 0) {
+                abc80_keyboard_press((uint8_t)stdin_byte);
+            }
+        }
+        sync_pio_port_a(&cpu);
+
         int cycles = z80_execute(&cpu, ram);
         instructions++;
+        abc80_keyboard_tick();
 
         if (cycles < 0) {
             fprintf(stderr, "Execution halted: unimplemented opcode at PC=0x%04X\n", pc_before);
