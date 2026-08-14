@@ -140,12 +140,25 @@ precision. Results are rounded to the given number of decimals.
 | `DOT(R,K)` | True if the dot at `R,K` is lit | `130 IF DOT(R,K) THEN SETDOT R+1,K+1` | same |
 
 `SETDOT`/`CLRDOT`/`DOT` address a higher-resolution virtual grid than the
-40×24 text/block-graphics character cells this emulator's own renderer
-currently draws (see `abc80/docs/ABC80_ROADMAP.md`'s Known Gaps) — R going
-up to 72 and K up to 79 implies roughly 2× the resolution of the 24×40
-character grid in each direction (matching the real 2×3-subcell block
-graphics mode's own per-character addressing: `abc80/docs/
-ABC80_REFERENCE.md`'s GRAPHICS mode section).
+40×24 text/block-graphics character cells (matching the real
+2×3-subcell block graphics mode's own per-character addressing:
+`abc80/docs/ABC80_REFERENCE.md`'s GRAPHICS mode section) — R going up to
+72 and K up to 79 implies roughly 2× the resolution of the 24×40
+character grid in each direction. Confirmed by real execution
+(`abc80/docs/ABC80_ROADMAP.md`'s Milestone 11): the *usable* R range is
+actually `0`-`71`, not `0`-`72` — `SETDOT 72,K` raises a real `ERR 62`.
+
+`SETDOT`/`CLRDOT` only poke a target cell's raw dot-pattern byte — they
+do *not* also switch that row into GRAPHICS mode. A row's GRAPHICS/TEXT
+mode is a persistent per-row latch that resets to TEXT at the start of
+every row (matching `CHR$(151)`'s own "starts graphics mode for **one
+line**" wording below), so a bare `SETDOT` call on a row that hasn't
+already had `CHR$(151)` printed onto it renders as garbled chargen text
+instead of a block dot — confirmed via real execution, identically in
+both this project's terminal and GTK-window renderers, so it's real
+ABC80 behavior, not an emulator bug. Precede a row's `SETDOT` calls with
+`PRINT CUR(row,0);CHR$(151);` (`CUR` moves to that row without disturbing
+its own dots) to actually see them.
 
 ## `ON` statements
 

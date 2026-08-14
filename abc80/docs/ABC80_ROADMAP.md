@@ -1967,10 +1967,66 @@ well-understood rather than a before/after repro here - **confirmed
 fixed by the user, hands-on**: the warning is gone on a real window
 close.
 
+### Sub-step: GRAPHICS-mode verified, plus a real SETDOT finding
+
+To verify GRAPHICS-mode pixel rendering specifically (the one item the
+above screenshot didn't cover - the boot banner is TEXT mode only), this
+sandboxed environment's lack of Accessibility permission for synthetic
+keystrokes meant `bin/abc80-gtk` needed a way to load a test BASIC
+program without a human at the keyboard. Added optional,
+`isatty(STDIN_FILENO)`-gated stdin scripted input to
+`abc80/gtk/src/main.c` (`poll_stdin_byte()`, called from
+`on_timer_tick()`), mirroring `abc80/emu/src/main.c`'s own identical
+non-blocking `select()`-then-`read()` pattern exactly. Only activates
+when stdin is piped/redirected - a real interactive session (stdin as a
+tty) is completely unaffected, so this doesn't touch the already-
+user-confirmed real GDK keyboard path at all.
+
+First attempt (`SETDOT` in a `FOR` loop, drawing a box border) rendered as
+garbled chargen-glyph text - `p`, `5`, `j`, etc. - instead of block
+pixels, identically in *both* `bin/abc80-gtk`'s new Cairo renderer and
+the pre-existing `bin/abc80 --interactive` terminal renderer
+(`render.c`), confirmed by piping the identical input through both.
+Identical behavior in both backends ruled out a GTK-specific rendering
+bug immediately - whatever was wrong was upstream of both renderers, in
+how the real ROM's `SETDOT` writes video RAM.
+
+Root cause, confirmed by direct testing rather than guessed: `SETDOT`'s
+real ROM routine only writes the target cell's dot-pattern byte - it
+does *not* also write a `CHR$(151)` ("START GRAPHICS") marker byte into
+the row first. Per MAME's own mode state machine (this file's
+"GRAPHICS-mode pixel geometry" note above), a row's GRAPHICS/TEXT mode
+is a persistent latch that resets to TEXT at the start of every row and
+only changes when a byte with the right attribute bits is scanned - a
+bare dot-pattern byte dropped into an still-TEXT-mode row renders
+through the ordinary chargen path instead, which is exactly the garbled
+text that appeared. This matches the `CHR$(151)` reference entry's own
+wording ("starts graphics mode for **one line**") - it's a real,
+faithfully-reproduced hardware behavior, not a bug in either renderer:
+`SETDOT` alone, with no preceding `CHR$(151)` on that row, does the same
+thing on real hardware. (A second, smaller real finding along the way:
+`SETDOT`'s documented row range is `R: 0-72`, but `SETDOT 72,K` raised a
+real `ERR 62` - the practical usable range is `0`-`71`, not `0`-`72` as
+currently documented.)
+
+Confirmed the fix for the *test program*, not the emulator: prefixing
+each target row with `PRINT CUR(row,0);CHR$(151);` before its `SETDOT`
+calls (`CUR(R,K)` moves the cursor to a given character row/column,
+`ABC80_BASIC_REFERENCE.md`'s own documented API) made the identical box-
+plus-diagonal program render as real sextant block glyphs in the CLI
+backend with zero errors. Ran that same corrected program through
+`bin/abc80-gtk` and captured a real screenshot (`screencapture -x`,
+after bringing the window forward via `osascript`'s `tell application
+"System Events" to set frontmost of process "abc80-gtk" to true` - the
+one window-focusing AppleEvent this environment's permissions do allow,
+unlike synthetic keystrokes): a genuine pixel box border and diagonal
+line, built from real 2×3 sub-cell block-mosaic squares, not a Unicode
+approximation and not garbled text. This is the last previously-open
+verification item for Milestone 11 - GRAPHICS mode is now confirmed
+working, using the exact same code path the TEXT-mode boot banner
+already verified.
+
 **Remaining open items**:
-- Explicit verification that a real GRAPHICS-mode program renders true
-  2×3 block pixels (only the TEXT-mode boot banner and general keyboard
-  input have been confirmed hands-on so far).
 - Glyph-cache-vs-per-pixel-`cairo_fill()` performance at real frame
   rates - not yet measured; the current renderer fills one rectangle per
   set pixel bit, which may or may not be fast enough for smooth 30fps

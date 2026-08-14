@@ -31,6 +31,8 @@
 #include <stdbool.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
+#include <sys/select.h>
 
 #include <gtk/gtk.h>
 
@@ -275,8 +277,41 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval,
     return TRUE;
 }
 
+// Optional scripted-input path, mirroring abc80/emu/src/main.c's own
+// poll_stdin_byte() exactly (same non-blocking select()-then-read()
+// pattern) - gated by isatty() so it only ever activates when stdin is
+// piped/redirected, never when a real user runs this interactively (real
+// input then comes exclusively through on_key_pressed()'s GDK events,
+// completely unaffected). Added specifically to make GRAPHICS-mode
+// rendering self-verifiable via an automated screenshot: this sandboxed
+// environment has no Accessibility permission to script synthetic
+// keystrokes into a real GTK window, so there was otherwise no way to type
+// a test BASIC program into bin/abc80-gtk without the user's manual
+// involvement.
+static int poll_stdin_byte(void) {
+    if (!isatty(STDIN_FILENO)) {
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(STDIN_FILENO, &fds);
+        struct timeval tv = {0, 0};
+        if (select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv) > 0) {
+            uint8_t byte;
+            ssize_t n = read(STDIN_FILENO, &byte, 1);
+            if (n == 1) return byte;
+        }
+    }
+    return -1;
+}
+
 static gboolean on_timer_tick(gpointer user_data) {
     AppState *app = user_data;
+
+    if (abc80_keyboard_ready_for_next()) {
+        int b = poll_stdin_byte();
+        if (b >= 0) {
+            abc80_keyboard_press((uint8_t)b);
+        }
+    }
 
     // The window may have been closed and its drawing area destroyed
     // since the last tick (on_window_destroy() below clears this and

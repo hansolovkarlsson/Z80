@@ -69,7 +69,32 @@ GRAPHICS-mode pixel geometry (the 2×3 sub-cell split within a 6×10 real
 character cell) is grounded directly against MAME's real
 `src/mame/luxor/abc80_v.cpp` `draw_character()` (`if (l < 3) r0 = 0; else
 if (l < 7) r1 = 0; else r2 = 0;`) — scanlines 0-2/3-6/7-9 (3/4/3, since 10
-doesn't split evenly by 3), not assumed or evenly divided. **Not yet
-independently verified against a real GRAPHICS-mode program's own true
-block pixels** - only the TEXT-mode boot banner and keyboard input have
-been confirmed hands-on so far.
+doesn't split evenly by 3), not assumed or evenly divided.
+
+**GRAPHICS mode confirmed working, via a real screenshot**: piping a
+`SETDOT`-based BASIC test program (box border plus a diagonal line) into
+`bin/abc80-gtk` and capturing a real `screencapture -x` shows a genuine
+pixel box built from real 2×3 sub-cell block-mosaic squares — not a
+Unicode approximation, not garbled text. Getting there surfaced a real
+finding, not an emulator bug: real ABC80's `SETDOT` only pokes a target
+cell's raw dot-pattern byte — it does *not* also write a `CHR$(151)`
+("START GRAPHICS") marker into the row first, and a row's GRAPHICS/TEXT
+mode is a persistent per-row latch that resets to TEXT at the start of
+every row. A bare `SETDOT` with no preceding `CHR$(151)` on that row
+renders through the ordinary chargen path instead (confirmed identical
+in both `bin/abc80-gtk`'s Cairo renderer and the pre-existing
+`bin/abc80 --interactive` terminal renderer, ruling out a GTK-specific
+bug) — real hardware behavior, matching the `CHR$(151)` reference entry's
+own wording ("starts graphics mode for **one line**"). Prefixing each
+target row with `PRINT CUR(row,0);CHR$(151);` fixed it. See
+`abc80/docs/ABC80_ROADMAP.md`'s Milestone 11 for the full writeup,
+including a second, smaller finding (`SETDOT`'s documented `R: 0-72`
+range actually errors at `R=72` — usable range is `0`-`71`).
+
+To make this self-verifiable without a human at the keyboard (this
+sandboxed environment has no Accessibility permission for synthetic
+keystrokes), `bin/abc80-gtk` gained optional `isatty()`-gated stdin
+scripted input — mirrors `bin/abc80`'s own `poll_stdin_byte()` exactly,
+and only activates when stdin is piped/redirected, so real interactive
+GDK keyboard input (already confirmed working, see above) is completely
+unaffected.
