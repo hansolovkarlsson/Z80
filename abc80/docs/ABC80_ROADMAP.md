@@ -882,31 +882,102 @@ as a direct command** - matching `OTILLÅTET SOM KOMMANDO` ("not allowed
 as \[direct\] command") from the real error table above, by inference
 from context rather than a confirmed code-to-message mapping.
 
-**Not yet resolved, and a real open question, not just an unfinished
-trace**: real ABC80 users plainly do type `SAVE PROGNAME` directly at the
-prompt (the source manual's own examples show exactly that), so either
-this project's own test command is missing something real about `SAVE`'s
-actual syntax/behavior against a floppy-equipped machine specifically
-(as opposed to the cassette-only base config every other milestone in
-this project has exercised so far), or the code path reached here isn't
-actually part of a normal `SAVE` at all and something upstream is
-mis-routing. Paused here to write this up rather than continue
-speculating further without more evidence.
+**Correction (this project's own earlier conclusion was wrong) - the real,
+confirmed Swedish error-code table**: the "direct-mode flag" mechanism
+above is real (verified by tracing `(IY+14)`'s own read/write sites), but
+concluding it explains `ERR 41` was a mistake - `(IY+14)` gates whether an
+error code found in a 16-byte table at `0x0659` gets silently retried/
+resumed (jumping back into the statement-dispatch loop at `L0D6F`) instead
+of aborting; when it's nonzero (direct-mode) *or* the error code isn't in
+that table at all, `L062E` always falls straight through to the abort path
+regardless of the flag - the flag only ever suppresses the abort, it never
+causes one. The actual error text was still unconfirmed at the time, so
+this was a plausible-sounding but unverified inference, not a checked
+fact.
+
+Extracting `disk003.img`'s own error-message table (blocks 18-31,
+delimited by high-bit marker bytes - confirmed to be `0x80 + error code`
+by cross-referencing several message boundaries against their neighbors)
+gives the real, complete mapping instead of guessing from context. In
+particular: **`ERR 41` is `0xA9 & 0x7F = 41` = `SKIVAN FULL` ("disk
+full")** - nothing to do with direct-vs-running mode at all. And
+`OTILLÅTET SOM KOMMANDO` ("not allowed as \[direct\] command"), the
+message this project's earlier write-up guessed `ERR 41` mapped to, is
+actually **`ERR 2`** (`0x82 & 0x7F = 2`), a completely different code. The
+full table (all 64 messages, `0x80`-`0xBF`) is now captured in
+`abc80/docs/ABC80_REFERENCE.md`'s own error-code section for future
+reference rather than re-derived from scratch next time. `ERR 21` (see
+below) is `0x95 & 0x7F = 21` = `HITTAR EJ FILEN` ("file not found") -
+exactly the ordinary, expected error for a file that genuinely can't be
+located, not a sign of anything exotic.
+
+**A `LOAD` test against the same real image, and a new, more fundamental
+finding**: rather than continuing to chase `SAVE`'s "disk full" report
+against a disk that plainly isn't full, tried `LOAD DIRCOPY` (a real
+`.BAC` - tokenized BASIC program, confirmed by extension per
+`ABC80_BASIC_REFERENCE.md` - genuinely present in `disk003.img`'s own
+directory, block 8/16). Decoded that entry's own two-byte start-position
+field (`0x0FE0`) against the directory's raw bytes for all fourteen
+files and found every value is a clean multiple of `0x20` - consistent
+with `start_block = value >> 5` (32 real per-block "sub-block" units),
+which lands every file at a distinct, monotonically increasing, in-range
+block number (`DIRCOPY.BAC` → block 127) - a real, testable hypothesis,
+not yet confirmed by an actual successful read.
+
+It wasn't confirmed, because **the `LOAD` never reached the directory at
+all**. Added the same kind of temporary trap-call tracing used for the
+`SAVE` investigation (removed again afterward) and found every single
+disk-trap call during the entire run - both for a bare `LOAD DIRCOPY` and
+for `LOAD DR0:DIRCOPY` (guessing at a `DR0:`-style device prefix from the
+`DR0`-`DR6` device-chain names this project's own earlier research found -
+**not confirmed from any primary source**, since no manual excerpt
+consulted so far documents the actual floppy-device syntax) - is the exact
+same repeating 8-block scan (`512, 544, ..., 736`) already found during
+the blank-image investigation, cycling continuously for the entire run
+(80-192 reads observed, always the same 8 blocks, never blocks 8/16/127).
+The directory-search code, and the `>>5` hypothesis above, were never
+actually exercised - both `ERR 41` and `ERR 21` were reached without the
+DOS ROM ever reading the real directory or file data at all.
+
+This reframes the real blocker: it isn't a `SAVE`-specific or
+`LOAD`-specific problem, and it isn't (as far as tested) about command
+syntax - it's that **this 8-block scan never resolves**, for both
+operations, and everything downstream (`SAVE` reporting "full", `LOAD`
+reporting "not found") looks like a generic fallback/degraded state
+reached once that scan gives up, not two independent bugs. Two real
+possibilities, not yet distinguished: (1) it's a one-shot boot-time
+"is a formatted disk present" check that never finds what it wants
+against blocks that are genuinely blank/filler (`0x40`-filled at
+512-608, actually zero - past real end-of-file - at 640-736) on this
+*specific* real disk, and every later command silently falls back to a
+"no disk" state without a fresh probe; or (2) it's a periodic
+background poll (plausibly tied into the same interrupt this project's
+own Milestone 7 already wired up) that runs continuously regardless of
+foreground command activity, in which case it may be entirely
+unrelated noise and the real per-command failure point hasn't been
+found yet. Also found, incidentally, while tracing this: `abc80_disk_read_block()`
+returns success (`ok=1`, zero-filled) for a block number at or past the
+real end of the disk-image file (block 640 on this 640-block image)
+rather than failure - real hardware would presumably report a
+read/seek error for an out-of-range sector; not yet fixed, since it
+wasn't shown to be the actual cause of either error above, but flagged
+here rather than left silent.
 
 **Revised remaining work**:
-- Determine why `SAVE`, typed directly, reaches a code path gated on
-  "must be running a program" - re-examine what `SAVE`'s real dispatch
-  path actually is (the device-chain matching this project's own earlier
-  research already found, `0xFE0A` onward) and whether it's genuinely the
-  same path this trace followed, or a different one this investigation
-  mis-identified.
+- Determine whether the `512`-`736` scan is a one-shot boot check or a
+  periodic background poll - if it's periodic, find and trace whatever
+  *other* code path is actually reached when `LOAD`/`SAVE` runs, since
+  this scan itself isn't it.
+- Find a primary source (or derive from ROM disassembly, not guessed)
+  for the real floppy device-prefix syntax - `DR0:` is this project's own
+  unconfirmed guess, not a documented fact.
+- Fix `abc80_disk_read_block()`'s past-end-of-file behavior to report
+  failure instead of a silent zero-filled success.
 - Try the same test from *within* a running program (e.g. a one-line
   program that itself executes a `SAVE`-equivalent statement, run via
-  `RUN`) to see whether that specific case succeeds, which would
-  directly confirm or refute the "only valid while running" theory.
-- Try `LOAD`ing one of `disk003.img`'s own real, pre-existing files
-  instead of continuing to focus on `SAVE` - a genuine end-to-end read
-  test against software this project didn't create itself.
+  `RUN`) - not yet tried; still a real, distinct experiment even though
+  the `(IY+14)` theory that motivated it turned out to be a dead end for
+  `ERR 41` specifically.
 - The rest of the "Still open" items above (the exact `B`.bits 0-3/7,
   independent transfer-size confirmation now partially done via the real
   image's clean 640-block division, `UFD80V20.bin`) remain open

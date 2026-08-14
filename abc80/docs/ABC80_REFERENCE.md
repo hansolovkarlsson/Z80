@@ -428,6 +428,87 @@ simulation of four interacting RC-timed subsystems — out of scope for what
 this project's own roadmap treats as its lowest-priority, purely cosmetic
 milestone.
 
+## BASIC error codes
+
+Extracted directly from a real, dumped ABC80 system disk
+(`disk003.img`, "System.diskett ABC80 Ver. 2.1" — see
+`ABC80_ROADMAP.md`'s Milestone 6 section for provenance and how this was
+found), not from any manual — the Swedish error-message text lives in
+that disk's own files (blocks 18-31), each message delimited by a marker
+byte equal to `0x80 + error code`. Confirmed against two independently
+cross-checked cases: `0xA9 & 0x7F = 41` → `SKIVAN FULL` ("disk full"),
+matching this project's own real `ERR 41` result testing `SAVE` against
+that same disk image; `0x95 & 0x7F = 21` → `HITTAR EJ FILEN` ("file not
+found"), matching a real `ERR 21` result testing `LOAD`. English
+translations below are this project's own, not official.
+
+| Code | Swedish | English |
+|---|---|---|
+| 0 | EJ TILLÅTET ÖKA "DIM" | Not allowed to re-`DIM` |
+| 1 | FEL ANTAL INDEX | Wrong number of indices |
+| 2 | OTILLÅTET SOM KOMMANDO | Not allowed as a direct command |
+| 3 | MINNET FULLT | Out of memory |
+| 4 | FÖR STORT FLYTTAL | Floating-point number too large |
+| 5 | FÖR STORT INDEX | Index too large |
+| 6 | HITTAR EJ DETTA RADNUMMER | Line number not found |
+| 7 | FÖR STORT HELTAL | Integer too large |
+| 8 | FINNS EJ I DETTA SYSTEM | Not present in this system |
+| 9 | INDEX UTANFÖR STRÄNGEN | Index outside the string |
+| 10 | TEXTEN FÅR EJ PLATS I STRÄNGEN | Text doesn't fit in the string |
+| 11 | FÖRSTÅR EJ | Doesn't understand (syntax error) |
+| 12 | FELAKTIGT TAL | Malformed number |
+| 13 | FEL ANTAL ELLER TYP AV ARGUMENT | Wrong number/type of argument |
+| 14 | OTILLÅTET TECKEN EFTER SATSEN | Illegal character after the statement |
+| 15 | "=" SAKNAS ELLER PÅ FEL PLATS | `=` missing or misplaced |
+| 16 | RADNUMMER SAKNAS | Line number missing |
+| 17 | OTILLÅTEN BLANDNING AV TAL OCH STRÄNGAR | Illegal mixing of numbers and strings |
+| 18 | ")" SAKNAS ELLER PÅ FEL PLATS | `)` missing or misplaced |
+| 19 | KAN EJ ÖPPNA FLER FILER | Can't open more files |
+| 20 | FÖR LÅNG RAD (>120 TKN) | Line too long (>120 characters) |
+| 21 | HITTAR EJ FILEN | File not found |
+| 22 | OTILLÅTEN SATS | Illegal statement |
+| 23 | "TO" SAKNAS | `TO` missing |
+| 24 | "NEXT" SAKNAS | `NEXT` missing |
+| 25 | FELAKTIG SATS EFTER "ON" | Malformed statement after `ON` |
+| 26 | FEL I ON-UTTRYCK | Error in `ON` expression |
+| 27 | "NEXT" UTAN "FOR" | `NEXT` without `FOR` |
+| 28 | FEL VARIABEL EFTER "NEXT" | Wrong variable after `NEXT` |
+| 29 | "RETURN" UTAN "GOSUB" | `RETURN` without `GOSUB` |
+| 30 | DATA SLUT | Out of `DATA` |
+| 31 | FEL DATA TILL KOMMANDO | Wrong data for the command |
+| 32 | FILEN EJ ÖPPEN | File not open |
+| 33 | "AS FILE" SAKNAS | `AS FILE` missing |
+| 34 | SLUT PÅ FILEN | End of file |
+| 35 | CHECKSUMMANFEL VID LÄSNING | Checksum error on read |
+| 36 | CHECKSUMMAFEL VID SKRIVNING | Checksum error on write |
+| 37 | FELAKTIGT RECORDFORMAT | Malformed record format |
+| 38 | RECORDNUMMER UTANFÖR FILEN | Record number outside the file |
+| 39 | FILEN SKRIVSKYDDAD | File is write-protected |
+| 40 | FILEN RADERSKYDDAD | File is delete-protected |
+| 41 | SKIVAN FULL | Disk full |
+| 42 | SKIVAN EJ KLAR | Disk not ready |
+| 43 | SKIVAN SKRIVSKYDDAD | Disk is write-protected |
+| 44 | LOGISK FIL EJ ÖPPNAD | Logical file not opened |
+| 45 | FEL LOGISKT FILNUMMER | Wrong logical file number |
+| 46 | FEL ENHETSNUMMER | Wrong device number |
+| 47 | FEL TRAP-NUMMER | Wrong trap number |
+| 48 | FEL I BIBLIOTEKET | Error in the library |
+| 49 | FELAKTIGT FYSISKT FILNUMMER | Wrong physical file number |
+| 50 | KVADRATROT UR NEGATIVT TAL | Square root of a negative number |
+| 51 | ENHETEN UPPTAGEN | Device busy |
+| 52 | EJ TILL DENNA ENHET | Not [applicable] to this device |
+| 53 | FELAKTIG RAD | Malformed line |
+| 54 | IEC BÅDE SÄNDARE OCH MOTTAGARE | IEC both transmitter and receiver |
+| 55 | IEC-MOTTAGARE EJ AKTIV | IEC receiver not active |
+| 56 | IEC-SÄNDARE EJ AKTIV | IEC transmitter not active |
+| 57 | FUNKTIONEN EJ DEFINIERAD | Function not defined |
+| 58 | OGILTIGT TECKEN INLÄST | Invalid character read |
+| 59 | FEL PROGRAMFORMAT | Wrong program format |
+| 60 | BIT ADRESS >16 BITAR | Bit address >16 bits |
+| 61 | KOMMA SAKNAS | Comma missing |
+| 62 | DOT-ADRESS UTANFÖR SKÄRMEN | Dot address outside the screen |
+| 63 | "AS" SAKNAS | `AS` missing |
+
 ## Sources
 
 - MAME mainline driver: `src/mame/luxor/abc80.cpp`, `abc80.h`,
@@ -448,6 +529,11 @@ milestone.
 - ROM/PROM images: <https://www.abc80.net/archive/luxor/Prom/fw/ABC80/> —
   see `abc80/resources/rom/README.md` for the exact files and checksum
   cross-check against MAME.
+- Real ABC80 floppy disk image `disk003.img` ("System.diskett ABC80 Ver.
+  2.1"): <https://www.abc80.net/archive/luxor/sw/disk_images/ABC80/160k/> —
+  source for the BASIC error-code table above and for the real directory/
+  file layout this project's Milestone 6 disk research uses as ground
+  truth; not yet committed into this repo (see `ABC80_ROADMAP.md`).
 - This project's own tooling: `bin/z80dasm` (real ROM disassembly, used to
   find the keyboard poll loop and debounce-convergence address),
   `bin/abc80-chargen-dump`/`bin/abc80-video-timing-dump`/
