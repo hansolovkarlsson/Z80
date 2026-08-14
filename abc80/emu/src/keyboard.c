@@ -57,3 +57,22 @@ void abc80_keyboard_consumed(void) {
 int abc80_keyboard_ready_for_next(void) {
     return !strobe_pending;
 }
+
+static uint8_t pio_port_a_aliases[16];
+static int num_pio_port_a_aliases = 0;
+
+void abc80_keyboard_init_port_aliases(void) {
+    num_pio_port_a_aliases = 0;
+    for (int p = 0; p < 256; p++) {
+        if ((p & 0x17) == 0x10) {
+            pio_port_a_aliases[num_pio_port_a_aliases++] = (uint8_t)p;
+        }
+    }
+}
+
+void abc80_sync_pio_port_a(Z80 *cpu) {
+    uint8_t value = abc80_keyboard_port_a();
+    for (int i = 0; i < num_pio_port_a_aliases; i++) {
+        cpu->io_ports[pio_port_a_aliases[i]] = value;
+    }
+}

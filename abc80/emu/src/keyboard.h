@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "../../../z80core/z80.h"
+
 // Real hardware pulses the PIO strobe for ~50ms per keystroke (MAME's own
 // abc80_state::kbd_w()/m_keyboard_clear_timer) - long enough for the ROM
 // to notice on its next poll, but gone well before any *later* poll
@@ -56,5 +58,21 @@ int abc80_keyboard_ready_for_next(void);
 // comment) - clears the strobe, edge-triggered, rather than aging it out
 // on a guessed instruction count.
 void abc80_keyboard_consumed(void);
+
+// Every I/O port address that aliases PIO Port A's data register under
+// ABC80's real hardware address decoding (MAME's `map.global_mask(0x17)` -
+// see video_timing.c's port-map comment): only bits 0,1,2,4 of the port
+// address are actually wired to anything, so any port P with
+// (P & 0x17) == 0x10 reads/writes the identical register - real software
+// (the BASIC ROM included, via `IN A,(38h)`) can and does address it
+// through more than one of these. z80_io_in()/z80_io_out() (z80core/z80.c)
+// are a plain flat 256-entry array with no device logic of their own - by
+// design - so this machine layer has to keep every alias in sync itself
+// rather than the CPU core knowing anything about the mask. Callers should
+// call abc80_keyboard_init_port_aliases() once at startup; abc80_step()
+// (step.h) calls abc80_sync_pio_port_a() itself before every instruction,
+// so callers of abc80_step() don't need to call it separately.
+void abc80_keyboard_init_port_aliases(void);
+void abc80_sync_pio_port_a(Z80 *cpu);
 
 #endif

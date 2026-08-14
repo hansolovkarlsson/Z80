@@ -37,7 +37,6 @@
 #include <limits.h>
 
 #include "../../../z80core/z80.h"
-#include "../../../z80core/alu.h"
 #include "render.h"
 #include "video_timing.h"
 #include "keyboard.h"
@@ -86,34 +85,11 @@
 // as a comment on ABC80_PIO_INTERRUPT_PERIOD_TSTATES/_VECTOR themselves in
 // step.h (Milestone 11's shared-step extraction), not duplicated here.
 
-// Every I/O port address that aliases PIO Port A's data register under
-// ABC80's real hardware address decoding (MAME's `map.global_mask(0x17)` -
-// see video_timing.c's port-map comment): only bits 0,1,2,4 of the port
-// address are actually wired to anything, so any port P with
-// (P & 0x17) == 0x10 reads/writes the identical register - real software
-// (this ROM included, via `IN A,(38h)`) can and does address it through
-// more than one of these. z80_io_in()/z80_io_out() (z80core/z80.c) are
-// a plain flat 256-entry array with no device logic of their own - by
-// design, see that file's own comment - so this machine layer has to keep
-// every alias in sync itself rather than the CPU core knowing anything
-// about the mask.
-static uint8_t pio_port_a_aliases[16];
-static int num_pio_port_a_aliases = 0;
-
-static void init_pio_port_a_aliases(void) {
-    for (int p = 0; p < 256; p++) {
-        if ((p & 0x17) == 0x10) {
-            pio_port_a_aliases[num_pio_port_a_aliases++] = (uint8_t)p;
-        }
-    }
-}
-
-static void sync_pio_port_a(Z80 *cpu) {
-    uint8_t value = abc80_keyboard_port_a();
-    for (int i = 0; i < num_pio_port_a_aliases; i++) {
-        cpu->io_ports[pio_port_a_aliases[i]] = value;
-    }
-}
+// The PIO Port A hardware-address-alias sync (main.c used to keep its own
+// copy of this) now lives in keyboard.c/.h, called once per instruction
+// from inside abc80_step() itself (Milestone 11's shared-step extraction) -
+// see keyboard.h's own comment. abc80_keyboard_init_port_aliases() still
+// needs calling once at startup, in main()'s own setup below.
 
 // --interactive: raw terminal keyboard input + a live, periodically-
 // redrawn screen, instead of batch execution to a fixed instruction cap
@@ -558,7 +534,7 @@ int main(int argc, char *argv[]) {
     cpu.memory = ram;
     cpu.bus_read_hook = abc80_bus_read_hook;
     z80_init_tables();
-    init_pio_port_a_aliases();
+    abc80_keyboard_init_port_aliases();
 
     // Real Z80 SP is undefined out of reset - unlike the CP/M target (which
     // must pre-seed SP itself, since a .com file has no reset-time init
@@ -626,7 +602,6 @@ int main(int argc, char *argv[]) {
                 abc80_keyboard_press((uint8_t)stdin_byte);
             }
         }
-        sync_pio_port_a(&cpu);
 
         // The actual per-instruction step - keyboard strobe consumption,
         // sound-register write logging, the disk bypass trap, and periodic

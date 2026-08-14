@@ -12,6 +12,12 @@
 
 int abc80_step(Z80 *cpu, uint8_t *ram, Abc80SoundLog *sound_log,
                uint64_t *total_cycles, uint64_t *next_pio_interrupt_at) {
+    // Real hardware address-decodes PIO Port A at several aliased port
+    // numbers (see abc80_sync_pio_port_a()'s own comment) - kept in sync
+    // here, once per instruction, so callers of abc80_step() don't need
+    // to remember to call it themselves.
+    abc80_sync_pio_port_a(cpu);
+
     uint16_t pc_before = cpu->pc;
 
     // Whether the *upcoming* z80_execute() call will actually fetch and
