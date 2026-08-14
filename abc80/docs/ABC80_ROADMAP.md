@@ -770,7 +770,7 @@ READ/WRITE bodies), not assumed:
   been examined at all yet - unknown whether it shares this same
   low-level protocol/calling convention or differs.
 
-#### First implementation attempt — mechanism verified, blocked on disk-format detection
+#### First implementation attempt — mechanism verified against a real disk, blocked on a direct-mode restriction
 
 Built `--disk FILE` (`abc80/emu/src/main.c`): loads the real, committed
 `ABCDOS80.bin` at `0x6000` (carving that range out of Milestone 6's
@@ -817,24 +817,100 @@ plausible/valid value would need to look like - the loop at `0x6827` was
 only partially traced before pausing to write this up, not fully
 understood.
 
+#### A real disk image, not a blank one — new ground truth, new (different) blocker
+
+abc80.net's own archive turns out to host real, dumped ABC80 floppy
+images: `sw/disk_images/ABC80/160k/` alone has 49 of them, several with
+scanned disk-label photos and short descriptions. Downloaded
+`disk003.img` ("System.diskett ABC80 Ver. 2.1", per that directory's own
+`index.txt`) to use as real ground truth instead of continuing to guess
+at the blank-image blocker above.
+
+**Confirmed empirically, not just circumstantially, against this real
+image**:
+- **256-byte blocks**: `disk003.img` is exactly `163840` bytes = `640 ×
+  256` - a clean division against a real, known 160KB disk capacity, not
+  a coincidence. The earlier `LD B,0`/`DJNZ`-idiom evidence now has a
+  second, independent confirmation.
+- **The real directory format**: readable directly out of the image's
+  own bytes (no ROM disassembly needed for this part) - blocks 8 and 16
+  (identical, presumably a redundant copy) hold real 11-byte filename
+  entries (`BASICERR SYS`, `CMDINT   SYS`, `COPY     ABS`, `MAP     ABS`,
+  etc. - classic 8+3 name/extension, space-padded, no separator byte),
+  and block 0 holds a real volume label string, `"SYSTEM-DISKETT ABC-80
+  Vers. 2.1."` - matching the disk's own physical label exactly.
+- **The real Swedish DOS error-message table**: also directly readable
+  from the image (stored as plain text inside one of the system files,
+  not the ROM) - e.g. `SKIVAN FULL` (disk full), `SKIVAN EJ KLAR` (disk
+  not ready), `HITTAR EJ FILEN` (file not found), `OTILLÅTET SOM
+  KOMMANDO` (not allowed as \[direct\] command) - genuine primary-source
+  text for what was previously an unresolved "Still open" item (exact
+  error meanings).
+- **The directory is *not* at blocks 512-736** - it's near the very
+  start of the disk (blocks 8/16). This means the blank-image blocker
+  documented above (an 8-location scan at blocks 512-736 that never finds
+  anything) almost certainly wasn't scanning for the directory itself -
+  more likely a disk-geometry/type auto-detection sequence (try one
+  capacity/format, fall back to another) that a real, correctly-sized
+  disk should satisfy at an earlier step than a blank image ever would.
+
+**Testing `SAVE` against this real image confirms that reasoning**: the
+emulator no longer gets stuck in the endless scan loop the blank image
+produced - it now returns a concrete, numbered `ERR 41` instead. A
+different, more diagnosable failure, and real evidence the real image
+changes behavior exactly as expected.
+
+**`ERR 41` traced to its actual cause, using the emulator itself rather
+than static disassembly alone** (added temporary PC-history and register
+tracing to `main.c`, since blind disassembly reading had diminishing
+returns by this point - removed again once the trace was captured): the
+full call chain runs through `0x6D76`/`0x6E23` (the *same* DOS-card init
+tail used at boot - a genuinely shared/reusable utility, not a re-run of
+boot itself) into a shared base-ROM utility at `0x062E`
+(`LD (IY+14) checked; JR NZ,L0669` - "abort with the error code already
+in `A` if this flag is set"). Register tracing at the exact decision
+point shows `(IY+14) = 0xFE24 = 0x01` and `A = 0xA9` (masks to `0x29` =
+41, confirming this really is the `ERR 41` path). `(IY+14)` turns out to
+be a genuine, simple **direct-mode flag**: set to `1` unconditionally at
+the top of the READY-prompt loop (`0x00DE`, i.e. "not currently running a
+program"), and cleared to `0` specifically when `RUN` begins executing a
+program (`0x0D5F`, right before entering the real statement-dispatch
+loop `L0D6F`/`L0D90` this project's own Milestone 9 write-up already
+found). So the concrete, mechanical cause of `ERR 41` is: **this specific
+DOS code path is only valid while a program is running, not when typed
+as a direct command** - matching `OTILLÅTET SOM KOMMANDO` ("not allowed
+as \[direct\] command") from the real error table above, by inference
+from context rather than a confirmed code-to-message mapping.
+
+**Not yet resolved, and a real open question, not just an unfinished
+trace**: real ABC80 users plainly do type `SAVE PROGNAME` directly at the
+prompt (the source manual's own examples show exactly that), so either
+this project's own test command is missing something real about `SAVE`'s
+actual syntax/behavior against a floppy-equipped machine specifically
+(as opposed to the cassette-only base config every other milestone in
+this project has exercised so far), or the code path reached here isn't
+actually part of a normal `SAVE` at all and something upstream is
+mis-routing. Paused here to write this up rather than continue
+speculating further without more evidence.
+
 **Revised remaining work**:
-- Trace `0x6827`-`0x6850`'s loop fully to find the actual pass/fail
-  condition at the eight scanned blocks - `L6978` reads a value from
-  `0xFD00` (itself presumably filled in by the scan loop, once per
-  iteration) to compute each of the eight block numbers, but what
-  determines the loop counter and what a "found it" outcome looks like on
-  the *data* side isn't pinned down yet.
-- Once that's understood, either seed a fresh virtual disk image with
-  whatever minimal signature satisfies it, or - potentially simpler,
-  since it sidesteps needing to know the exact format at all - check
-  whether ABC-DOS exposes a real `FORMAT`-equivalent operation: if so,
-  running it once against a blank image (through this same trap, which
-  doesn't care what it's asked to write) would let the real ROM code
-  write a genuinely valid, self-consistent directory structure as a
-  natural side effect, without this project ever needing to reverse-
-  engineer the format by hand.
-- The rest of the "Still open" items above (error codes, transfer-size
-  confirmation, `UFD80V20.bin`) remain open regardless.
+- Determine why `SAVE`, typed directly, reaches a code path gated on
+  "must be running a program" - re-examine what `SAVE`'s real dispatch
+  path actually is (the device-chain matching this project's own earlier
+  research already found, `0xFE0A` onward) and whether it's genuinely the
+  same path this trace followed, or a different one this investigation
+  mis-identified.
+- Try the same test from *within* a running program (e.g. a one-line
+  program that itself executes a `SAVE`-equivalent statement, run via
+  `RUN`) to see whether that specific case succeeds, which would
+  directly confirm or refute the "only valid while running" theory.
+- Try `LOAD`ing one of `disk003.img`'s own real, pre-existing files
+  instead of continuing to focus on `SAVE` - a genuine end-to-end read
+  test against software this project didn't create itself.
+- The rest of the "Still open" items above (the exact `B`.bits 0-3/7,
+  independent transfer-size confirmation now partially done via the real
+  image's clean 640-block division, `UFD80V20.bin`) remain open
+  regardless.
 
 ## Milestone 8: `--interactive` — real keyboard input and a live screen — done
 
@@ -1115,6 +1191,14 @@ where the real detail lives:
 - *Bruksanvisning Minneskort ABC* (Luxor) —
   <https://www.abc80.net/archive/luxor/ABC80/ABC80-minneskort-bruksanvisning.pdf>
   (the separate ROM/DOS expansion card, Milestone 6).
+- Scandia Metric AB, *Kort beskrivning av ABC-80 BASIC* —
+  <https://www.abc80.net/archive/luxor/ABC80/Kort-beskrivning-av-abc80-basic.pdf>
+  (the primary source for `abc80/docs/ABC80_BASIC_REFERENCE.md`).
+- Real ABC80 floppy disk images: <https://www.abc80.net/archive/luxor/sw/disk_images/ABC80/160k/>
+  (49 real, dumped 160KB disk images with scanned labels/descriptions in
+  that directory's own `index.txt`; `disk003.img`, "System.diskett ABC80
+  Ver. 2.1," used as real ground truth for Milestone 6's floppy/DOS
+  bypass sub-step, not yet committed into this repo).
 
 See `abc80/docs/ABC80_REFERENCE.md` for a consolidated hardware reference
 (memory map, I/O ports, ROM/PROM inventory, per-subsystem register layouts)
