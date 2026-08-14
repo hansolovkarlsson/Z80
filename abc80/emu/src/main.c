@@ -37,6 +37,7 @@
 #include <limits.h>
 
 #include "../../../cpm/emu/src/z80.h"
+#include "../../../cpm/emu/src/alu.h"
 #include "render.h"
 #include "video_timing.h"
 #include "keyboard.h"
@@ -428,8 +429,29 @@ static const RomImage ROM_IMAGES[] = {
 // Milestone 6.
 static bool abc80_ram32k_enabled = false;
 
+// Milestone 11 (floppy/DOS bypass, see abc80/docs/ABC80_ROADMAP.md's own
+// Floppy/DOS controller sub-step write-up for the full disassembly-
+// grounded derivation this is built from): --disk FILE loads the real,
+// committed ABC-DOS ROM (abc80/resources/rom/ABCDOS80.bin, unmodified) at
+// its real base address 0x6000 - carved out of the ABCbus-delegated range
+// Milestone 6 otherwise leaves permanently floating, since a real DOS ROM
+// card genuinely occupies exactly that address range. Everything else in
+// that ROM - boot init, the device-dispatch chain (0xFE0A), FCB
+// management - runs as genuine, unmodified 1982 machine code on this
+// project's own proven Z80 core; only the two lowest-level block-I/O
+// primitives (0x6068 read, 0x60A1 write) are intercepted and answered
+// directly against a host-file-backed virtual disk image, rather than
+// requiring this emulator to reproduce the real ABCbus byte-level
+// handshake protocol or the controller's own separate Z80/DMA/FDC
+// hardware underneath them (abc80_disk_trap(), below).
+static bool abc80_disk_enabled = false;
+static FILE *abc80_disk_file = NULL;
+
 static uint8_t abc80_bus_read_hook(Z80 *cpu, uint16_t address, uint8_t stored_value) {
     (void)cpu;
+    if (abc80_disk_enabled && address >= 0x6000 && address <= 0x6FFF) {
+        return stored_value; // the real, loaded ABCDOS80.bin content
+    }
     if (address >= 0x4000 && address <= 0x7BFF) {
         return 0xFF;
     }
@@ -437,6 +459,86 @@ static uint8_t abc80_bus_read_hook(Z80 *cpu, uint16_t address, uint8_t stored_va
         return 0xFF;
     }
     return stored_value;
+}
+
+// 256 bytes/block: strong circumstantial evidence from the real ROM's own
+// transfer-count logic (a classic `LD B,0` / `DJNZ` idiom, where a loaded
+// 0 wraps to 256 iterations - see the ROADMAP write-up's own derivation),
+// not independently confirmed against a real disk image.
+#define ABC80_DISK_BLOCK_SIZE 256
+
+// A plausible T-state cost standing in for the real (bypassed) routine's
+// own execution time, so this project's existing interrupt-scheduling and
+// --interactive real-time-pacing arithmetic (both driven by accumulated
+// T-states) aren't thrown off by treating real disk I/O as instantaneous/
+// free - not meant to be a precise real-hardware timing match.
+#define ABC80_DISK_TRAP_TSTATE_COST 200
+
+// The real DOS workspace pointer this ROM's own init sets to 0xF500 (see
+// the ROADMAP write-up) - read live from RAM rather than hardcoded, in
+// case some future ROM variant or code path changes it.
+#define ABC80_DOS_BUFPTR_ADDR 0xFD12
+
+static bool abc80_disk_read_block(uint16_t block, uint8_t *dest) {
+    if (!abc80_disk_file) {
+        memset(dest, 0, ABC80_DISK_BLOCK_SIZE);
+        return false;
+    }
+    long offset = (long)block * ABC80_DISK_BLOCK_SIZE;
+    if (fseek(abc80_disk_file, offset, SEEK_SET) != 0) {
+        memset(dest, 0, ABC80_DISK_BLOCK_SIZE);
+        return false;
+    }
+    size_t n = fread(dest, 1, ABC80_DISK_BLOCK_SIZE, abc80_disk_file);
+    if (n < ABC80_DISK_BLOCK_SIZE) {
+        // Reading past the real end of the image file - zero-fill the
+        // rest rather than leaving whatever garbage was already in the
+        // destination buffer, so an unformatted/short image reads back
+        // as consistent, predictable zero bytes.
+        memset(dest + n, 0, ABC80_DISK_BLOCK_SIZE - n);
+    }
+    return true;
+}
+
+static bool abc80_disk_write_block(uint16_t block, const uint8_t *src) {
+    if (!abc80_disk_file) return false;
+    long offset = (long)block * ABC80_DISK_BLOCK_SIZE;
+    if (fseek(abc80_disk_file, offset, SEEK_SET) != 0) return false;
+    size_t n = fwrite(src, 1, ABC80_DISK_BLOCK_SIZE, abc80_disk_file);
+    fflush(abc80_disk_file);
+    return n == ABC80_DISK_BLOCK_SIZE;
+}
+
+// Replaces a full call to the real L6068 (read)/L60A1 (write) routine -
+// see the ROADMAP write-up's own instruction-by-instruction derivation of
+// this calling convention. Reads the caller's channel/block-number
+// parameters, performs the real host file I/O, writes the result into
+// the same fixed per-channel buffer the real routine would have used,
+// and manually pops the return address to resume execution exactly where
+// the real routine's own RET would have - the same "trap and replace"
+// pattern this project's own --quickload already uses at a different PC
+// address, just replacing a whole subroutine's body instead of pre-
+// loading data ahead of normal execution.
+static int abc80_disk_trap(Z80 *cpu, uint8_t *ram, bool is_read) {
+    uint8_t channel = (uint8_t)((cpu->b >> 4) & 0x07);
+    uint16_t block = (uint16_t)(((uint16_t)cpu->d << 8) | cpu->e);
+    uint16_t buf_base = (uint16_t)(ram[ABC80_DOS_BUFPTR_ADDR] |
+                                    (ram[ABC80_DOS_BUFPTR_ADDR + 1] << 8));
+    uint16_t buf_addr = (uint16_t)(buf_base + (uint16_t)channel * ABC80_DISK_BLOCK_SIZE);
+
+    bool ok = is_read ? abc80_disk_read_block(block, &ram[buf_addr])
+                       : abc80_disk_write_block(block, (const uint8_t *)&ram[buf_addr]);
+
+    uint16_t ret_addr = (uint16_t)(ram[cpu->sp] | (ram[(uint16_t)(cpu->sp + 1)] << 8));
+    cpu->sp = (uint16_t)(cpu->sp + 2);
+    cpu->pc = ret_addr;
+    cpu->a = ok ? 0x00 : 0x01;
+    if (ok) {
+        cpu->f = (uint8_t)(cpu->f & ~FLAG_C);
+    } else {
+        cpu->f = (uint8_t)(cpu->f | FLAG_C);
+    }
+    return ABC80_DISK_TRAP_TSTATE_COST;
 }
 
 static bool load_rom(const char *rom_dir, const RomImage *rom, uint8_t *ram) {
@@ -493,6 +595,9 @@ static void print_usage(const char *prog) {
     printf("                     instead of a one-shot batch run to max_instructions.\n");
     printf("                     Ctrl-C reaches BASIC as a real break keystroke; press\n");
     printf("                     Ctrl-\\ to exit this tool. Ignored if stdin isn't a terminal.\n");
+    printf("  --disk FILE        Load the real ABC-DOS ROM at 0x6000 and back its floppy\n");
+    printf("                     I/O with a host file (created if it doesn't exist) -\n");
+    printf("                     see abc80/docs/ABC80_ROADMAP.md for how this bypass works.\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -501,6 +606,7 @@ int main(int argc, char *argv[]) {
     const char *quickload_path = NULL;
     const char *quicksave_path = NULL;
     const char *wav_path = NULL;
+    const char *disk_path = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
@@ -516,6 +622,8 @@ int main(int argc, char *argv[]) {
             abc80_ram32k_enabled = true;
         } else if (strcmp(argv[i], "--interactive") == 0) {
             interactive_mode = true;
+        } else if (strcmp(argv[i], "--disk") == 0 && i + 1 < argc) {
+            disk_path = argv[++i];
         } else if (!rom_dir) {
             rom_dir = argv[i];
         } else if (max_instructions < 0) {
@@ -559,6 +667,39 @@ int main(int argc, char *argv[]) {
     memset(&ram[0x4000], 0xFF, 0x7C00 - 0x4000);
     if (!abc80_ram32k_enabled) {
         memset(&ram[0x8000], 0xFF, 0xC000 - 0x8000);
+    }
+
+    // --disk: load the real ABC-DOS ROM at its real base address 0x6000
+    // (overwriting the floating-bus fill above for that range only - see
+    // abc80_bus_read_hook's own comment) and open/create the host file
+    // backing its virtual disk. Done after the floating-bus fill, not
+    // before, so this ROM content survives it.
+    if (disk_path) {
+        char dos_rom_path[1024];
+        snprintf(dos_rom_path, sizeof(dos_rom_path), "%s/ABCDOS80.bin", rom_dir);
+        FILE *dos_rom_f = fopen(dos_rom_path, "rb");
+        if (!dos_rom_f) {
+            fprintf(stderr, "Failed to open DOS ROM '%s': ", dos_rom_path);
+            perror(NULL);
+            return EXIT_FAILURE;
+        }
+        size_t dos_rom_read = fread(&ram[0x6000], 1, 4096, dos_rom_f);
+        fclose(dos_rom_f);
+        if (dos_rom_read != 4096) {
+            fprintf(stderr, "DOS ROM '%s' is not exactly 4096 bytes\n", dos_rom_path);
+            return EXIT_FAILURE;
+        }
+        abc80_disk_file = fopen(disk_path, "r+b");
+        if (!abc80_disk_file) {
+            abc80_disk_file = fopen(disk_path, "w+b");
+        }
+        if (!abc80_disk_file) {
+            fprintf(stderr, "Failed to open disk image '%s': ", disk_path);
+            perror(NULL);
+            return EXIT_FAILURE;
+        }
+        abc80_disk_enabled = true;
+        printf("Loaded DOS ROM '%s' at 0x6000, disk image '%s'\n", dos_rom_path, disk_path);
     }
 
     Z80 cpu = {0};
@@ -723,7 +864,17 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        int cycles = z80_execute(&cpu, ram);
+        // Milestone 11's disk bypass: intercept the two real low-level
+        // block-I/O entry points (see abc80_disk_trap()'s own comment)
+        // before they'd otherwise run the real ABCbus protocol code this
+        // emulator doesn't implement - same interrupt-interception hazard
+        // as the other pc_before-based predictions above, so gated the
+        // same way.
+        bool about_to_do_disk_io = abc80_disk_enabled && !interrupt_will_intercept_this_step &&
+                                    (pc_before == 0x6068 || pc_before == 0x60A1);
+
+        int cycles = about_to_do_disk_io ? abc80_disk_trap(&cpu, ram, pc_before == 0x6068)
+                                          : z80_execute(&cpu, ram);
         instructions++;
         if (about_to_consume_key) {
             abc80_keyboard_consumed();

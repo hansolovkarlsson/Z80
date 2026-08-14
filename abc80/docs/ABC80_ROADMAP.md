@@ -415,9 +415,12 @@ storage.
       simplification for `0x4000`-`0xBFFF` with genuine floating-bus
       behavior by default, plus an opt-in `--ram32k` flag modeling a real,
       well-documented 16KB expansion.
-- [ ] **Floppy/DOS controller card + ABC-DOS or UFD-DOS ROM loading —
-      scoping and protocol research in progress, not yet implemented.**
-      See its own section below.
+- [ ] **Floppy/DOS controller card + ABC-DOS or UFD-DOS ROM loading — a
+      first `--disk` bypass exists and is mechanically verified working
+      (real DOS ROM boots and runs unmodified against it), but `SAVE`
+      doesn't complete yet - blocked on a disk-format-detection check
+      this project hasn't reverse-engineered.** See its own section
+      below.
 
 ### RAM expansion sub-step (grounded, not guessed)
 
@@ -622,7 +625,7 @@ sound WAV render (frequency re-measured at 640.01Hz via zero-crossing
 analysis, still matching the 640.00Hz prediction) — all pass with no
 regressions from before this milestone.
 
-### Floppy/DOS controller sub-step — protocol research (in progress, no code yet)
+### Floppy/DOS controller sub-step — protocol research and first implementation attempt (in progress)
 
 **Why this is scoped differently from every other sub-step here**: a real
 ABC830/832/838-class controller (the family the `abc80_cards` slot list's
@@ -763,14 +766,75 @@ READ/WRITE bodies), not assumed:
 - Independent confirmation of the 256-byte transfer size against a real
   disk image, if one can be found/verified, rather than relying solely on
   the `LD B,0`/`DJNZ` circumstantial evidence.
-- Nothing about ABC-DOS's own directory/filesystem format needs tracing
-  further, per the strategic decision above - the real ROM code handles
-  that layer once the low-level block I/O is correctly answered.
 - `UFD80V20.bin` (the alternate real DOS variant, also committed) hasn't
   been examined at all yet - unknown whether it shares this same
   low-level protocol/calling convention or differs.
-- No implementation exists yet - everything above is still research, not
-  code.
+
+#### First implementation attempt — mechanism verified, blocked on disk-format detection
+
+Built `--disk FILE` (`abc80/emu/src/main.c`): loads the real, committed
+`ABCDOS80.bin` at `0x6000` (carving that range out of Milestone 6's
+otherwise-permanent floating-bus fill), opens/creates a flat host file as
+the virtual disk, and implements `abc80_disk_trap()` - intercepting
+`PC==0x6068`/`0x60A1` exactly as designed above, reading `B`/`D,E` for
+channel/block, performing real `fseek`/`fread`/`fwrite` against the host
+file at `block × 256`, and manually popping the return address to resume
+execution, with carry/`A` set for success.
+
+**What this confirmed actually works, verified by real execution, not
+assumed**:
+- The DOS-card-presence probe in the base ROM's own boot sequence
+  (`LD A,(604Bh) / CP 0C3h / CALL Z,604Bh`) passes naturally, with no
+  special-casing needed - the real loaded ROM bytes already satisfy it.
+- The DOS init routine (`L6D24`) runs to completion with no hang: a
+  200,000-instruction run shows PCs visited reaching `0x6D74` (inside
+  `L6D24`'s own body) and returning cleanly to the base ROM's normal
+  flow, with `BOFA` still correctly `0xC000` - RAM detection unaffected.
+- The trap itself is mechanically correct: real reads and writes occur
+  against the host disk-image file (confirmed both by tracing individual
+  trap calls during development and by the image file growing to a
+  plausible size), register/flag/return-address simulation works with no
+  crashes, and every existing regression check (default mode,
+  `--interactive`, `make test`) still passes unchanged - this feature is
+  strictly additive, gated behind `--disk`.
+
+**New blocker found, revising an earlier assumption**: the "strategic
+decision" above assumed ABC-DOS's own directory/filesystem format would
+never need to be understood, since the real ROM code would handle that
+layer once the low-level block I/O is answered correctly. That's true for
+the *mechanics* of the file-management code, but not quite the whole
+story: with a freshly-created, all-zero disk image, `SAVE` doesn't reach a
+working state at all. Tracing the actual trap calls during a real `SAVE`
+attempt shows the ROM repeatedly scanning eight fixed candidate blocks
+(`512, 544, 576, ..., 736` - each 32 blocks apart, all read via a helper
+at `0x6978` called from a loop around `0x6827`-`0x6850`), finding nothing
+recognizable in any of them (all zero), and looping back to try again -
+consistent with a real "is a validly-formatted disk present" check that a
+blank image can never satisfy, the same way a real, truly blank floppy
+would need an actual format step before use. **Not yet resolved**: the
+exact condition being checked at those eight locations, and what a
+plausible/valid value would need to look like - the loop at `0x6827` was
+only partially traced before pausing to write this up, not fully
+understood.
+
+**Revised remaining work**:
+- Trace `0x6827`-`0x6850`'s loop fully to find the actual pass/fail
+  condition at the eight scanned blocks - `L6978` reads a value from
+  `0xFD00` (itself presumably filled in by the scan loop, once per
+  iteration) to compute each of the eight block numbers, but what
+  determines the loop counter and what a "found it" outcome looks like on
+  the *data* side isn't pinned down yet.
+- Once that's understood, either seed a fresh virtual disk image with
+  whatever minimal signature satisfies it, or - potentially simpler,
+  since it sidesteps needing to know the exact format at all - check
+  whether ABC-DOS exposes a real `FORMAT`-equivalent operation: if so,
+  running it once against a blank image (through this same trap, which
+  doesn't care what it's asked to write) would let the real ROM code
+  write a genuinely valid, self-consistent directory structure as a
+  natural side effect, without this project ever needing to reverse-
+  engineer the format by hand.
+- The rest of the "Still open" items above (error codes, transfer-size
+  confirmation, `UFD80V20.bin`) remain open regardless.
 
 ## Milestone 8: `--interactive` — real keyboard input and a live screen — done
 
@@ -1001,13 +1065,13 @@ where the real detail lives:
   sub-step), the real periodic PIO interrupt (Milestone 7), real
   interactive keyboard input with a live, real-time-paced screen including
   a genuine Ctrl-C break to BASIC and real left/right arrow keys
-  (Milestones 8-10, `bin/abc80 --interactive`) are done. No floppy/DOS
-  controller yet (Milestone 6's remaining second half) —
-  real protocol facts have been derived by disassembling the actual ABC-DOS
-  ROM (card-select address, port roles, command packet format, two
-  identified operations), but the parameter encoding, transfer-length
-  table, and disk filesystem layout are still open; see that sub-step's
-  own write-up above before resuming this.
+  (Milestones 8-10, `bin/abc80 --interactive`) are done. Floppy/DOS
+  controller support (Milestone 6's remaining second half) has a working,
+  mechanically-verified `--disk` bypass (the real ABC-DOS ROM boots and
+  runs unmodified against it, with a fully-derived calling convention for
+  its low-level block I/O), but `SAVE` doesn't complete yet - blocked on
+  a disk-format-detection check this project hasn't reverse-engineered;
+  see that sub-step's own write-up above before resuming this.
   Cassette storage is a host-file bypass of BASIC's own program-storage
   pointers, not real analog tape emulation, and sound only synthesizes a
   single steady-tone case (no noise/SLF-warble/envelope shaping) rendered
