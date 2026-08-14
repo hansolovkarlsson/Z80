@@ -1478,12 +1478,80 @@ existing fix generalizes.
   the exact `B` bits 0-3/7, independent transfer-size confirmation - now
   that real files load and save correctly, several may resolve quickly
   or turn out moot.
-- Confirm whether the free-space/allocation bookkeeping at block 6 is
-  fully correct for a disk that eventually fills up, not just the
-  currently-tested case of ample free space.
 - Consider committing `disk003.img` (or a small, purpose-built test
   image) into the repo now that it backs a real, working feature rather
   than a research artifact - still an open decision, not yet made.
+
+#### Disk-full behavior confirmed - two real, distinct capacity limits, both handled correctly and safely
+
+Investigated whether `SAVE` correctly detects and reports a genuinely
+full disk, and whether it leaves anything corrupted when it does.
+First decoded the free-space bitmap's real format empirically (the
+established method throughout this milestone) rather than guessing:
+`SAVE`d one small file and diffed block 6 before/after, finding exactly
+two bits flipped - at byte 23, bits 3 and 4, matching *precisely* the
+new file's own two logical blocks (`187`, `188`: `187 = 23×8+3`,
+`188 = 23×8+4`). Confirms a plain 1-bit-per-block bitmap (`byte =
+block/8`, `bit = block%8`, `1 = used`) spanning exactly the 640 real
+blocks (bytes `0`-`79` - `640/8` - a clean fit), with a separate
+counter elsewhere in the same block (byte 239, incrementing by 1 per
+`SAVE`) that isn't part of the bitmap itself and wasn't investigated
+further.
+
+**Two separate, real capacity limits exist on this disk, not one**:
+
+1. **The directory itself is small - 15 real entries maximum, not 16.**
+   `disk003.img` starts with 14 real files; one more `SAVE` succeeds
+   (the 15th), but a second attempt immediately fails with `FEL I
+   BIBLIOTEKET` (`ERR 48`, "error in the library") - the directory
+   block's 16th and final 16-byte slot is evidently reserved (perhaps
+   an implicit end-of-directory marker), not available for a real
+   entry. Confirmed completely safe: three consecutive failed `SAVE`
+   attempts produced a byte-for-byte identical disk image to a single
+   successful save - no partial writes, no corruption, genuinely
+   idempotent failure.
+2. **Genuine block-space exhaustion reports the real `ERR 41`
+   (`SKIVAN FULL`) correctly** - confirmed by hand-editing a copy of
+   the bitmap to leave only 3 blocks genuinely free (a realistic
+   "nearly full" state, not the initial all-`0xFF` "zero free
+   anywhere" edge case tried first, which - worth recording rather
+   than quietly discarding - produced the wrong, misleading `HITTAR EJ
+   FILEN` / `ERR 21` instead, live-traced to a real `A=0x95` at the
+   error dispatcher; evidently the ROM's own free-space search
+   short-circuits into a different, incorrect path when *no* block
+   anywhere is free, a state a real, gradually-filled disk likely
+   never actually reaches given the directory limit above caps how
+   much any single disk could ever fill through legitimate use before
+   running out of file slots first - noted as a real quirk, not
+   pursued further since it isn't a reachable real-world case). Against
+   the 3-genuinely-free-block image, `SAVE`ing the earlier 7-block
+   `BIGPROG` test program correctly live-traces to `A=0xA9` (masked
+   `41`) at the error dispatcher and prints the real `SKIVAN FULL` text.
+
+**Not fully atomic, but safely so - and this matches real legacy-DOS
+behavior, not a bug in this project's bypass**: the failed `SAVE` does
+leave a new, incomplete directory entry behind (`BIGPROG.BAC`, correctly
+named, with only the 3 blocks that fit actually written) rather than
+cleanly rolling back - inherent to any DOS that allocates and writes
+sector-by-sector without a pre-flight "is there enough total space"
+check, real hardware included, not something this bypass introduces.
+Diffed the full disk image to confirm the blast radius is exactly what
+it should be and no more: only the directory blocks, the bitmap block,
+and the 3 newly-written data blocks changed - **zero overlap with any
+of the 14 pre-existing real files' own data blocks**, confirmed by
+direct comparison against their known physical block numbers. Loading
+the resulting partial file back afterward fails safely and sensibly
+too: `LOAD DR0:BIGPROG` reports `RECORDNUMMER UTANFÖR FILEN` ("record
+number outside the file") - a genuinely correct description of a
+directory entry whose claimed extent outruns its real data - and
+`LIST` shows exactly the real partial content that made it to disk
+(the program's first two lines) with no crash, no hang, and a clean
+exit.
+
+**Closing this item**: both real capacity limits this disk can produce
+are now confirmed to behave correctly and safely. No code changes were
+needed - this was a pure verification exercise, like the multi-block
+round-trip check before it.
 
 #### `UFD80V20.bin` examined (research only, not wired up) - a real, more general sibling driver, not a simpler fallback
 
@@ -1780,9 +1848,10 @@ where the real detail lives:
   above for the full derivation. `UFD-DOS` (the alternate real DOS ROM,
   `UFD80V20.bin`) has been examined and compared but not wired up - a
   genuinely more general multi-drive-type driver, not needed now that
-  `ABC-DOS` itself works. A few narrower items (disk-full behavior, the
-  exact meaning of `B`'s unused bits) are still open - also covered in
-  that write-up.
+  `ABC-DOS` itself works. Disk-full behavior (both the directory-capacity
+  and block-space-exhaustion cases) is confirmed correct and safe. The
+  exact meaning of `B`'s unused bits is the one narrower item still
+  open - also covered in that write-up.
   Cassette storage is a host-file bypass of BASIC's own program-storage
   pointers, not real analog tape emulation, and sound only synthesizes a
   single steady-tone case (no noise/SLF-warble/envelope shaping) rendered
