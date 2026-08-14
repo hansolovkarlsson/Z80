@@ -2077,6 +2077,27 @@ under the redraw budget at the existing ~30fps throttle. No glyph cache
 needed; the original "not yet measured" open item is resolved in favor
 of the simpler existing code, not added complexity.
 
+### Sub-step: live cursor blink, ported from `--interactive`
+
+`draw_screen()`'s cursor cell was solid/always-on from this milestone's
+first working version onward (its own comment said so explicitly: "blink
+not yet modeled, always shown solid"), unlike `--interactive`, which has
+had a real, MAME-grounded `ABC80_BLINK_HZ` (3.125Hz) blink since
+Milestone 8. User-reported: the GTK window's cursor doesn't blink like
+the real machine's. Fixed by porting the identical mechanism
+`render.c`/`main.c` already use rather than inventing a new one: computes
+`fmod(elapsed_real, 1.0 / ABC80_BLINK_HZ) < (0.5 / ABC80_BLINK_HZ)` at
+the same point `on_timer_tick()` already throttles redraws to ~30fps,
+stores it in `AppState.cursor_blink_phase`, and `draw_screen()` gates the
+cursor fill on it - the same `cursor && blink_phase` condition
+`render.c`'s own `abc80_render_frame()` uses, just read from `AppState`
+instead of a passed-in parameter (this renderer's draw function is a GTK
+callback with a fixed signature, not called directly by the code that
+computes the phase). Verified by real execution: three `screencapture`
+frames taken ~0.2s apart at the idle `READY` prompt show the cursor
+block solid, then absent, then solid again - a real on/off toggle at the
+correct real-time cadence, not just a clean compile.
+
 **Remaining open items**:
 - Live SN76477 audio, per this milestone's own earlier scoping decision
   - still out of scope.

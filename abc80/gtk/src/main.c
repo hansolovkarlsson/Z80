@@ -33,6 +33,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/select.h>
+#include <math.h>
 
 #include <gtk/gtk.h>
 #include <glib-unix.h>
@@ -59,6 +60,13 @@
 // don't suffer just because redraws are throttled.
 #define ABC80_GTK_TIMER_INTERVAL_MS 5
 #define ABC80_RENDER_INTERVAL_SEC (1.0 / 30.0)
+
+// Real cursor-blink rate - see abc80/emu/src/main.c's own ABC80_BLINK_HZ
+// comment for the MAME-sourced derivation (m_blink_timer at
+// attotime::from_hz(XTAL(11'980'800)/2/6/64/312/16)). Duplicated here for
+// the same reason ABC80_CLOCK_HZ above is - a single constant, not logic,
+// and main.c has no header of its own to export it from.
+#define ABC80_BLINK_HZ 3.125
 
 // Real pixel geometry - ABC80_CHARGEN_CHAR_WIDTH/_HEIGHT (chargen.h) times
 // the real 40x24 screen (video_timing.h's own ABC80_SCREEN_COLS/_ROWS
@@ -97,6 +105,7 @@ typedef struct {
     uint64_t next_pio_interrupt_at;
     struct timespec run_start_time;
     double last_render_sec;
+    bool cursor_blink_phase;
     bool ram32k_enabled;
     const char *quickload_path;
     bool quickload_done;
@@ -235,7 +244,7 @@ static void draw_screen(GtkDrawingArea *area, cairo_t *cr, int width, int height
                 cairo_fill(cr);
             }
 
-            if ((data & 0x80) != 0) { // cursor flag - blink not yet modeled, always shown solid
+            if ((data & 0x80) != 0 && app->cursor_blink_phase) { // real ABC80_BLINK_HZ blink, matching render.c's own cursor && blink_phase gate
                 cairo_rectangle(cr, px, py, ABC80_CHARGEN_CHAR_WIDTH, ABC80_CHARGEN_CHAR_HEIGHT);
                 cairo_fill(cr);
             }
@@ -368,6 +377,9 @@ static gboolean on_timer_tick(gpointer user_data) {
 
     if (elapsed_real - app->last_render_sec >= ABC80_RENDER_INTERVAL_SEC) {
         app->last_render_sec = elapsed_real;
+        // Same real ABC80_BLINK_HZ-derived phase computation as
+        // abc80/emu/src/main.c's own --interactive loop.
+        app->cursor_blink_phase = fmod(elapsed_real, 1.0 / ABC80_BLINK_HZ) < (0.5 / ABC80_BLINK_HZ);
         gtk_widget_queue_draw(app->drawing_area);
     }
 

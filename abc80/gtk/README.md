@@ -121,3 +121,11 @@ proving the GTK wiring matches the CLI's own already-verified behavior.
 every graphics dot on the entire screen (the densest possible workload
 this renderer can produce) and watched real CPU usage - peaked around
 22% of one core at the existing ~30fps throttle. No glyph cache needed.
+
+**Cursor now blinks, ported from `--interactive`**: user-reported gap -
+the cursor block was solid/always-on, unlike the real machine and unlike
+`bin/abc80 --interactive` (which has had a real `ABC80_BLINK_HZ` blink
+since Milestone 8). Fixed by computing the identical `fmod()`-based phase
+`render.c`/`main.c` already use and gating the cursor fill on it in
+`draw_screen()`. Verified with three real screenshots ~0.2s apart at the
+idle prompt: solid, then absent, then solid again.
