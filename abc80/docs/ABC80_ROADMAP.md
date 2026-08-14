@@ -1801,7 +1801,7 @@ corrupted variant. Full regression suite still passes; this only touches
 `poll_stdin_byte()`'s one call site, wrapping it rather than changing its
 own behavior.
 
-## Milestone 11: a real GTK window — in progress
+## Milestone 11: a real GTK window — done (audio deferred)
 
 **Goal**: run `bin/abc80` in its own window instead of a host terminal, as
 a real pixel framebuffer rather than routing through a terminal widget -
