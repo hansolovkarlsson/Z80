@@ -1961,11 +1961,11 @@ opcode path also clears the saved source ID to `0` before returning
 `G_SOURCE_REMOVE`, so a later window close can't call
 `g_source_remove()` on an ID GLib already invalidated internally.
 Couldn't mechanically reproduce the exact warning in this sandboxed
-environment either (no Accessibility permission to simulate clicking the
-close button), so this fix relies on the pattern being standard/
-well-understood rather than a before/after repro here - confirmed only
-that the fix doesn't regress boot/rendering (a fresh screenshot after
-the change still shows the real ROM banner correctly).
+environment (no Accessibility permission to simulate clicking the close
+button), so the fix itself relied on the pattern being standard/
+well-understood rather than a before/after repro here - **confirmed
+fixed by the user, hands-on**: the warning is gone on a real window
+close.
 
 **Remaining open items**:
 - Explicit verification that a real GRAPHICS-mode program renders true

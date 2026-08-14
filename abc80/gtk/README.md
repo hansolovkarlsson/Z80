@@ -54,14 +54,16 @@ reaching BASIC was confirmed hands-on by the user in a real session
 synthetic keystrokes itself, so that verification couldn't be automated
 here).
 
-**A real bug found on exit, fixed**: closing the window produced
-`Gtk-CRITICAL **: gtk_widget_queue_draw: assertion 'GTK_IS_WIDGET
+**A real bug found on exit, fixed and confirmed**: closing the window
+produced `Gtk-CRITICAL **: gtk_widget_queue_draw: assertion 'GTK_IS_WIDGET
 (widget)' failed` - the pacing timer wasn't stopped when the window
 closed, so it could fire once more against an already-destroyed drawing
 area. Fixed with the standard pattern: the window's own `"destroy"`
 signal removes the timer's saved `GSource` and clears `AppState.
 drawing_area` to `NULL` (checked first in `on_timer_tick()` too, as
 defense in depth against an already-queued tick racing the removal).
+Confirmed by the user, hands-on: the warning is gone on a real window
+close.
 
 GRAPHICS-mode pixel geometry (the 2×3 sub-cell split within a 6×10 real
 character cell) is grounded directly against MAME's real
