@@ -33,13 +33,19 @@ cd abc80
 ../bin/abc80-gtk resources/rom
 ../bin/abc80-gtk resources/rom --disk /path/to/disk.img
 ../bin/abc80-gtk resources/rom --ram32k
+../bin/abc80-gtk resources/rom --quickload prog.cas --quicksave prog.cas
 ```
 
 (Run from inside `abc80/` so the default `resources/rom` path resolves —
-same convention as `bin/abc80`.) `--disk`/`--ram32k` behave identically to
-`bin/abc80`'s own flags (both share `disk.c`'s real implementation).
-`--quickload`/`--quicksave` aren't supported yet — not essential for "run
-in a window," and can be added later if useful.
+same convention as `bin/abc80`.) `--disk`/`--ram32k`/`--quickload`/
+`--quicksave` all behave identically to `bin/abc80`'s own flags (all four
+share the CLI's own `disk.c`/`cassette.c` implementations unchanged).
+`--quickload` injects at the same `PC == 0x02AA` trigger point the CLI
+uses; `--quicksave` has no bounded "end of run" to hook here the way the
+CLI does, so it flushes when the window closes instead (including via a
+real `SIGINT`/`SIGTERM` - `kill`, Ctrl-C in the launching terminal, or the
+host system stopping the process - which now drives a clean
+`gtk_window_destroy()` rather than dropping a pending save silently).
 
 ## Status: working - real pixel rendering and keyboard input confirmed
 
@@ -98,3 +104,20 @@ scripted input — mirrors `bin/abc80`'s own `poll_stdin_byte()` exactly,
 and only activates when stdin is piped/redirected, so real interactive
 GDK keyboard input (already confirmed working, see above) is completely
 unaffected.
+
+**`--quickload`/`--quicksave` confirmed working, round trip verified
+against the CLI**: quicksaved a short program from `bin/abc80`,
+quickloaded it into `bin/abc80-gtk` (confirmed via `LIST`/`RUN` in a real
+screenshot), then sent the running GTK process a real `SIGTERM` and
+confirmed a clean exit plus a real `.cas` file. That file wasn't
+byte-identical to the original CLI save at first, traced to a real but
+benign cause — BASIC re-links each line's stored address pointer on
+load, so a load-then-save round trip legitimately differs from a fresh
+save — confirmed by reproducing the identical load-then-save round trip
+through the CLI itself and diffing: byte-for-byte identical output,
+proving the GTK wiring matches the CLI's own already-verified behavior.
+
+**Per-pixel `cairo_fill()` performance checked, empirically**: filled
+every graphics dot on the entire screen (the densest possible workload
+this renderer can produce) and watched real CPU usage - peaked around
+22% of one core at the existing ~30fps throttle. No glyph cache needed.

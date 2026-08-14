@@ -2026,13 +2026,58 @@ verification item for Milestone 11 - GRAPHICS mode is now confirmed
 working, using the exact same code path the TEXT-mode boot banner
 already verified.
 
+### Sub-step: `--quickload`/`--quicksave`, and a real perf check
+
+Ported `abc80/emu/src/main.c`'s own cassette bypass to `bin/abc80-gtk`,
+reusing `cassette.c`'s existing `abc80_cassette_quickload()`/
+`abc80_cassette_quicksave()` unchanged (see cassette.h - Milestone 4)
+rather than reimplementing anything. `--quickload` is injected from
+`on_timer_tick()`'s per-instruction batch loop at the identical `PC ==
+0x02AA` trigger point the CLI uses (the ROM's line-reading routine entry
+- the one address confirmed safe against both the BOFA/EOFA boot-reset
+race and the keyboard-read race, per that file's own extensive comment).
+
+`--quicksave` needed a different trigger, though: the CLI has a bounded
+instruction-count loop with a real end; this window instead runs until
+closed, so `on_window_destroy()` (the same handler the earlier exit-bug
+fix added) is this app's natural analogue of "end of run" and now flushes
+`--quicksave` there. That exposed a real gap: without an explicit
+`gtk_window_destroy()` (e.g. a plain `kill` from a script, or the host
+system stopping the process some other way), a pending `--quicksave`
+would silently never be written - the same way unplugging a real machine
+would lose it. Added `g_unix_signal_add()` handlers for `SIGINT`/
+`SIGTERM` that call `gtk_window_destroy()` on the real window, driving
+the exact same `on_window_destroy()` path a close-button click would
+(not a second copy of the save logic) - `g_unix_signal_add()`
+specifically, not a raw `signal()` handler, since it delivers the signal
+as a normal GLib main-loop callback, safe to touch GTK/Cairo state from.
+
+**Verified by real execution, not just a clean compile**: quicksaved a
+short typed program from `bin/abc80` (the CLI), quickloaded that same
+file into `bin/abc80-gtk` (confirmed via a real screenshot: `LIST`/`RUN`
+showed the exact program and correct output), then sent the GTK process
+a real `SIGTERM` mid-run and confirmed the process exited cleanly with no
+zombie and a real `.cas` file written. That file differed byte-for-byte
+from the original CLI-saved file at first - traced to a real, benign
+cause (not a bug in this new wiring): BASIC re-links each line's stored
+"next line" address pointer on load, so a load-then-save round trip
+naturally produces different bytes than a fresh save, even though the
+program is functionally identical. Confirmed by reproducing the *same*
+load-then-save round trip through the CLI itself and diffing: byte-for-
+byte identical to the GTK output, proving the new `bin/abc80-gtk` wiring
+behaves exactly like the CLI's own already-verified quickload/quicksave
+path, not differently.
+
+**Performance question resolved, empirically**: ran a worst-case test -
+`SETDOT`-filling all 71×77 graphics dots across the entire 24×40 screen,
+every cell in GRAPHICS mode at once, the densest possible per-pixel
+`cairo_fill()` workload this renderer can produce - and watched real CPU
+usage via `ps` while it ran: peaked around 22% of one core, comfortably
+under the redraw budget at the existing ~30fps throttle. No glyph cache
+needed; the original "not yet measured" open item is resolved in favor
+of the simpler existing code, not added complexity.
+
 **Remaining open items**:
-- Glyph-cache-vs-per-pixel-`cairo_fill()` performance at real frame
-  rates - not yet measured; the current renderer fills one rectangle per
-  set pixel bit, which may or may not be fast enough for smooth 30fps
-  redraws of a full 960-character screen.
-- `--quickload`/`--quicksave` aren't supported by `bin/abc80-gtk` yet
-  (not essential for "run in a window," deferred).
 - Live SN76477 audio, per this milestone's own earlier scoping decision
   - still out of scope.
 

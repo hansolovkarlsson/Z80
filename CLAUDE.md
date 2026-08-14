@@ -639,9 +639,11 @@ Unicode block characters (see `abc80/emu/src/render.c`'s own comment).
 Runs the CPU core in-process via a single-threaded `g_timeout_add()`
 batch loop rather than spawning a child process, sharing `abc80_step()`
 (`abc80/emu/src/step.h`) with `--interactive`'s own loop so the
-per-instruction logic isn't duplicated. Verified working via a real
-screenshot showing the ROM's own sign-on banner rendered as genuine
-pixels — see `abc80/gtk/README.md` and `abc80/docs/ABC80_ROADMAP.md`'s
-Milestone 11 for the full write-up and what's still open (interactive
-keyboard/GRAPHICS-mode verification).
+per-instruction logic isn't duplicated. Verified working via real
+screenshots: the ROM's own sign-on banner and genuine GRAPHICS-mode 2×3
+block-mosaic pixels both render correctly, real interactive keyboard
+input reaches BASIC, and `--quickload`/`--quicksave` round-trip
+byte-identically against the CLI's own — see `abc80/gtk/README.md` and
+`abc80/docs/ABC80_ROADMAP.md`'s Milestone 11 for the full write-up and
+what's still open (live audio, out of scope for this milestone).
 

@@ -35,6 +35,7 @@
 #include <sys/select.h>
 
 #include <gtk/gtk.h>
+#include <glib-unix.h>
 
 #include "../../../z80core/z80.h"
 #include "../../../abc80/emu/src/step.h"
@@ -43,6 +44,7 @@
 #include "../../../abc80/emu/src/video_timing.h"
 #include "../../../abc80/emu/src/chargen.h"
 #include "../../../abc80/emu/src/sound.h"
+#include "../../../abc80/emu/src/cassette.h"
 
 // Real ABC80 Z80 clock - see abc80/emu/src/main.c's own ABC80_CLOCK_HZ
 // comment for the MAME-sourced derivation. Duplicated here (a single
@@ -96,6 +98,9 @@ typedef struct {
     struct timespec run_start_time;
     double last_render_sec;
     bool ram32k_enabled;
+    const char *quickload_path;
+    bool quickload_done;
+    const char *quicksave_path;
     GtkWidget *drawing_area;
     guint timer_source_id;
 } AppState;
@@ -337,6 +342,17 @@ static gboolean on_timer_tick(gpointer user_data) {
     uint64_t stop_at = app->total_cycles + max_cycles_this_tick;
 
     while (app->total_cycles < (uint64_t)target_cycles && app->total_cycles < stop_at) {
+        // --quickload injection point, identical to abc80/emu/src/main.c's
+        // own: 0x02AA is the ROM's line-reading routine entry, the one
+        // address confirmed (by that file's own extensive comment) to run
+        // after BASIC's boot-time BOFA/EOFA reset loop has fully exited
+        // but before any keyboard input can be read - the only safe place
+        // to inject a saved program without a race against either.
+        if (!app->quickload_done && app->cpu.pc == 0x02AA) {
+            abc80_cassette_quickload(app->ram, app->quickload_path);
+            app->quickload_done = true;
+        }
+
         int cycles = abc80_step(&app->cpu, app->ram, &app->sound_log,
                                  &app->total_cycles, &app->next_pio_interrupt_at);
         if (cycles < 0) {
@@ -376,6 +392,30 @@ static void on_window_destroy(GtkWidget *window, gpointer user_data) {
         app->timer_source_id = 0;
     }
     app->drawing_area = NULL;
+
+    // Window close is this app's natural analogue of abc80/emu/src/main.c's
+    // own end-of-run --quicksave point (that CLI has a bounded instruction
+    // loop with a real exit; this window instead runs until closed).
+    if (app->quicksave_path) {
+        abc80_cassette_quicksave(app->ram, app->quicksave_path);
+    }
+}
+
+// SIGINT/SIGTERM (Ctrl-C in the launching terminal, or a plain `kill`)
+// otherwise just terminates the process mid-instruction, silently
+// dropping a pending --quicksave the same way unplugging a real machine
+// would - a real gap, not just a testing convenience, so this is wired
+// up unconditionally rather than behind a debug flag. g_unix_signal_add()
+// (not a raw signal() handler) delivers the signal as a normal GLib main-
+// loop callback, so it's safe to touch GTK/Cairo state from here, unlike
+// a true async-signal-context handler. Destroying the window drives the
+// same on_window_destroy() path a real close-button click would - timer
+// cleanup and the --quicksave flush both happen exactly once, from a
+// single real code path, rather than a second copy of that logic here.
+static gboolean on_unix_signal(gpointer user_data) {
+    GtkWindow *window = user_data;
+    gtk_window_destroy(window);
+    return G_SOURCE_REMOVE;
 }
 
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
@@ -399,6 +439,8 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_widget_add_controller(window, key_controller);
 
     g_signal_connect(window, "destroy", G_CALLBACK(on_window_destroy), app);
+    g_unix_signal_add(SIGINT, on_unix_signal, window);
+    g_unix_signal_add(SIGTERM, on_unix_signal, window);
 
     clock_gettime(CLOCK_MONOTONIC, &app->run_start_time);
     app->last_render_sec = 0.0;
@@ -410,6 +452,8 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
 int main(int argc, char *argv[]) {
     const char *rom_dir = "resources/rom";
     const char *disk_path = NULL;
+    const char *quickload_path = NULL;
+    const char *quicksave_path = NULL;
     int arg_i = 1;
     if (arg_i < argc && argv[arg_i][0] != '-') {
         rom_dir = argv[arg_i++];
@@ -417,11 +461,16 @@ int main(int argc, char *argv[]) {
     for (; arg_i < argc; arg_i++) {
         if (strcmp(argv[arg_i], "--disk") == 0 && arg_i + 1 < argc) {
             disk_path = argv[++arg_i];
+        } else if (strcmp(argv[arg_i], "--quickload") == 0 && arg_i + 1 < argc) {
+            quickload_path = argv[++arg_i];
+        } else if (strcmp(argv[arg_i], "--quicksave") == 0 && arg_i + 1 < argc) {
+            quicksave_path = argv[++arg_i];
         } else if (strcmp(argv[arg_i], "--ram32k") == 0) {
             // handled below, after AppState exists
         } else {
             fprintf(stderr, "Unknown argument: %s\n", argv[arg_i]);
-            fprintf(stderr, "Usage: %s [rom_dir] [--disk FILE] [--ram32k]\n", argv[0]);
+            fprintf(stderr, "Usage: %s [rom_dir] [--disk FILE] [--ram32k] "
+                            "[--quickload FILE] [--quicksave FILE]\n", argv[0]);
             return EXIT_FAILURE;
         }
     }
@@ -429,6 +478,9 @@ int main(int argc, char *argv[]) {
     static AppState app;
     memset(&app, 0, sizeof(app));
     g_app_for_bus_hook = &app;
+    app.quickload_path = quickload_path;
+    app.quickload_done = (quickload_path == NULL);
+    app.quicksave_path = quicksave_path;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--ram32k") == 0) app.ram32k_enabled = true;

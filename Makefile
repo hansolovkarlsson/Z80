@@ -107,7 +107,7 @@ GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 # instead of render.c's terminal-glyph one.
 ABC80_GTK_SRC_DIR := abc80/gtk/src
 ABC80_GTK_SRCS := $(wildcard $(ABC80_GTK_SRC_DIR)/*.c)
-ABC80_GTK_OBJS := $(ABC80_GTK_SRCS:.c=.o) $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/chargen.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/disk.o $(ABC80_SRC_DIR)/step.o $(ABC80_SRC_DIR)/sound.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC80_GTK_OBJS := $(ABC80_GTK_SRCS:.c=.o) $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/chargen.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/disk.o $(ABC80_SRC_DIR)/step.o $(ABC80_SRC_DIR)/sound.o $(ABC80_SRC_DIR)/cassette.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
 ABC80_GTK_TARGET := $(BIN_DIR)/abc80-gtk
 ABC80_GTK_PKGS := gtk4
 ABC80_GTK_CFLAGS := $(shell pkg-config --cflags $(ABC80_GTK_PKGS) 2>/dev/null)
