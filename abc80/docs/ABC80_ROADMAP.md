@@ -693,25 +693,84 @@ jump targets throughout `0x6000`-`0x6FFF`):
   jump table (i.e., these are real, externally-callable DOS entry
   points, not internal helpers).
 
+#### The device-dispatch mechanism (how BASIC's `LOAD`/`SAVE` actually reach floppy code)
+
+Confirmed by tracing backward from the low-level READ/WRITE functions
+above to find what actually calls them, rather than just assuming: the
+base BASIC ROM has a real, general **device/extension dispatch table**,
+not a single fixed vector.
+
+- **`0xFE0A`** is the head of a linked chain of device-handler entries,
+  each 7 bytes: `[next:2][name:3][handler:2]`. The base ROM's own boot
+  init points it at its built-in cassette handler (`0x018C`); this is a
+  genuine extension point, not a DOS-specific hack.
+- The DOS card's own init routine (`L6D24` at `0x6D24`, reached from a
+  card-presence probe in the base ROM's boot sequence — `LD A,(604Bh) /
+  CP 0C3h / CALL Z,604Bh`, i.e. "if there's a real `JP` opcode sitting at
+  the DOS ROM's known init address, the card is genuinely present, so
+  call it") **prepends seven new entries to this exact same chain**,
+  found by walking the raw bytes directly (linear disassembly
+  misidentifies this region as code, since it's data — see
+  `abc80_dasm.txt`'s own documented limitation): `DR0`, `DR1`, ...,
+  `DR6` (drive numbers 0-6), all pointing at one shared handler,
+  `0x6EE4` → `0x6DAA`. The chain's last entry continues on to the
+  *original* `0xFE0A` value via a RAM indirection cell (`0xFD35`, set by
+  the DOS init to the base ROM's old cassette-handler address) — meaning
+  cassette (`CAS:`) support is preserved alongside the new floppy
+  entries, not replaced.
+- The common handler (`L6DAA`, `0x6DAA`) initializes a per-request,
+  FCB-like structure (self-referencing linked-list sentinel fields,
+  a stored drive number, fixed type/state bytes) — real, but this
+  project doesn't need to understand it further, per the strategic
+  decision below.
+
+**Strategic decision this finding led to**: initially assumed a working
+bypass would mean faithfully reproducing the real byte-level ABCbus
+protocol (card-select, status-byte polling, per-byte handshaking)
+underneath these functions. That's unnecessary. The existing
+`--quickload` precedent already establishes the right pattern: intercept
+execution at a specific PC address, do the real work directly in C, and
+resume the emulated CPU as if the real routine had simply returned - no
+different in kind from intercepting at `0x02AA` for quickload injection,
+just at `0x6068`/`0x60A1` instead. This means none of the real ABCbus
+protocol, the controller's own internal firmware, or even ABC-DOS's own
+directory/FCB format need to be understood or reproduced at all - the
+genuine, unmodified DOS ROM code (running normally on the emulated CPU)
+already handles all of the file-management logic *above* these two
+functions; a bypass only needs to answer "given this block number, hand
+back/accept these bytes" correctly, and let the real ROM code do the rest
+exactly as it already does today.
+
+#### The `L6068`/`L60A1` calling convention (grounded, complete)
+
+Traced instruction-by-instruction from `L606B`/`L60A4` (the low-level
+READ/WRITE bodies), not assumed:
+
+| Register | Role |
+|---|---|
+| `B` (in) | Bits 4-6 select a **channel** number (0-7) - which open file/drive this transfer belongs to. Other bits not yet decoded. |
+| `D`,`E` (in) | The 16-bit block/record number - confirmed by tracing the actual bytes sent in the command packet, unmodified by the routine itself. |
+| `C`,`HL` (in) | Pushed on entry and restored unchanged before return - **not** used as a destination buffer address, despite that being the natural first guess. |
+| Destination buffer | Computed **internally**, not caller-supplied: `0xFD12` (a RAM cell, set to `0xF500` by DOS init) `+ (channel × 0x100)` - eight fixed, pre-allocated 256-byte buffers, one per channel. Copying from this fixed buffer to wherever BASIC actually wants the bytes happens at a higher level this project doesn't need to trace, per the strategic decision above. |
+| `A`, Carry (out) | Success: Carry clear, `A=0`. Failure: Carry set (`SCF`), via one of a couple of distinct error paths in `L608F` - specific error codes not yet enumerated. |
+| Transfer size | Strong circumstantial evidence of a full 256 bytes/block: the transfer-count register is loaded via a classic Z80 `LD B,0` / `DJNZ` idiom (0 wraps to 256 iterations) from a polled status byte, consistent with a real 256-byte sector, though not independently confirmed against a real disk image. |
+
 **Still open, not yet resolved — the real remaining work**:
-- The exact meaning of the command packet's `D`/`E` bytes (track+sector
-  vs. a linear block/sector number) — not yet traced back to a caller
-  that supplies concrete values.
-- The transfer-length encoding: routed through a lookup table addressed
-  via a RAM pointer at `0xFD12`, referenced in well over a dozen places
-  across the ROM (`0x61C0`, `0x61E8`, `0x620F`, `0x6253`, `0x6258`,
-  `0x6326`, `0x637E`, `0x639A`, `0x63BE`, `0x63CD`, `0x6613`, `0x69CC`,
-  `0x6C75`, `0x6C7E`, `0x6D42`, and more) — clearly central to the ROM's
-  whole buffer/track model, not a one-off detail worth guessing at.
-- The response/error convention (carry-flag-based on return, per
-  `L60D7`/`L6068`'s own `SCF`/`RET`/`RET Z` pattern, but the specific
-  error codes aren't pinned down).
-- The disk image's own filesystem layout (directory format, sector
-  layout) — needed before anything like `DIR` or a real `LOAD` against a
-  virtual disk could work, not just raw sector I/O in isolation.
+- `B`'s other bits (0-3, 7) - only bits 4-6 (channel select) are decoded.
+- The exact error codes possible from the two failure paths in `L608F`
+  (Carry is set either way; the specific meaning of each path isn't
+  pinned down).
+- Independent confirmation of the 256-byte transfer size against a real
+  disk image, if one can be found/verified, rather than relying solely on
+  the `LD B,0`/`DJNZ` circumstantial evidence.
+- Nothing about ABC-DOS's own directory/filesystem format needs tracing
+  further, per the strategic decision above - the real ROM code handles
+  that layer once the low-level block I/O is correctly answered.
 - `UFD80V20.bin` (the alternate real DOS variant, also committed) hasn't
-  been examined at all yet — unknown whether it shares this same
-  low-level protocol or differs.
+  been examined at all yet - unknown whether it shares this same
+  low-level protocol/calling convention or differs.
+- No implementation exists yet - everything above is still research, not
+  code.
 
 ## Milestone 8: `--interactive` — real keyboard input and a live screen — done
 
