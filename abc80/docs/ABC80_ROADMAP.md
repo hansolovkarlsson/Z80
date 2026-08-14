@@ -1895,15 +1895,75 @@ correctly) and the original Milestone 3 `LEFT$`/`MID$`/`LEN`/`SIN`/`AND`
 regression script both produce byte-identical output to before the
 extraction.
 
-**Open design questions for the GTK app itself, not yet resolved**:
-- `GtkDrawingArea`/Cairo pixel geometry and glyph-cache-vs-per-pixel-fill
-  performance (see the plan file for the specific 240×240→scaled
-  approach).
-- `GtkEventControllerKey` → `abc80_keyboard_press()` keyval mapping -
-  genuinely new, since `cpm/gtk/` has no existing keyboard-handling code
-  to reuse (VTE owns all input there).
-- The new `abc80/gtk/src/main.c` binary itself, its Makefile target, and
-  `abc80/gtk/README.md` - not yet started.
+### Sub-step: fold the PIO Port A alias sync into keyboard.c — done
+
+Found while starting the GTK app itself: `sync_pio_port_a()` was still a
+static function in `main.c`, called separately from the CLI loop right
+before `abc80_step()` - the same duplication risk the previous sub-step
+was meant to eliminate, just missed on the first pass. Moved the alias
+table and both functions into `keyboard.c`/`.h` (where the PIO Port A
+state they sync actually lives); `abc80_step()` now calls
+`abc80_sync_pio_port_a()` itself as its first action, so callers don't
+need to remember to call it separately at all. Verified the same way as
+the previous sub-step: `make test` unchanged, the disk round trip and
+BASIC regression script both still produce identical output.
+
+### Sub-step: the real GTK app — working, real pixel rendering verified
+
+`abc80/gtk/src/main.c` (new, mirrors `cpm/gtk/`'s own directory
+convention) builds a real `GtkApplication`/`GtkDrawingArea` window,
+duplicating only the small, low-risk ROM-loading code from `main.c`
+(plain file I/O, not the kind of subtle logic the earlier extractions
+were about) rather than exposing it from a file that has no header of
+its own. `abc80_bus_read_hook()`'s floating-bus/RAM-expansion/disk-ROM
+logic is likewise duplicated (a handful of address-range comparisons) -
+see `abc80/gtk/README.md` for the full reasoning on what was and wasn't
+worth sharing here.
+
+**GRAPHICS-mode pixel geometry - grounded, not assumed**: a 6-pixel-wide
+character cell splits evenly into two 3-pixel columns, but the 10-scanline
+height doesn't divide evenly by 3. Fetched MAME's real
+`src/mame/luxor/abc80_v.cpp` `draw_character()` directly rather than
+guess at a split: `if (l < 3) r0 = 0; else if (l < 7) r1 = 0; else r2 =
+0;` (`l` = scanline within the cell) - the three 2×3 mosaic rows are
+scanlines 0-2 (top, 3 rows), 3-6 (middle, 4 rows), 7-9 (bottom, 3 rows),
+confirmed from the real source rather than evenly dividing 10 by 3 and
+hoping.
+
+**Verified by a real screenshot, not just "it launched"**: built and ran
+`bin/abc80-gtk` against the real committed ROMs (`macOS`'s own
+`screencapture`, since this environment has no interactive display
+access otherwise) and confirmed a real window titled "ABC80" showing the
+ROM's own real sign-on banner rendered as genuine pixels - a blocky,
+low-resolution letterform matching the real 6×10 chargen ROM scaled up,
+*not* a Unicode sextant approximation - with a real solid cursor block
+beneath it. This is the concrete deliverable this whole milestone exists
+for, confirmed working, not assumed from a clean compile.
+
+**Not yet verified interactively in this environment**: live keyboard
+input reaching BASIC (typing a program and `LIST`ing it back), and a
+real GRAPHICS-mode program's true 2×3 block pixels specifically (the
+boot banner only exercises TEXT mode). The keyboard-event handling
+(`GtkEventControllerKey` → `abc80_keyboard_press()`, GDK keyvals mapped
+directly since they equal real ASCII/Latin-1 codepoints for printable
+characters, plus Milestone 10's real left/right-arrow-to-backspace
+mapping for the special keys) is implemented and code-reviewed but not
+yet exercised by a real keystroke here - this sandboxed environment has
+no Accessibility permission available to script synthetic keystrokes at
+the OS level. Needs a real, hands-on test - honestly flagged as open
+rather than claimed done on the strength of a boot-screen screenshot
+alone.
+
+**Remaining open items**:
+- The interactive keyboard/GRAPHICS-mode verification above.
+- Glyph-cache-vs-per-pixel-`cairo_fill()` performance at real frame
+  rates - not yet measured; the current renderer fills one rectangle per
+  set pixel bit, which may or may not be fast enough for smooth 30fps
+  redraws of a full 960-character screen.
+- `--quickload`/`--quicksave` aren't supported by `bin/abc80-gtk` yet
+  (not essential for "run in a window," deferred).
+- Live SN76477 audio, per this milestone's own earlier scoping decision
+  - still out of scope.
 
 ## Memory map (grounded, not guessed)
 

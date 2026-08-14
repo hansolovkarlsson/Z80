@@ -630,3 +630,18 @@ not a Homebrew bottle mismatch as first suspected and not fixable from
 application code — see `cpm/gtk/README.md` for the full diagnostic writeup
 and `cpm/docs/ROADMAP.md`'s Phase 4 for status.
 
+`bin/abc80-gtk` (`abc80/gtk/src/`, built via the opt-in `make abc80-gtk`)
+is a *different* kind of GTK app for the ABC80 target — not a thin VTE
+launcher like `bin/z80-gtk` above, but a real Cairo pixel framebuffer:
+ABC80 has genuine bitmap GRAPHICS-mode graphics a terminal widget can't
+address, which `bin/abc80`'s own `--interactive` mode approximates with
+Unicode block characters (see `abc80/emu/src/render.c`'s own comment).
+Runs the CPU core in-process via a single-threaded `g_timeout_add()`
+batch loop rather than spawning a child process, sharing `abc80_step()`
+(`abc80/emu/src/step.h`) with `--interactive`'s own loop so the
+per-instruction logic isn't duplicated. Verified working via a real
+screenshot showing the ROM's own sign-on banner rendered as genuine
+pixels — see `abc80/gtk/README.md` and `abc80/docs/ABC80_ROADMAP.md`'s
+Milestone 11 for the full write-up and what's still open (interactive
+keyboard/GRAPHICS-mode verification).
+
