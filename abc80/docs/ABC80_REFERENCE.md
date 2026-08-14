@@ -50,7 +50,7 @@ default (no card) implementation is `return 0xff;` unconditionally — a
 fixed value, not "whatever was last written" — confirmed directly from
 MAME's `abcbus.h` (`device_abcbus_card_interface::abcbus_xmemfl()` /
 `abcbus_slot_device::xmemfl_r()`). This emulator matches that via an
-optional `Z80.bus_read_hook` (`cpm/emu/src/z80.h`/`z80.c`, `NULL` by
+optional `Z80.bus_read_hook` (`z80core/z80.h`/`z80.c`, `NULL` by
 default — the CP/M target never sets it) that `abc80/emu/src/main.c`
 installs to force `0xFF` for the unpopulated parts of this range,
 regardless of the backing array's actual contents. Writes are left
@@ -98,7 +98,7 @@ Global address mask `0x17` (MAME's `map.global_mask(0x17)`): only bits
 `(P & 0x17) == target` aliases the identical register. Real software
 exploits this — e.g. this ROM addresses PIO Port A via `IN A,(38h)`
 (`0x38 & 0x17 == 0x10`). `z80_io_in()`/`z80_io_out()`
-(`cpm/emu/src/z80.c`) are a plain flat 256-entry array with no device
+(`z80core/z80.c`) are a plain flat 256-entry array with no device
 logic of their own, so `abc80/emu/src/main.c` keeps every alias in sync
 itself (`init_pio_port_a_aliases()`/`sync_pio_port_a()`) rather than the
 CPU core knowing anything about the mask.

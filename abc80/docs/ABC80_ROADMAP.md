@@ -1,7 +1,7 @@
 # ABC80 Roadmap
 
 A second machine target sharing this repo's proven, ZEXALL/ZEXDOC-clean Z80
-core (`cpm/emu/src/z80.c`/`alu.c`) rather than a from-scratch CPU — see
+core (`z80core/z80.c`/`alu.c`) rather than a from-scratch CPU — see
 `CLAUDE.md`'s top-level structure section for why this lives here instead of
 as a separate repo (unlike the old `gameboy/` subproject, which deliberately
 shared no code with this one).
@@ -36,7 +36,7 @@ ABC80 firmware, with no CP/M-specific behavior leaking in.
 
 ### The core split this required
 
-`z80_step()` (`cpm/emu/src/z80.c`, pre-Milestone-1) unconditionally
+`z80_step()` (`z80core/z80.c`, pre-Milestone-1) unconditionally
 intercepted `PC == 0x0005` and `PC == 0x0000` on every instruction to catch
 CP/M BDOS/BIOS calls. Both addresses sit inside real ABC80 ROM code (ROM
 occupies `0x0000`-`0x3FFF`, execution starts at `0x0000`), so calling it
@@ -192,7 +192,7 @@ where a person can type something and see a response.
       most widely used ABC80 emulation does), not an invented shortcut.
       `abc80/emu/src/main.c` keeps every one of the 16 real hardware
       address aliases (`port & 0x17 == 0x10`) in sync each instruction,
-      since `z80_io_in()`/`z80_io_out()` (`cpm/emu/src/z80.c`) are a plain
+      since `z80_io_in()`/`z80_io_out()` (`z80core/z80.c`) are a plain
       flat array with no device/masking logic of their own by design.
 - [x] **Map host keystrokes to the ABC80 input path** — non-blocking stdin
       polling (`select()`), plain ASCII passthrough (matching MAME's own
@@ -468,7 +468,7 @@ address 24K/`0x6000`, confirmed from a second real primary source,
 this milestone.
 
 **Implementation**: a new optional `Z80.bus_read_hook` function pointer
-(`cpm/emu/src/z80.h`/`z80.c`) — `NULL` by default (its zero-initialized
+(`z80core/z80.h`/`z80.c`) — `NULL` by default (its zero-initialized
 value on every existing caller, including the entire CP/M target), checked
 by `z80_read_byte()` after it reads the flat array. `abc80/emu/src/main.c`
 installs `abc80_bus_read_hook()`, which forces `0xFF` for `0x4000`-`0x7BFF`

@@ -1,6 +1,6 @@
 
 #include <stdbool.h>
-#include "common.h"
+#include "alu.h"
 
 
 // Returns 1 if the number of set bits in 'val' is even, else 0

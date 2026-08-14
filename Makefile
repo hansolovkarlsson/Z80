@@ -3,9 +3,17 @@ CFLAGS := -Wall -Wextra -O2
 
 BIN_DIR := bin
 
+# Shared Z80 core (z80.c/alu.c) - lives at the repo root rather than under
+# cpm/, since it's genuinely machine-agnostic and used by two independent
+# targets (bin/z80's CP/M layer and bin/abc80's ABC80 layer), not owned by
+# either one - see CLAUDE.md's own project-structure paragraph.
+Z80CORE_SRC_DIR := z80core
+Z80CORE_SRCS := $(wildcard $(Z80CORE_SRC_DIR)/*.c)
+Z80CORE_OBJS := $(Z80CORE_SRCS:.c=.o)
+
 EMU_SRC_DIR := cpm/emu/src
 EMU_SRCS := $(wildcard $(EMU_SRC_DIR)/*.c)
-EMU_OBJS := $(EMU_SRCS:.c=.o)
+EMU_OBJS := $(EMU_SRCS:.c=.o) $(Z80CORE_OBJS)
 EMU_TARGET := $(BIN_DIR)/z80
 
 ASM_SRC_DIR := cpm/asm/src
@@ -27,7 +35,7 @@ DASM_TARGET := $(BIN_DIR)/z80dasm
 # CPU core at all.
 ABC80_SRC_DIR := abc80/emu/src
 
-# bin/abc80: reuses cpm/emu/src/z80.o and alu.o directly rather than
+# bin/abc80: reuses z80core/z80.o and alu.o directly rather than
 # recompiling them under a different name - both are already
 # machine-agnostic (z80_execute(), not the CP/M-specific z80_step()) and
 # built with identical flags, so there's nothing to duplicate. Opt-in only
@@ -37,7 +45,7 @@ ABC80_SRC_DIR := abc80/emu/src
 # for that final render - not chargen.o, since render.c's terminal backend
 # prints whole Unicode glyphs per cell rather than reconstructing pixels
 # from the chargen ROM (see render.c's own top comment).
-ABC80_OBJS := $(ABC80_SRC_DIR)/main.o $(ABC80_SRC_DIR)/render.o $(ABC80_SRC_DIR)/charset.o $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/cassette.o $(ABC80_SRC_DIR)/sound.o $(EMU_SRC_DIR)/z80.o $(EMU_SRC_DIR)/alu.o
+ABC80_OBJS := $(ABC80_SRC_DIR)/main.o $(ABC80_SRC_DIR)/render.o $(ABC80_SRC_DIR)/charset.o $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/cassette.o $(ABC80_SRC_DIR)/sound.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
 ABC80_TARGET := $(BIN_DIR)/abc80
 
 # bin/abc80-chargen-dump: the chargen.c decode-verification tool (see its
@@ -68,8 +76,9 @@ ABC80_SOUND_DEMO_TARGET := $(BIN_DIR)/abc80-sound-demo
 # a direct C-level test, not a .asm program run through run_tests.sh like
 # every other regression check here, since no CP/M-executable instruction
 # can raise an interrupt against itself (INT/NMI are host-side signals on
-# real hardware) - see that file's own top comment. Built from
-# $(EMU_SRC_DIR)'s real z80.c/alu.c/cpm.c, not a separate reimplementation.
+# real hardware) - see that file's own top comment. Built from the real
+# $(Z80CORE_SRC_DIR)/z80.c/alu.c plus $(EMU_SRC_DIR)/cpm.c, not a separate
+# reimplementation.
 EMU_TEST_INTERRUPTS_TARGET := $(BIN_DIR)/z80-test-interrupts
 
 # Opt-in only (never part of `all`/`test`) - the only build target with an
@@ -130,8 +139,8 @@ $(ABC80_RENDER_DEMO_TARGET): $(ABC80_RENDER_DEMO_OBJS) | $(BIN_DIR)
 $(ABC80_SOUND_DEMO_TARGET): $(ABC80_SOUND_DEMO_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(ABC80_SOUND_DEMO_OBJS) -lm
 
-$(EMU_TEST_INTERRUPTS_TARGET): cpm/tests/test_interrupts.c $(EMU_SRC_DIR)/z80.c $(EMU_SRC_DIR)/alu.c $(EMU_SRC_DIR)/cpm.c | $(BIN_DIR)
-	$(CC) $(CFLAGS) -o $@ cpm/tests/test_interrupts.c $(EMU_SRC_DIR)/z80.c $(EMU_SRC_DIR)/alu.c $(EMU_SRC_DIR)/cpm.c
+$(EMU_TEST_INTERRUPTS_TARGET): cpm/tests/test_interrupts.c $(Z80CORE_SRC_DIR)/z80.c $(Z80CORE_SRC_DIR)/alu.c $(EMU_SRC_DIR)/cpm.c | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ cpm/tests/test_interrupts.c $(Z80CORE_SRC_DIR)/z80.c $(Z80CORE_SRC_DIR)/alu.c $(EMU_SRC_DIR)/cpm.c
 
 $(GTK_TARGET): $(GTK_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(GTK_OBJS) $(GTK_LIBS)

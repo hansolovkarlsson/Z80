@@ -1,4 +1,5 @@
 bin/
+z80core/*.o
 cpm/emu/src/*.o
 cpm/asm/src/*.o
 cpm/disasm/src/*.o

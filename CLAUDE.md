@@ -11,20 +11,30 @@ macros/`include`, plus a disassembler) is done too; Phase 3 (CP/M
 BDOS/BIOS) is far along — see `cpm/docs/ROADMAP.md` for exact status and
 its Known Gaps section for what's left. This directory is a git
 repository (initialized after the first working ZEXALL/ZEXDOC pass).
-The emulator, assembler, disassembler, GTK launcher, sample disk, and
-third-party reference software/docs all live under `cpm/`; `bin/` (the
-build output) and `scripts/` (general-purpose tooling) stay at the true
-repo root. This repo previously also held a standalone Game Boy
-emulator as a separate, code-sharing-free subproject under `gameboy/`;
-it was split out into its own repository (via `git subtree split`,
-preserving its real commit history) once real end-to-end functionality
-made clear the two would never actually share code - see that project's
-own `docs/GAMEBOY_ROADMAP.md` (in its new repo) for the full history if
+The shared Z80 core itself (`z80.c`/`alu.c`/their headers) lives in
+`z80core/` at the true repo root, not under either machine target's own
+directory — it's genuinely machine-agnostic (`z80_execute()`, not the
+CP/M-specific `z80_step()` covered below) and used by two independent
+targets, so it isn't owned by either one. `cpm/` holds the CP/M-specific
+emulator layer, assembler, disassembler, GTK launcher, sample disk, and
+third-party reference software/docs; `bin/` (the build output) and
+`scripts/` (general-purpose tooling) stay at the true repo root too.
+This repo previously also held a standalone Game Boy emulator as a
+separate, code-sharing-free subproject under `gameboy/`; it was split
+out into its own repository (via `git subtree split`, preserving its
+real commit history) once real end-to-end functionality made clear the
+two would never actually share code - see that project's own
+`docs/GAMEBOY_ROADMAP.md` (in its new repo) for the full history if
 relevant. `abc80/` is a second, newer machine target - the Luxor ABC80,
 a real Z80-based Swedish home computer from 1978 - and unlike `gameboy/`
 it *does* share code: its `abc80/emu/src/main.c` links directly against
-`cpm/emu/src/z80.o`/`alu.o`, the same proven core `bin/z80` uses, so it
-stays in this repo rather than being a future split candidate. See
+`z80core/z80.o`/`alu.o`, the same proven core `bin/z80` uses, so it
+stays in this repo rather than being a future split candidate. (Before
+this sharing was made explicit, `z80core/`'s files lived under
+`cpm/emu/src/` and `abc80/`'s own build reached into that directory
+directly - moved out to a shared, top-level location instead, so the
+two-consumer relationship doesn't require `cpm/`'s own directory to be
+treated as a de facto shared-library location.) See
 `abc80/docs/ABC80_ROADMAP.md` for its status and known gaps,
 `abc80/docs/ABC80_REFERENCE.md` for a consolidated hardware reference
 (memory map, I/O ports, ROM/PROM inventory, per-subsystem register
@@ -150,7 +160,7 @@ section for how that works.
 undocumented opcodes/flags — see `cpm/docs/Z80_REFERENCE.md`. This section is
 about how the dispatch code is structured, not the ISA.)
 
-**Table-driven dispatch.** `z80_init_tables()` (in `z80.c`) populates
+**Table-driven dispatch.** `z80_init_tables()` (in `z80core/z80.c`) populates
 `main_opcode_table[256]` (a `Z80OpcodeHandler` array) mapping each opcode byte
 to a handler function. `z80_execute()` (`z80.c`) is the actual machine-agnostic
 core: it samples interrupts, fetches one opcode byte, bumps the R register,
@@ -195,7 +205,7 @@ dispatch via an opcode `switch` inside `z80_op_prefix_cb`/`z80_op_prefix_ed`):
   back to `main_opcode_table[opcode]`. A nested `0xDD/0xFD 0xCB d opcode`
   double prefix is handled by `z80_op_index_cb`.
 
-**ALU logic lives in `alu.c`/`alu.h`**, separate from opcode dispatch: flag
+**ALU logic lives in `z80core/alu.c`/`alu.h`**, separate from opcode dispatch: flag
 bit masks (`FLAG_C`, `FLAG_N`, `FLAG_PV`, `FLAG_X`, `FLAG_H`, `FLAG_Y`,
 `FLAG_Z`, `FLAG_S`) and the actual add/sub/logic/rotate/shift/block-op
 implementations that compute result + flags. Opcode handlers in `z80.c` call

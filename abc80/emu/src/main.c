@@ -1,6 +1,6 @@
 // abc80/emu/src/main.c - entry point for the Luxor ABC80 machine target:
 // loads the real BASIC ROM images and runs them on the shared Z80 core
-// (cpm/emu/src/z80.c/alu.c) via z80_execute() directly - never z80_step(),
+// (z80core/z80.c/alu.c) via z80_execute() directly - never z80_step(),
 // since that's CP/M's own wrapper and intercepts addresses (0x0000,
 // 0x0005) that legitimately hold real ABC80 ROM code. See
 // abc80/docs/ABC80_ROADMAP.md for the full memory map, sources, and what's
@@ -36,8 +36,8 @@
 #include <math.h>
 #include <limits.h>
 
-#include "../../../cpm/emu/src/z80.h"
-#include "../../../cpm/emu/src/alu.h"
+#include "../../../z80core/z80.h"
+#include "../../../z80core/alu.h"
 #include "render.h"
 #include "video_timing.h"
 #include "keyboard.h"
@@ -131,7 +131,7 @@
 // address are actually wired to anything, so any port P with
 // (P & 0x17) == 0x10 reads/writes the identical register - real software
 // (this ROM included, via `IN A,(38h)`) can and does address it through
-// more than one of these. z80_io_in()/z80_io_out() (cpm/emu/src/z80.c) are
+// more than one of these. z80_io_in()/z80_io_out() (z80core/z80.c) are
 // a plain flat 256-entry array with no device logic of their own - by
 // design, see that file's own comment - so this machine layer has to keep
 // every alias in sync itself rather than the CPU core knowing anything

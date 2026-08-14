@@ -1074,7 +1074,7 @@ Not blocking Phase 1's ZEXALL/ZEXDOC goal (the exerciser doesn't exercise
 any of these):
 
 - [x] **I/O ports**: `IN r,(n)`/`IN r,(C)`/`OUT (n),A`/`OUT (C),r` are now
-  implemented (`cpm/emu/src/z80.c`'s `z80_op_prefix_ed`, plus `0xD3`/`0xDB` in
+  implemented (`z80core/z80.c`'s `z80_op_prefix_ed`, plus `0xD3`/`0xDB` in
   `main_opcode_table`), backed by a real `cpu->io_ports[256]` array
   (`z80_io_in`/`z80_io_out` in `z80.c`/`z80.h`) — no actual devices are
   attached, but `IN` now reads back whatever the last `OUT` to that port

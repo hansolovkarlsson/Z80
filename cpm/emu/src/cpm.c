@@ -7,7 +7,7 @@
 #include <sys/select.h>
 #include <sys/stat.h>
 #include <dirent.h>
-#include "z80.h"
+#include "../../../z80core/z80.h"
 #include "cpm.h"
 
 // Console input needs the host terminal in raw mode (no line buffering, no

@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <string.h>
-#include "../emu/src/z80.h"
+#include "../../z80core/z80.h"
 #include "../emu/src/cpm.h" // z80_step()'s declaration now lives here (cpm.c) - see its own comment
 
 // Direct unit tests for Z80 interrupt acceptance (z80_step()'s new
