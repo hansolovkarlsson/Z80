@@ -1249,18 +1249,81 @@ was never meant to be reached this way at all - is not yet understood.
 Documented honestly as the real state of things rather than asserting a
 fix that hasn't been verified.
 
+#### `LOAD DR0:NOSUCH` (a genuinely nonexistent file) vs. `LOAD DR0:WPROT` - a real, informative divergence
+
+Compared live traces (same temporary watchpoints as above) between a
+known-real file and a filename this project deliberately made up. Three
+concrete, new facts came out of it, each correcting or narrowing the
+previous write-up:
+
+- **`SAVE` never touches any of this code at all.** A working
+  `SAVE DR0:TEST` (confirmed successful, no `ERR`) hits none of the
+  `0x0010`/`0x062E`/`0x085A` watchpoints - this entire mechanism is
+  `LOAD`-specific (or shared by `LOAD`/`CHAIN`/`MERGE` but not `SAVE`,
+  matching the base ROM's own per-verb dispatch this project's Milestone
+  6 research already found), not a general disk-I/O problem. Useful
+  scoping: whatever's wrong here cannot be the same bug that made `SAVE`
+  fail before the sector-formula fix.
+- **The real device-name-matching code was found, and it's not
+  `L08A5`/`L0184` at all.** Tracing further back turned up the actual
+  comparison loop at `0x07F8`: `LD DE,(0xFE0A)` (the real chain head),
+  then a 3-byte compare of `(IX+11)`/`(IX+12)`/`(IX+13)` - exactly where
+  this project's own earlier memory dump found the parsed `"DR0"` device
+  name sitting in the command record - against each chain entry's own
+  name field, advancing via `CALL L101D` on a mismatch. **This is what
+  actually walks the device chain**, and it runs and succeeds *before*
+  `0x0819`'s dispatcher (and therefore before `L084B`/`L088A`/`L08A5`)
+  ever starts - meaning the code this project spent the previous round
+  tracing is genuinely *post*-match logic, confirming (again, more
+  concretely this time) that device-chain matching itself isn't the
+  failure point.
+- **`NOSUCH` correctly reaches `ERR 21` ("file not found") through a
+  different path than `WPROT`'s `ERR 48`.** Both traces start identically
+  at `0x085A`, but then diverge: `WPROT` goes straight to the `0x062E`
+  error dispatcher with `A=0xB0` (48, "library error"); `NOSUCH` instead
+  goes through `0x0010` (the `RST 10h`-style inline-error-byte mechanism)
+  with `A=0x95` (21, "file not found") *twice* before *also* eventually
+  reaching the same terminal state `WPROT` does. **Both cases end on an
+  identical final step**: `A=0xA5` (37) reached via `top_of_stack=0xF603`
+  - the same `L6E82` message-lookup address this project's previous round
+  already identified. This is the single most useful fact from this
+  comparison: **the on-screen `ERR 37` is not the real error in either
+  case** - it's a uniform secondary failure (the DOS ROM's own attempt to
+  look up nice Swedish text for whatever the *real* error code already
+  was, itself failing and overwriting `A` with 37 right before printing)
+  that happens identically whether the underlying problem is a
+  legitimate "not found" (21, correct behavior for `NOSUCH`) or something
+  else (48, for a file that demonstrably does exist and has real data,
+  `WPROT`). Every `ERR 37` this project has reported in this whole
+  investigation - going back to the very first `SAVE` test before the
+  sector-formula fix - needs to be re-read as "some earlier error the
+  message-lookup mechanism then failed to describe," not as "malformed
+  record format" literally.
+
+This means the real, still-open question has narrowed to two genuinely
+separate problems rather than one: **(1)** why does `L6E82`'s
+message-lookup always fail, regardless of the real underlying error
+(likely fixable in isolation, and worth fixing first since it currently
+hides every other error code behind an identical, misleading `ERR 37`);
+and **(2)** why does `WPROT` - confirmed to exist, confirmed to have real
+data at the correct block - hit `ERR 48` at all instead of loading
+successfully, which is now understood to happen somewhere after the
+`0x07F8` device match already succeeded, inside the `L084B`/`0x085A`
+dispatch this project traced last round, whose exact purpose is still
+not pinned down.
+
 **Revised remaining work**:
-- The `L08A5`/`L0184` mechanism's real purpose still isn't fully
-  understood - next step is identifying what register/RAM state a real
-  ABCbus-driven `LOAD` would have going into `L084B` that this project's
-  bypass doesn't reproduce, most likely by comparing against what happens
-  on a `LOAD` of a genuinely nonexistent file (which should legitimately
-  hit a similar-looking error path) versus a file this project already
-  knows is real and well-formed.
+- Fix or at least fully explain the `L6E82` message-lookup failure first
+  (problem 1 above) - since it currently masks every other error code
+  with an identical `ERR 37`, fixing it should make problem 2's *real*
+  error code directly visible without further tracing.
+- Once the real error code for `WPROT` is visible, re-investigate
+  `L084B`/`0x085A`'s actual purpose knowing device-matching itself is
+  confirmed *not* the problem - it runs strictly after a successful
+  match.
 - `abc80sim`'s own `src/abcfile.c`/`src/fileop.c`/`src/hostfile.c`
-  (not yet read) may have more directly-relevant detail on the real
-  ABC-DOS directory/file format and could shortcut further blind
-  disassembly tracing.
+  (not yet read) may have more directly-relevant detail and could
+  shortcut further blind disassembly tracing.
 - If still stuck, **fall back to `UFD80V20.bin`** (the alternate,
   still-unexamined real DOS ROM already committed in
   `abc80/resources/rom/`) - a different ROM's `LOAD` implementation may
