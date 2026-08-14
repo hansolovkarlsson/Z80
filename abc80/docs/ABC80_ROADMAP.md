@@ -2098,6 +2098,25 @@ frames taken ~0.2s apart at the idle `READY` prompt show the cursor
 block solid, then absent, then solid again - a real on/off toggle at the
 correct real-time cadence, not just a clean compile.
 
+### Sub-step: `--amber`, an opt-in amber-phosphor palette
+
+User-requested, explicitly *not* a claim about real ABC80 hardware - the
+base ABC80 shipped with a white/green-ish monochrome display (this
+project's own default rendering already models that, unchanged). The
+Luxor ABC800, ABC80's direct successor, is well known for its amber CRT
+option, which the user liked and asked for here. Added `--amber`,
+swapping `draw_screen()`'s foreground color from white to `#FFB000` - a
+commonly used amber-phosphor swatch (matching most terminal emulators'
+own built-in "amber" themes) rather than a value sourced from an ABC800
+hardware manual, since no primary source for the exact CRT phosphor
+chromaticity was available; background stays black either way. Builds
+cleanly and `make test` is unaffected, but this one doesn't have the
+usual real-screenshot verification yet - the host display was
+inaccessible this session (`screencapture` failed with "could not create
+image from display" for a plain full-screen capture too, unrelated to
+this app or its code), so it's worth a quick hands-on look next time the
+window is actually visible.
+
 **Remaining open items**:
 - Live SN76477 audio, per this milestone's own earlier scoping decision
   - still out of scope.

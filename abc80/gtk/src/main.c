@@ -68,6 +68,22 @@
 // and main.c has no header of its own to export it from.
 #define ABC80_BLINK_HZ 3.125
 
+// Opt-in amber-phosphor palette (`--amber`), not the real ABC80's own
+// monitor color - the base ABC80 shipped with a white/green-ish
+// monochrome display, and this project's own default rendering already
+// models that (plain white-on-black). The Luxor ABC800, ABC80's direct
+// successor, is well known for shipping an amber CRT option instead -
+// this exists purely as a look the user asked for, not a claim about
+// ABC80 hardware itself, so it's an explicit flag rather than a new
+// default. FFB000 is a commonly used amber-phosphor swatch (matching
+// most terminal emulators' own built-in "amber" themes) rather than a
+// value sourced from an ABC800 hardware manual - no primary source for
+// the exact CRT phosphor chromaticity was available to ground this
+// further.
+#define ABC80_GTK_AMBER_R (0xFF / 255.0)
+#define ABC80_GTK_AMBER_G (0xB0 / 255.0)
+#define ABC80_GTK_AMBER_B (0x00 / 255.0)
+
 // Real pixel geometry - ABC80_CHARGEN_CHAR_WIDTH/_HEIGHT (chargen.h) times
 // the real 40x24 screen (video_timing.h's own ABC80_SCREEN_COLS/_ROWS
 // constants would collide with this file's own use of the term, so this
@@ -107,6 +123,7 @@ typedef struct {
     double last_render_sec;
     bool cursor_blink_phase;
     bool ram32k_enabled;
+    bool amber_mode;
     const char *quickload_path;
     bool quickload_done;
     const char *quicksave_path;
@@ -193,7 +210,11 @@ static void draw_screen(GtkDrawingArea *area, cairo_t *cr, int width, int height
     double sx = (double)width / ABC80_GTK_PIXEL_WIDTH;
     double sy = (double)height / ABC80_GTK_PIXEL_HEIGHT;
     cairo_scale(cr, sx, sy);
-    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+    if (app->amber_mode) {
+        cairo_set_source_rgb(cr, ABC80_GTK_AMBER_R, ABC80_GTK_AMBER_G, ABC80_GTK_AMBER_B);
+    } else {
+        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
+    }
 
     const uint8_t *videoram = &app->ram[0x7C00];
     for (int row = 0; row < ABC80_GTK_ROWS; row++) {
@@ -477,11 +498,11 @@ int main(int argc, char *argv[]) {
             quickload_path = argv[++arg_i];
         } else if (strcmp(argv[arg_i], "--quicksave") == 0 && arg_i + 1 < argc) {
             quicksave_path = argv[++arg_i];
-        } else if (strcmp(argv[arg_i], "--ram32k") == 0) {
+        } else if (strcmp(argv[arg_i], "--ram32k") == 0 || strcmp(argv[arg_i], "--amber") == 0) {
             // handled below, after AppState exists
         } else {
             fprintf(stderr, "Unknown argument: %s\n", argv[arg_i]);
-            fprintf(stderr, "Usage: %s [rom_dir] [--disk FILE] [--ram32k] "
+            fprintf(stderr, "Usage: %s [rom_dir] [--disk FILE] [--ram32k] [--amber] "
                             "[--quickload FILE] [--quicksave FILE]\n", argv[0]);
             return EXIT_FAILURE;
         }
@@ -496,6 +517,7 @@ int main(int argc, char *argv[]) {
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--ram32k") == 0) app.ram32k_enabled = true;
+        if (strcmp(argv[i], "--amber") == 0) app.amber_mode = true;
     }
 
     for (size_t i = 0; i < NUM_ROM_IMAGES; i++) {

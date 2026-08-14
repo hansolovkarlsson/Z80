@@ -34,6 +34,7 @@ cd abc80
 ../bin/abc80-gtk resources/rom --disk /path/to/disk.img
 ../bin/abc80-gtk resources/rom --ram32k
 ../bin/abc80-gtk resources/rom --quickload prog.cas --quicksave prog.cas
+../bin/abc80-gtk resources/rom --amber
 ```
 
 (Run from inside `abc80/` so the default `resources/rom` path resolves —
@@ -129,3 +130,19 @@ since Milestone 8). Fixed by computing the identical `fmod()`-based phase
 `render.c`/`main.c` already use and gating the cursor fill on it in
 `draw_screen()`. Verified with three real screenshots ~0.2s apart at the
 idle prompt: solid, then absent, then solid again.
+
+**`--amber`, an opt-in amber-phosphor palette**: user-requested look, not
+a claim about real ABC80 hardware - the base ABC80 shipped with a
+white/green-ish monochrome display (this project's own default,
+unchanged, still models that). The Luxor ABC800, ABC80's direct
+successor, is well known for its amber CRT option, which the user liked;
+`--amber` swaps `draw_screen()`'s foreground color from white to
+`#FFB000` (a commonly used amber-phosphor swatch matching most terminal
+emulators' own "amber" themes - no ABC800 hardware manual was available
+to source an exact CRT phosphor chromaticity, so this isn't asserted as
+that precise value). Background stays black either way. Built cleanly;
+visual verification via `screencapture` wasn't possible this session (the
+host display was inaccessible - `screencapture` failed with "could not
+create image from display" even for a plain full-screen capture, unrelated
+to this app), so this one hasn't had the usual real-screenshot check yet -
+worth a quick hands-on look next time the window's actually visible.
