@@ -43,6 +43,8 @@
 #include "keyboard.h"
 #include "cassette.h"
 #include "sound.h"
+#include "disk.h"
+#include "step.h"
 
 // Real ABC80 Z80 clock (11.9808 MHz crystal / 2 / 2 - see MAME's
 // abc80_state::abc80_common(): `Z80(config, m_maincpu,
@@ -79,51 +81,10 @@
 // this is.
 #define ABC80_BLINK_HZ 3.125
 
-// Real ABC80 hardware ties the Z80 PIO's Port A ASTB (strobe) pin to the
-// video scanline clock (MAME's abc80_state::scanline_tick(), toggled once
-// per scanline) rather than to a real keyboard handshake signal - a
-// hardware trick that turns Port A's normal "input-mode strobe rising edge
-// -> interrupt" behavior into a genuine periodic timer interrupt, entirely
-// independent of actual keystrokes. Derived, not guessed: real screen
-// timing (MAME's abc80.h: ABC80_HTOTAL=384 pixels, pixel clock
-// XTAL(11'980'800)/2 = 5,990,400Hz) gives a 15,600Hz line rate
-// (5,990,400/384); at the real 2,995,200Hz CPU clock (ABC80_CLOCK_HZ
-// above), that's exactly 192 T-states per scanline. Since scanline_tick()
-// *toggles* the strobe on every call rather than pulsing it once per line,
-// only every *other* call is a rising edge - the actual interrupt-
-// triggering event (MAME's z80pio_device::pio_port::strobe(), MODE_INPUT
-// case) - so real interrupts arrive every 384 T-states (2 scanlines), a
-// 7800Hz rate.
-//
-// Confirmed against this ROM's own real disassembly (bin/z80dasm), not
-// just MAME's driver comment: boot init (0x0068-0x00C5, see main()'s own
-// trace at TRACE_INSTRUCTIONS) sets IM 2, I=0 (`LD I,A` with A=0 at
-// 0x008C), and writes exactly one Z80 PIO Port A control sequence via
-// `OUT (39h),A` three times (0x39 & 0x17 == 0x11, Port A control under the
-// 0x17 hardware address mask - see video_timing.c's port-map comment):
-// 0x34 (interrupt vector - MAME's z80pio.cpp control_write() treats any
-// control-port byte with bit0=0 as a vector load, regardless of mode),
-// 0xB7 (interrupt control word: D7 enable=1, D4 mask-follows=1), 0x7F (the
-// mask byte the mask-follows bit above requires next). With I=0 and
-// vector=0x34, the real IM2 vector-table entry is at 0x0034; this ROM's
-// own bytes there (0x1E 0x03, little-endian) point to 0x031E - a real
-// interrupt handler, confirmed by its own RETI at 0x0336. It reads Port A
-// directly, checks for a Ctrl-C-style break combo (0x83), and - regardless
-// of that check - unconditionally reloads a fixed value (0x46) into
-// 0xFDF7 (IX+4 in the keyboard poll loop's own IX=0xFDF3 base, confirmed
-// at 0x02A5) before EI/RETI: exactly the debounce-counter refresh
-// Milestone 3's own keyboard.h comment already identified from indirect
-// evidence (a periodic refresh this emulator couldn't yet supply), now
-// grounded directly by finding and reading the real handler. Milestone 3's
-// own PC==0x0316 strobe-consumption hook (main.c's own `about_to_consume_
-// key` below) is unaffected by this and still needed regardless: it tracks
-// *this emulator's own* host-keystroke queue, not the ROM's internal
-// debounce state, and 0x0316 remains the single real address where the
-// ROM's poll loop - via either its interrupt-driven fast path or its
-// direct-polling decrement fallback - genuinely finishes consuming a key,
-// confirmed by both paths in the disassembly funneling through it.
-#define ABC80_PIO_INTERRUPT_PERIOD_TSTATES 384
-#define ABC80_PIO_INTERRUPT_VECTOR 0x34
+// The real periodic PIO interrupt's period/vector derivation (screen-
+// scanline-driven, confirmed against this ROM's own disassembly) now lives
+// as a comment on ABC80_PIO_INTERRUPT_PERIOD_TSTATES/_VECTOR themselves in
+// step.h (Milestone 11's shared-step extraction), not duplicated here.
 
 // Every I/O port address that aliases PIO Port A's data register under
 // ABC80's real hardware address decoding (MAME's `map.global_mask(0x17)` -
@@ -429,27 +390,14 @@ static const RomImage ROM_IMAGES[] = {
 // Milestone 6.
 static bool abc80_ram32k_enabled = false;
 
-// Milestone 11 (floppy/DOS bypass, see abc80/docs/ABC80_ROADMAP.md's own
-// Floppy/DOS controller sub-step write-up for the full disassembly-
-// grounded derivation this is built from): --disk FILE loads the real,
-// committed ABC-DOS ROM (abc80/resources/rom/ABCDOS80.bin, unmodified) at
-// its real base address 0x6000 - carved out of the ABCbus-delegated range
-// Milestone 6 otherwise leaves permanently floating, since a real DOS ROM
-// card genuinely occupies exactly that address range. Everything else in
-// that ROM - boot init, the device-dispatch chain (0xFE0A), FCB
-// management - runs as genuine, unmodified 1982 machine code on this
-// project's own proven Z80 core; only the two lowest-level block-I/O
-// primitives (0x6068 read, 0x60A1 write) are intercepted and answered
-// directly against a host-file-backed virtual disk image, rather than
-// requiring this emulator to reproduce the real ABCbus byte-level
-// handshake protocol or the controller's own separate Z80/DMA/FDC
-// hardware underneath them (abc80_disk_trap(), below).
-static bool abc80_disk_enabled = false;
-static FILE *abc80_disk_file = NULL;
-
+// Milestone 6's floppy/DOS bypass itself (--disk FILE, the real committed
+// ABC-DOS ROM at 0x6000, and abc80_disk_trap()) now lives in disk.c/disk.h
+// (Milestone 11's shared-step extraction) - only the "is it enabled"
+// check below still lives here, since this hook also handles the
+// unrelated floating-bus/RAM-expansion concerns.
 static uint8_t abc80_bus_read_hook(Z80 *cpu, uint16_t address, uint8_t stored_value) {
     (void)cpu;
-    if (abc80_disk_enabled && address >= 0x6000 && address <= 0x6FFF) {
+    if (abc80_disk_enabled() && address >= 0x6000 && address <= 0x6FFF) {
         return stored_value; // the real, loaded ABCDOS80.bin content
     }
     if (address >= 0x4000 && address <= 0x7BFF) {
@@ -459,137 +407,6 @@ static uint8_t abc80_bus_read_hook(Z80 *cpu, uint16_t address, uint8_t stored_va
         return 0xFF;
     }
     return stored_value;
-}
-
-// 256 bytes/block: strong circumstantial evidence from the real ROM's own
-// transfer-count logic (a classic `LD B,0` / `DJNZ` idiom, where a loaded
-// 0 wraps to 256 iterations - see the ROADMAP write-up's own derivation),
-// not independently confirmed against a real disk image.
-#define ABC80_DISK_BLOCK_SIZE 256
-
-// A plausible T-state cost standing in for the real (bypassed) routine's
-// own execution time, so this project's existing interrupt-scheduling and
-// --interactive real-time-pacing arithmetic (both driven by accumulated
-// T-states) aren't thrown off by treating real disk I/O as instantaneous/
-// free - not meant to be a precise real-hardware timing match.
-#define ABC80_DISK_TRAP_TSTATE_COST 200
-
-// The real DOS workspace pointer this ROM's own init sets to 0xF500 (see
-// the ROADMAP write-up) - read live from RAM rather than hardcoded, in
-// case some future ROM variant or code path changes it.
-#define ABC80_DOS_BUFPTR_ADDR 0xFD12
-
-// Real ABC830 ("mo") media is sector-interleaved within each 16-sector
-// track (interleave factor 7) - a real, physical disk-formatting detail,
-// not an artifact of this project's own bypass. The logical sector number
-// L6068/L60A1's calling convention computes (see abc80_disk_trap() below)
-// is NOT the same as a raw .img file's own on-disk byte offset: real
-// abc80.net-archived dumps (this project's own disk003.img among them)
-// store sectors in physical order, so a logical sector must be mapped to
-// its physical position before indexing the file. Confirmed against a
-// real, independent open-source ABC80 emulator (andersrcarlsson-stack/
-// abc80-pico-public, src/disk_controller.cpp's own phys_sector(), itself
-// citing abc80sim's "mo" interleave parameters ilfac=7/ilmsk=15) rather
-// than guessed - see ABC80_ROADMAP.md's Milestone 6 section for the
-// empirical verification (every one of disk003.img's real directory
-// entries resolves to a clean, consistent per-file header once this
-// mapping is applied, where every one of them read as blank/garbled
-// without it). Track-boundary sectors (multiples of 16) map to
-// themselves, which is why every previous investigation round's tests
-// that happened to land on one (the boot-time scan, the base directory
-// at sector 16) worked "by accident" without this fix.
-static uint16_t abc80_disk_phys_sector(uint16_t logical) {
-    const uint16_t il_mask = 15;
-    const uint16_t il_fac = 7;
-    return (uint16_t)((logical & ~il_mask) | ((logical * il_fac) & il_mask));
-}
-
-static bool abc80_disk_read_block(uint16_t block, uint8_t *dest) {
-    if (!abc80_disk_file) {
-        memset(dest, 0, ABC80_DISK_BLOCK_SIZE);
-        return false;
-    }
-    long offset = (long)abc80_disk_phys_sector(block) * ABC80_DISK_BLOCK_SIZE;
-    if (fseek(abc80_disk_file, offset, SEEK_SET) != 0) {
-        memset(dest, 0, ABC80_DISK_BLOCK_SIZE);
-        return false;
-    }
-    size_t n = fread(dest, 1, ABC80_DISK_BLOCK_SIZE, abc80_disk_file);
-    if (n < ABC80_DISK_BLOCK_SIZE) {
-        // Reading at or past the real end of the image file - zero-fill
-        // the partial/nonexistent block for a predictable buffer, but
-        // report real failure (matching a real controller's own sector-
-        // not-found response for an out-of-range block) rather than a
-        // silent zero-filled success, which real ROM boot code observably
-        // relies on to tell a real block apart from empty media (see
-        // ABC80_ROADMAP.md's Milestone 6 section).
-        memset(dest + n, 0, ABC80_DISK_BLOCK_SIZE - n);
-        return false;
-    }
-    return true;
-}
-
-static bool abc80_disk_write_block(uint16_t block, const uint8_t *src) {
-    if (!abc80_disk_file) return false;
-    long offset = (long)abc80_disk_phys_sector(block) * ABC80_DISK_BLOCK_SIZE;
-    if (fseek(abc80_disk_file, offset, SEEK_SET) != 0) return false;
-    size_t n = fwrite(src, 1, ABC80_DISK_BLOCK_SIZE, abc80_disk_file);
-    fflush(abc80_disk_file);
-    return n == ABC80_DISK_BLOCK_SIZE;
-}
-
-// Replaces a full call to the real L6068 (read)/L60A1 (write) routine -
-// see the ROADMAP write-up's own instruction-by-instruction derivation of
-// this calling convention. Reads the caller's channel/block-number
-// parameters, performs the real host file I/O, writes the result into
-// the same fixed per-channel buffer the real routine would have used,
-// and manually pops the return address to resume execution exactly where
-// the real routine's own RET would have - the same "trap and replace"
-// pattern this project's own --quickload already uses at a different PC
-// address, just replacing a whole subroutine's body instead of pre-
-// loading data ahead of normal execution.
-static int abc80_disk_trap(Z80 *cpu, uint8_t *ram, bool is_read) {
-    uint8_t channel = (uint8_t)((cpu->b >> 4) & 0x07);
-    // Real ABC830-class ("mo") controller sector addressing is NOT a flat
-    // 16-bit (D<<8)|E block number - it's packed as (D<<3) + (E>>5) +
-    // (E&31), confirmed against a real, independent open-source ABC80
-    // emulator's own controller implementation (sasq64/abc80sim, src/
-    // disk.c's cur_sector(), non-"new"/non-hard-disk case) rather than
-    // guessed - see ABC80_ROADMAP.md's Milestone 6 section. Using the
-    // flat interpretation silently sent every read/write to the wrong
-    // real sector.
-    uint16_t block = (uint16_t)(((uint16_t)cpu->d << 3) + (cpu->e >> 5) + (cpu->e & 0x1F));
-    // ABC80_DOS_BUFPTR_ADDR's low byte is dual-purpose in the real ROM: the
-    // low byte of the (always 256-aligned) buffer base is 0x00 by
-    // construction, so the real ROM also reuses that same RAM cell as a
-    // live byte-transfer progress counter in the real per-byte transfer
-    // routines this bypass replaces wholesale (confirmed in
-    // abcdos80_dasm.txt: several addresses outside L6068/L60A1 write only
-    // this byte, e.g. 0x61C0's `LD (0xFD12),A`). Since this bypass never
-    // runs that real routine, that counter can be left mid-count (observed
-    // live: 0x03) by earlier, un-trapped ROM code, silently shifting every
-    // subsequent buffer address by that leftover count and corrupting
-    // whatever real data was already there - see ABC80_ROADMAP.md's
-    // Milestone 6 section for the real SAVE this was found from. Only the
-    // high byte is trustworthy to read live (DOS init sets it, and a
-    // future ROM/config might legitimately relocate it); the low byte is
-    // always forced to 0 rather than trusted.
-    uint16_t buf_base = (uint16_t)(ram[ABC80_DOS_BUFPTR_ADDR + 1] << 8);
-    uint16_t buf_addr = (uint16_t)(buf_base + (uint16_t)channel * ABC80_DISK_BLOCK_SIZE);
-
-    bool ok = is_read ? abc80_disk_read_block(block, &ram[buf_addr])
-                       : abc80_disk_write_block(block, (const uint8_t *)&ram[buf_addr]);
-
-    uint16_t ret_addr = (uint16_t)(ram[cpu->sp] | (ram[(uint16_t)(cpu->sp + 1)] << 8));
-    cpu->sp = (uint16_t)(cpu->sp + 2);
-    cpu->pc = ret_addr;
-    cpu->a = ok ? 0x00 : 0x01;
-    if (ok) {
-        cpu->f = (uint8_t)(cpu->f & ~FLAG_C);
-    } else {
-        cpu->f = (uint8_t)(cpu->f | FLAG_C);
-    }
-    return ABC80_DISK_TRAP_TSTATE_COST;
 }
 
 static bool load_rom(const char *rom_dir, const RomImage *rom, uint8_t *ram) {
@@ -726,31 +543,9 @@ int main(int argc, char *argv[]) {
     // backing its virtual disk. Done after the floating-bus fill, not
     // before, so this ROM content survives it.
     if (disk_path) {
-        char dos_rom_path[1024];
-        snprintf(dos_rom_path, sizeof(dos_rom_path), "%s/ABCDOS80.bin", rom_dir);
-        FILE *dos_rom_f = fopen(dos_rom_path, "rb");
-        if (!dos_rom_f) {
-            fprintf(stderr, "Failed to open DOS ROM '%s': ", dos_rom_path);
-            perror(NULL);
+        if (!abc80_disk_init(rom_dir, disk_path, ram)) {
             return EXIT_FAILURE;
         }
-        size_t dos_rom_read = fread(&ram[0x6000], 1, 4096, dos_rom_f);
-        fclose(dos_rom_f);
-        if (dos_rom_read != 4096) {
-            fprintf(stderr, "DOS ROM '%s' is not exactly 4096 bytes\n", dos_rom_path);
-            return EXIT_FAILURE;
-        }
-        abc80_disk_file = fopen(disk_path, "r+b");
-        if (!abc80_disk_file) {
-            abc80_disk_file = fopen(disk_path, "w+b");
-        }
-        if (!abc80_disk_file) {
-            fprintf(stderr, "Failed to open disk image '%s': ", disk_path);
-            perror(NULL);
-            return EXIT_FAILURE;
-        }
-        abc80_disk_enabled = true;
-        printf("Loaded DOS ROM '%s' at 0x6000, disk image '%s'\n", dos_rom_path, disk_path);
     }
 
     Z80 cpu = {0};
@@ -833,127 +628,19 @@ int main(int argc, char *argv[]) {
         }
         sync_pio_port_a(&cpu);
 
-        // Whether the *upcoming* z80_execute() call will actually fetch
-        // and run the opcode at pc_before, or instead divert into
-        // interrupt-acceptance and leave pc_before's real instruction
-        // un-executed until some later call reaches this same PC again -
-        // mirrors z80_execute()'s own acceptance check (z80.c) exactly, so
-        // it has to be evaluated *before* that call, from the same CPU
-        // state. Needed once real periodic interrupts existed (see
-        // ABC80_PIO_INTERRUPT_PERIOD_TSTATES's own comment): every
-        // `ram[pc_before]`-based prediction below silently assumed
-        // z80_execute() always executes that exact instruction, which
-        // stopped being true the moment interrupts could intercept a step
-        // instead - caught by this project's own regression testing, not
-        // hypothetical: typing `10 PRINT 1+1` after enabling the interrupt
-        // dropped the "N" and produced a real `ERR 11`, from a spurious
-        // abc80_keyboard_consumed() firing on a step that predicted
-        // PC==0x0316 but actually served an interrupt that instruction
-        // boundary instead, releasing the next host keystroke too early.
-        bool interrupt_will_intercept_this_step =
-            cpu.nmi_pending || (cpu.int_pending && cpu.iff1 && !cpu.ei_delay);
-
-        // Edge-triggered strobe consumption, at the *specific* address
-        // where this ROM actually finishes reading a key - not the first
-        // instruction that merely detects the strobe is set. See
-        // keyboard.h's own comment for why: this ROM's keyboard read is a
-        // debounce loop requiring the strobe to stay asserted across
-        // several consecutive polls, converging on 0x0316
-        // (`IN A,(38h); AND 7Fh; RES 7,(HL); ...`) once the debounce
-        // settles - now via either the real periodic interrupt's fast
-        // path or the direct-polling decrement fallback (see
-        // ABC80_PIO_INTERRUPT_PERIOD_TSTATES's own comment for the full
-        // disassembly-grounded story of both paths). Clearing there
-        // instead of on first detection lets that debounce actually
-        // complete rather than being cut off after a single poll; gated
-        // by interrupt_will_intercept_this_step above so an intercepted
-        // step (pc_before==0x0316 predicted, but not actually executed
-        // this call) doesn't fire early.
-        bool about_to_consume_key =
-            pc_before == 0x0316 && !interrupt_will_intercept_this_step;
-
-        // OUT (n),A (0xD3) targeting the SN76477 sound register alias
-        // (see sound.c's own top comment for the port-0x06 bit layout;
-        // masked by the same 0x17 hardware address decode as the PIO -
-        // video_timing.c's port-map comment). A doesn't change across
-        // OUT, so it's still readable after z80_execute() runs.
-        // OUT targeting the SN76477 sound register alias (port 0x06,
-        // masked - see sound.c's own top comment). Two real opcode forms
-        // both matter here, confirmed by tracing actual BASIC-compiled
-        // code, not assumed: `OUT (n),A` (0xD3, immediate port) for
-        // hand-written assembly, but BASIC's own compiled `OUT port,value`
-        // statement uses the ED-prefixed register-indirect form instead
-        // (port from BC, value from whichever of B/C/D/E/H/L/A the
-        // instruction names - BASIC's own generated code was traced
-        // using `OUT (C),L`) since a general two-expression BASIC
-        // statement can't rely on the port being a compile-time constant
-        // the way `OUT (n),A` requires.
-        // Same interrupt-interception hazard as about_to_consume_key above
-        // applies here too: gated by interrupt_will_intercept_this_step so
-        // a step that only *predicted* an OUT-to-sound-port at pc_before,
-        // but actually diverted into an interrupt instead, doesn't log a
-        // phantom sound-register write.
-        bool about_to_write_sound = false;
-        uint8_t sound_out_value = 0;
-        if (interrupt_will_intercept_this_step) {
-            // handled: leave about_to_write_sound false
-        } else if (ram[pc_before] == 0xD3 && (ram[(uint16_t)(pc_before + 1)] & 0x17) == 0x06) {
-            about_to_write_sound = true;
-            sound_out_value = cpu.a;
-        } else if (ram[pc_before] == 0xED && (ram[(uint16_t)(pc_before + 1)] & 0xC7) == 0x41 &&
-                   (cpu.c & 0x17) == 0x06) {
-            about_to_write_sound = true;
-            switch ((ram[(uint16_t)(pc_before + 1)] >> 3) & 0x07) {
-                case 0: sound_out_value = cpu.b; break;
-                case 1: sound_out_value = cpu.c; break;
-                case 2: sound_out_value = cpu.d; break;
-                case 3: sound_out_value = cpu.e; break;
-                case 4: sound_out_value = cpu.h; break;
-                case 5: sound_out_value = cpu.l; break;
-                case 6: sound_out_value = 0; break; // undocumented OUT (C),0
-                case 7: sound_out_value = cpu.a; break;
-            }
-        }
-
-        // Milestone 11's disk bypass: intercept the two real low-level
-        // block-I/O entry points (see abc80_disk_trap()'s own comment)
-        // before they'd otherwise run the real ABCbus protocol code this
-        // emulator doesn't implement - same interrupt-interception hazard
-        // as the other pc_before-based predictions above, so gated the
-        // same way.
-        bool about_to_do_disk_io = abc80_disk_enabled && !interrupt_will_intercept_this_step &&
-                                    (pc_before == 0x6068 || pc_before == 0x60A1);
-
-        int cycles = about_to_do_disk_io ? abc80_disk_trap(&cpu, ram, pc_before == 0x6068)
-                                          : z80_execute(&cpu, ram);
+        // The actual per-instruction step - keyboard strobe consumption,
+        // sound-register write logging, the disk bypass trap, and periodic
+        // PIO interrupt scheduling all happen inside here now (Milestone
+        // 11's shared-step extraction - see step.h's own comment for why
+        // this moved out of this loop and into a function bin/abc80-gtk
+        // shares too).
+        int cycles = abc80_step(&cpu, ram, &sound_log, &total_cycles, &next_pio_interrupt_at);
         instructions++;
-        if (about_to_consume_key) {
-            abc80_keyboard_consumed();
-        }
-        if (about_to_write_sound) {
-            abc80_sound_write(&sound_log, total_cycles, sound_out_value);
-        }
 
         if (cycles < 0) {
             fprintf(stderr, "Execution halted: unimplemented opcode at PC=0x%04X\n", pc_before);
             halted = true;
             break;
-        }
-        total_cycles += (uint64_t)cycles;
-
-        // Real hardware's video-scanline-driven PIO interrupt (see this
-        // constant's own top comment) runs unconditionally from power-on,
-        // regardless of whether the ROM has enabled interrupts yet -
-        // z80_request_int() is level-held (cpu.int_pending stays set until
-        // actually serviced), so requesting it early/often is harmless and
-        // correctly mirrors real hardware: the CPU simply won't service it
-        // until its own IFF1 allows (the ROM's `EI` at 0x00C5). A `while`
-        // (not `if`) keeps the schedule from drifting even in the
-        // impossible case of a single instruction taking longer than one
-        // period.
-        while (total_cycles >= next_pio_interrupt_at) {
-            z80_request_int(&cpu, ABC80_PIO_INTERRUPT_VECTOR);
-            next_pio_interrupt_at += ABC80_PIO_INTERRUPT_PERIOD_TSTATES;
         }
 
         // --interactive real-time pacing and live rendering (see

@@ -1801,33 +1801,45 @@ corrupted variant. Full regression suite still passes; this only touches
 `poll_stdin_byte()`'s one call site, wrapping it rather than changing its
 own behavior.
 
-## Milestone 11: a real GTK window — not started
+## Milestone 11: a real GTK window — in progress
 
-**Goal**: run `bin/abc80` in its own window instead of a host terminal.
-Not yet scoped in detail - recorded here as a real, intended next
-milestone rather than left unwritten, per the user's own request.
+**Goal**: run `bin/abc80` in its own window instead of a host terminal, as
+a real pixel framebuffer rather than routing through a terminal widget -
+see the scoping rationale immediately below for why. Scoped via this
+project's own `EnterPlanMode` workflow (research into `render.c`,
+`chargen.c`/`.h`, `video_timing.c`/`.h`, `keyboard.h`, `sound.c`, and
+`cpm/gtk/`'s existing GTK4 precedent, then two architecture questions
+resolved with the user) before any code was written - the full plan is
+preserved at `/Users/hans/.claude/plans/mellow-cooking-parrot.md` for
+this session's own reference.
 
-**The key architectural decision, already leaning one way**: this
-shouldn't necessarily follow `cpm/gtk/`'s own precedent (a thin
-launcher spawning the real CLI binary under a pty, handed to a
-`VteTerminal` widget - see `cpm/gtk/README.md`). That pattern is the
-right fit for CP/M specifically because CP/M output really is just
-VT100/ANSI text a real terminal widget renders correctly on its own.
-ABC80 is different: Milestone 2's own display-backend decision
-(`abc80/emu/src/render.c`) *deliberately* chose a terminal-glyph
+**The key architectural decision**: this shouldn't follow `cpm/gtk/`'s
+own precedent (a thin launcher spawning the real CLI binary under a pty,
+handed to a `VteTerminal` widget - see `cpm/gtk/README.md`). That
+pattern is the right fit for CP/M specifically because CP/M output
+really is just VT100/ANSI text a real terminal widget renders correctly
+on its own. ABC80 is different: Milestone 2's own display-backend
+decision (`abc80/emu/src/render.c`) *deliberately* chose a terminal-glyph
 approach "for cheapness," explicitly deferring real pixel rendering -
-GRAPHICS mode (the real 2×3 block-mosaic mode) is approximated today
-by mapping onto Unicode's "Symbols for Legacy Computing" sextant block
+GRAPHICS mode (the real 2×3 block-mosaic mode) is approximated today by
+mapping onto Unicode's "Symbols for Legacy Computing" sextant block
 rather than drawing real pixels, because a terminal cell can't address
-individual pixels at all. A real GTK window - a `GtkDrawingArea` (or
-similar) driven by Cairo, rendering actual pixels rather than routing
-through a terminal widget - would finally close that gap instead of
-working around it, and there's already real, verified groundwork to
-build on: `bin/abc80-chargen-dump`, `bin/abc80-video-timing-dump`, and
-`bin/abc80-render-demo` (Milestone 2) already independently verify the
-exact chargen-ROM/video-timing-PROM pixel-decode logic a real
-framebuffer renderer would need, against known synthetic input - this
-wouldn't be starting from nothing.
+individual pixels at all. A real GTK window - a `GtkDrawingArea` driven
+by Cairo, rendering actual pixels rather than routing through a terminal
+widget - closes that gap instead of working around it, building on
+pixel-decode logic `bin/abc80-chargen-dump`, `bin/abc80-video-timing-
+dump`, and `bin/abc80-render-demo` (Milestone 2) already independently
+verify against known synthetic input.
+
+Two architecture questions were resolved with the user before writing
+any code (both the recommended option in each case): **execution
+model** - single-threaded, GLib-timer-batched (a `g_timeout_add()`
+callback runs a bounded instruction batch each time it fires, then
+returns to GTK's own main loop - no new threading in a codebase that's
+never needed any); **audio** - out of scope for this milestone
+(`sound.c`'s current design has no incremental per-sample callback to
+drive live playback from, and GTK4 has no built-in audio API of its
+own - a separate, sizeable piece of scope for later).
 
 **A real, honestly-flagged risk, not a reason to avoid starting**:
 `cpm/gtk/`'s own GTK launcher is still intermittently blocked by a
@@ -1841,25 +1853,57 @@ all (just GTK4 + Cairo), which may make it somewhat less exposed simply
 by linking fewer/smaller dylibs, but it's the same class of OS-level
 risk either way, not something achievable to design around.
 
-**Open design questions, not yet resolved**:
-- Main-loop integration: `--interactive`'s existing real-time pacing
-  (`clock_gettime()`/`nanosleep()`-driven, blocking `select()` for
-  keyboard polling) is built around a synchronous CLI loop, not a GLib
-  event loop - a GTK version needs a `g_timeout_add()`/`GSource`-driven
-  redraw and non-blocking key-event callbacks instead, not a direct port
-  of the current loop.
-- Keyboard input: real `GDK` key-press/key-release events feeding
-  `abc80_keyboard_press()` directly, replacing `poll_keyboard_byte()`'s
-  raw-terminal-byte/ESC-sequence state machine (Milestone 10) entirely
-  rather than adapting it - a real GTK window gets real key events, not
-  bytes to decode.
-- Whether a windowed build also becomes a natural point to attempt real,
-  live SN76477 audio playback (currently `--wav`-file-only, Milestone 5)
-  instead of just video - not decided, and a separate scope question
-  from the display itself.
-- Opt-in build target, same convention as `gtk`/`abc80` today (never
-  part of `make`/`make test`), given the same GTK4 dependency and
-  platform-specific risk.
+### Sub-step: extract a shared per-instruction step function — done
+
+**Why first**: the CLI `--interactive` loop in `abc80/emu/src/main.c`
+bundled together several `pc_before`-gated per-instruction checks that
+have each been the site of a real, previously-fixed bug (keyboard
+debounce timing - Milestone 3; the interrupt-interception hazard -
+Milestone 7; the disk-trap sector/buffer bugs - Milestone 6). The
+future `bin/abc80-gtk` needs the identical logic; duplicating ~250 lines
+of carefully-derived, regression-tested correctness logic into a second
+file would double the maintenance surface for exactly the kind of bug
+this project has already paid real debugging cost to fix once.
+
+Extracted into two new modules:
+- **`abc80/emu/src/disk.c`/`.h`**: Milestone 6's floppy/DOS bypass
+  (`abc80_disk_init()`, `abc80_disk_enabled()`, `abc80_disk_trap()`) -
+  moved verbatim, not rewritten, with `abc80_disk_enabled`/
+  `abc80_disk_file`'s old bare-static access replaced by clean accessor
+  functions so the state stays properly encapsulated now that it's a
+  separate translation unit.
+- **`abc80/emu/src/step.c`/`.h`**: the actual per-instruction step
+  (`abc80_step()`) - keyboard strobe consumption, sound-register write
+  detection (both `OUT (n),A` and `OUT (C),r` forms), the disk-trap
+  dispatch, and periodic PIO interrupt scheduling, all moved verbatim
+  out of the CLI's own `while` loop. `main.c`'s loop now just calls
+  `abc80_step(&cpu, ram, &sound_log, &total_cycles,
+  &next_pio_interrupt_at)` once per iteration; keyboard byte reading
+  (`poll_keyboard_byte()`/`abc80_keyboard_press()`) stays the caller's
+  own responsibility, exactly as planned, since the CLI and the future
+  GTK loop get key data from very different real sources.
+
+`cpm/emu/src/main.c` needed no changes at all - confirmed by direct
+inspection that its own loop has zero ABC80-specific logic (just a
+plain `z80_step()` call), correcting an earlier draft of this plan that
+assumed otherwise.
+
+**Verified by real execution, not just a clean compile**: `make test`
+passes unchanged; a real `--disk` `SAVE`/`LOAD` round trip
+(`SAVE DR0:RCHK2`, then a fresh process `LOAD`/`LIST`s it back
+correctly) and the original Milestone 3 `LEFT$`/`MID$`/`LEN`/`SIN`/`AND`
+regression script both produce byte-identical output to before the
+extraction.
+
+**Open design questions for the GTK app itself, not yet resolved**:
+- `GtkDrawingArea`/Cairo pixel geometry and glyph-cache-vs-per-pixel-fill
+  performance (see the plan file for the specific 240×240→scaled
+  approach).
+- `GtkEventControllerKey` → `abc80_keyboard_press()` keyval mapping -
+  genuinely new, since `cpm/gtk/` has no existing keyboard-handling code
+  to reuse (VTE owns all input there).
+- The new `abc80/gtk/src/main.c` binary itself, its Makefile target, and
+  `abc80/gtk/README.md` - not yet started.
 
 ## Memory map (grounded, not guessed)
 

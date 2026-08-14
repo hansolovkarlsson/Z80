@@ -45,7 +45,7 @@ ABC80_SRC_DIR := abc80/emu/src
 # for that final render - not chargen.o, since render.c's terminal backend
 # prints whole Unicode glyphs per cell rather than reconstructing pixels
 # from the chargen ROM (see render.c's own top comment).
-ABC80_OBJS := $(ABC80_SRC_DIR)/main.o $(ABC80_SRC_DIR)/render.o $(ABC80_SRC_DIR)/charset.o $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/cassette.o $(ABC80_SRC_DIR)/sound.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC80_OBJS := $(ABC80_SRC_DIR)/main.o $(ABC80_SRC_DIR)/render.o $(ABC80_SRC_DIR)/charset.o $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/cassette.o $(ABC80_SRC_DIR)/sound.o $(ABC80_SRC_DIR)/disk.o $(ABC80_SRC_DIR)/step.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
 ABC80_TARGET := $(BIN_DIR)/abc80
 
 # bin/abc80-chargen-dump: the chargen.c decode-verification tool (see its
