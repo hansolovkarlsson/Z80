@@ -2109,13 +2109,56 @@ swapping `draw_screen()`'s foreground color from white to `#FFB000` - a
 commonly used amber-phosphor swatch (matching most terminal emulators'
 own built-in "amber" themes) rather than a value sourced from an ABC800
 hardware manual, since no primary source for the exact CRT phosphor
-chromaticity was available; background stays black either way. Builds
-cleanly and `make test` is unaffected, but this one doesn't have the
-usual real-screenshot verification yet - the host display was
-inaccessible this session (`screencapture` failed with "could not create
-image from display" for a plain full-screen capture too, unrelated to
-this app or its code), so it's worth a quick hands-on look next time the
-window is actually visible.
+chromaticity was available; background stays black either way.
+**Confirmed by the user, hands-on**: "it looks great."
+
+### Sub-step: canvas margin and a File menu (Save/Load Program, Screenshot)
+
+Automating `screencapture`/`osascript` against the user's real desktop
+for verification (as the sub-steps above did) turned out to be
+disruptive to their actual work - it steals focus and switches Spaces
+while they're using the machine for other things. From here on, changes
+to this app are verified by clean compilation, a non-visual smoke test
+(launch, confirm no `Gtk-CRITICAL`/`Gtk-WARNING` output, confirm a clean
+exit), and the user's own hands-on look, rather than an automated
+screenshot.
+
+**Canvas margin** - user-reported: the drawing area sat flush against
+the window edges on every side, making the "monitor" look crammed into
+its own frame. Fixed with a plain widget margin
+(`ABC80_GTK_CANVAS_MARGIN`, 24px) applied to the `GtkDrawingArea` via
+`gtk_widget_set_margin_*()` - real empty space outside `draw_screen()`'s
+own `cairo_scale()`'d coordinate space, not part of the emulated picture,
+centered within the window.
+
+**File menu** - `Save Program…`/`Load Program…`/`Take Screenshot…`, a
+real in-window `GtkPopoverMenuBar` built from a `GMenu` model (not
+`gtk_application_set_menubar()`'s native-menu-bar integration, which
+needs desktop-shell-specific settings to show anything at all on
+X11/Wayland - the in-window bar is visible identically on every
+platform). Directly answers a real gap the user ran into and asked about
+first: BASIC's own interactive `SAVE`/`LOAD` hang forever, since real
+cassette hardware isn't emulated (Milestone 4) - Save/Load Program
+instead call the same `abc80_cassette_quicksave()`/
+`abc80_cassette_quickload()` the CLI's own `--quicksave`/`--quickload`
+flags already use, via the modern async `GtkFileDialog` (GTK 4.10+,
+confirmed present in the installed 4.22.4) rather than the older,
+deprecated `GtkFileChooserDialog`. `Take Screenshot` renders through the
+identical `draw_screen()` the live window uses, against an offscreen
+Cairo surface (`cairo_image_surface_create()`/`cairo_surface_write_to_png()`),
+so the saved PNG always matches what's on screen rather than a second,
+potentially-drifting implementation. `Load Program` shares `--quickload`'s
+same real caveat: it overwrites `BOFA`..`EOFA` immediately regardless of
+what BASIC is doing at that instant (safe from a memory-corruption
+standpoint - menu actions and `abc80_step()` both run on the same GTK
+main thread, never concurrently - but the natural place to use it is a
+fresh/empty BASIC session, the same expectation loading a real cassette
+program implies).
+
+Verified via clean compilation (zero warnings) and a non-visual smoke
+test: launched, ran for several seconds, confirmed no `Gtk-CRITICAL`/
+`Gtk-WARNING` output, sent a real `SIGTERM`, confirmed a clean exit.
+`make test` unaffected. Not yet confirmed hands-on by the user.
 
 **Remaining open items**:
 - Live SN76477 audio, per this milestone's own earlier scoping decision

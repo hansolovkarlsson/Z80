@@ -97,6 +97,15 @@
 #define ABC80_GTK_PIXEL_WIDTH (ABC80_GTK_COLS * ABC80_CHARGEN_CHAR_WIDTH)
 #define ABC80_GTK_PIXEL_HEIGHT (ABC80_GTK_ROWS * ABC80_CHARGEN_CHAR_HEIGHT)
 
+// User-requested: the drawing area was flush against the window edges on
+// all sides, making the window look like the "monitor" was crammed into
+// its own frame. A plain widget margin (not part of the emulated
+// picture at all - applied to the GtkDrawingArea itself, outside
+// draw_screen()'s own cairo_scale()'d coordinate space) puts real empty
+// space around it, closer to how a real monitor sits inset within its
+// own bezel.
+#define ABC80_GTK_CANVAS_MARGIN 24
+
 typedef struct {
     const char *filename;
     uint16_t address;
@@ -127,6 +136,7 @@ typedef struct {
     const char *quickload_path;
     bool quickload_done;
     const char *quicksave_path;
+    GtkWidget *window;
     GtkWidget *drawing_area;
     guint timer_source_id;
 } AppState;
@@ -451,13 +461,143 @@ static gboolean on_unix_signal(gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
+// File menu actions (win.save-program/win.load-program/win.take-screenshot,
+// see activate() below for the GMenu/GtkPopoverMenuBar wiring). These
+// directly answer the real gap that prompted this menu in the first
+// place: BASIC's own interactive SAVE/LOAD hang forever, since real
+// cassette hardware isn't emulated (see abc80/docs/ABC80_ROADMAP.md's
+// Milestone 4) - "Save Program"/"Load Program" instead call the same
+// abc80_cassette_quicksave()/abc80_cassette_quickload() the CLI's own
+// --quicksave/--quickload flags already use (cassette.h), just from a
+// menu instead of a command-line flag chosen before launch. Uses the
+// modern async GtkFileDialog (GTK 4.10+) rather than the older
+// GtkFileChooserDialog, which is deprecated as of this GTK4 version.
+//
+// "Load Program" works the same way --quickload does: it overwrites
+// BOFA..EOFA and fixes up EOFA/HEAD immediately, regardless of whatever
+// BASIC happens to be doing at the moment (there's no "wait for a safe
+// point" here the way the CLI's PC==0x02AA boot-time trigger provides,
+// since a menu click can land at any arbitrary instant) - safe from a
+// memory-corruption standpoint (menu actions and abc80_step() both run
+// on the same GTK main thread, never concurrently), but the natural
+// place to use it is a fresh/empty BASIC session (right after boot, or
+// after typing NEW), the same real-hardware expectation loading a
+// cassette program implies.
+
+static void on_save_program_response(GObject *source, GAsyncResult *res, gpointer user_data) {
+    GtkFileDialog *dialog = GTK_FILE_DIALOG(source);
+    AppState *app = user_data;
+    GFile *file = gtk_file_dialog_save_finish(dialog, res, NULL);
+    if (!file) return;
+    char *path = g_file_get_path(file);
+    if (path) {
+        abc80_cassette_quicksave(app->ram, path);
+        g_free(path);
+    }
+    g_object_unref(file);
+}
+
+static void on_save_program(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+    (void)action;
+    (void)parameter;
+    AppState *app = user_data;
+    GtkFileDialog *dialog = gtk_file_dialog_new();
+    gtk_file_dialog_set_title(dialog, "Save Program");
+    gtk_file_dialog_set_initial_name(dialog, "program.cas");
+    gtk_file_dialog_save(dialog, GTK_WINDOW(app->window), NULL, on_save_program_response, app);
+}
+
+static void on_load_program_response(GObject *source, GAsyncResult *res, gpointer user_data) {
+    GtkFileDialog *dialog = GTK_FILE_DIALOG(source);
+    AppState *app = user_data;
+    GFile *file = gtk_file_dialog_open_finish(dialog, res, NULL);
+    if (!file) return;
+    char *path = g_file_get_path(file);
+    if (path) {
+        abc80_cassette_quickload(app->ram, path);
+        g_free(path);
+    }
+    g_object_unref(file);
+}
+
+static void on_load_program(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+    (void)action;
+    (void)parameter;
+    AppState *app = user_data;
+    GtkFileDialog *dialog = gtk_file_dialog_new();
+    gtk_file_dialog_set_title(dialog, "Load Program");
+    gtk_file_dialog_open(dialog, GTK_WINDOW(app->window), NULL, on_load_program_response, app);
+}
+
+// Renders through the exact same draw_screen() the live window uses -
+// against an offscreen surface instead of the real widget, but sharing
+// one code path guarantees the saved PNG always matches what's on
+// screen (amber palette, cursor blink phase, GRAPHICS-mode pixels and
+// all) rather than a second, potentially-drifting reimplementation.
+// draw_screen()'s own `area` parameter is unused in its body (cast to
+// void immediately), so passing NULL here is safe.
+static void on_screenshot_response(GObject *source, GAsyncResult *res, gpointer user_data) {
+    GtkFileDialog *dialog = GTK_FILE_DIALOG(source);
+    AppState *app = user_data;
+    GFile *file = gtk_file_dialog_save_finish(dialog, res, NULL);
+    if (!file) return;
+    char *path = g_file_get_path(file);
+    if (path) {
+        int w = ABC80_GTK_PIXEL_WIDTH * ABC80_GTK_SCALE;
+        int h = ABC80_GTK_PIXEL_HEIGHT * ABC80_GTK_SCALE;
+        cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+        cairo_t *cr = cairo_create(surface);
+        draw_screen(NULL, cr, w, h, app);
+        cairo_surface_write_to_png(surface, path);
+        cairo_destroy(cr);
+        cairo_surface_destroy(surface);
+        g_free(path);
+    }
+    g_object_unref(file);
+}
+
+static void on_take_screenshot(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+    (void)action;
+    (void)parameter;
+    AppState *app = user_data;
+    GtkFileDialog *dialog = gtk_file_dialog_new();
+    gtk_file_dialog_set_title(dialog, "Save Screenshot");
+    gtk_file_dialog_set_initial_name(dialog, "abc80-screenshot.png");
+    gtk_file_dialog_save(dialog, GTK_WINDOW(app->window), NULL, on_screenshot_response, app);
+}
+
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
     AppState *app = user_data;
 
     GtkWidget *window = gtk_application_window_new(gtk_app);
+    app->window = window;
     gtk_window_set_title(GTK_WINDOW(window), "ABC80");
-    gtk_window_set_default_size(GTK_WINDOW(window), ABC80_GTK_PIXEL_WIDTH * ABC80_GTK_SCALE,
-                                 ABC80_GTK_PIXEL_HEIGHT * ABC80_GTK_SCALE);
+    gtk_window_set_default_size(GTK_WINDOW(window), ABC80_GTK_PIXEL_WIDTH * ABC80_GTK_SCALE + 2 * ABC80_GTK_CANVAS_MARGIN,
+                                 ABC80_GTK_PIXEL_HEIGHT * ABC80_GTK_SCALE + 2 * ABC80_GTK_CANVAS_MARGIN);
+
+    // File menu (Save/Load Program, Take Screenshot) - a real,
+    // in-window GtkPopoverMenuBar rather than relying on
+    // gtk_application_set_menubar()'s desktop-shell-provided native
+    // integration, which is inconsistent across platforms (works well
+    // via macOS's global menu bar, but needs shell-specific settings on
+    // X11/Wayland that aren't guaranteed to be on) - this way the menu
+    // is always visible the same way regardless of platform/desktop.
+    static const GActionEntry win_actions[] = {
+        {"save-program", on_save_program, NULL, NULL, NULL, {0}},
+        {"load-program", on_load_program, NULL, NULL, NULL, {0}},
+        {"take-screenshot", on_take_screenshot, NULL, NULL, NULL, {0}},
+    };
+    g_action_map_add_action_entries(G_ACTION_MAP(window), win_actions, G_N_ELEMENTS(win_actions), app);
+
+    GMenu *file_menu = g_menu_new();
+    g_menu_append(file_menu, "Save Program…", "win.save-program");
+    g_menu_append(file_menu, "Load Program…", "win.load-program");
+    g_menu_append(file_menu, "Take Screenshot…", "win.take-screenshot");
+    GMenu *menubar_model = g_menu_new();
+    g_menu_append_submenu(menubar_model, "File", G_MENU_MODEL(file_menu));
+    GtkWidget *menu_bar = gtk_popover_menu_bar_new_from_model(G_MENU_MODEL(menubar_model));
+    g_object_unref(file_menu);
+    g_object_unref(menubar_model);
 
     app->drawing_area = gtk_drawing_area_new();
     gtk_drawing_area_set_content_width(GTK_DRAWING_AREA(app->drawing_area),
@@ -465,7 +605,20 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_drawing_area_set_content_height(GTK_DRAWING_AREA(app->drawing_area),
                                          ABC80_GTK_PIXEL_HEIGHT * ABC80_GTK_SCALE);
     gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(app->drawing_area), draw_screen, app, NULL);
-    gtk_window_set_child(GTK_WINDOW(window), app->drawing_area);
+    // Real empty space around the canvas (not part of the emulated
+    // picture - see ABC80_GTK_CANVAS_MARGIN's own comment) so the
+    // "monitor" doesn't look crammed into the window frame.
+    gtk_widget_set_margin_start(app->drawing_area, ABC80_GTK_CANVAS_MARGIN);
+    gtk_widget_set_margin_end(app->drawing_area, ABC80_GTK_CANVAS_MARGIN);
+    gtk_widget_set_margin_top(app->drawing_area, ABC80_GTK_CANVAS_MARGIN);
+    gtk_widget_set_margin_bottom(app->drawing_area, ABC80_GTK_CANVAS_MARGIN);
+    gtk_widget_set_halign(app->drawing_area, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(app->drawing_area, GTK_ALIGN_CENTER);
+
+    GtkWidget *layout_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_append(GTK_BOX(layout_box), menu_bar);
+    gtk_box_append(GTK_BOX(layout_box), app->drawing_area);
+    gtk_window_set_child(GTK_WINDOW(window), layout_box);
 
     GtkEventController *key_controller = gtk_event_controller_key_new();
     g_signal_connect(key_controller, "key-pressed", G_CALLBACK(on_key_pressed), app);
