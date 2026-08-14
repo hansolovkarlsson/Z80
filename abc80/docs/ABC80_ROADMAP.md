@@ -1448,9 +1448,32 @@ genuinely `SAVE` a BASIC program to a virtual floppy and `LOAD` it back
 in a later, independent session - the concrete goal stated all the way
 back at this section's own "Milestone 6: ABCbus expansion" opening.
 
+#### Confirmed: a real multi-block round trip, verified byte-for-byte rather than by eye
+
+The short single-block programs tested above don't exercise the
+multi-sector case at all - a 256-byte block holds an entire small
+program, so `SAVE`/`LOAD` never needs to span a sector boundary, chain
+multiple blocks, or exercise the channel-2 read-ahead buffer this
+project's own tracing found earlier for real files. Built a 26-line
+program (`10 PRINT "LINE0010_XXXX...XXX"` through `260 PRINT "END OF
+PROGRAM"`, each line padded to ~70 characters) specifically to be large
+enough to require several sectors.
+
+Screen-scrollback inspection turned out to be the wrong verification
+tool for this - `bin/abc80`'s batch mode only captures a single
+end-of-run 40×24 screen snapshot, so a `LIST` longer than 24 lines only
+shows its final visible page, not the full output. Used `--quicksave`
+instead for a rigorous, complete check: dumped the tokenized program
+from memory (`BOFA..EOFA`) immediately after typing it in but *before*
+`SAVE`, then - in a completely separate `bin/abc80` process run,
+against the saved disk image - `LOAD`ed it back and dumped memory again
+with a second `--quicksave`. **The two dumps are byte-for-byte
+identical**: 1725 bytes each, spanning 7 real 256-byte sectors (not a
+single-block case at all). `make test` unaffected, no code changes were
+needed - this was purely a verification exercise confirming the
+existing fix generalizes.
+
 **Remaining, smaller open items**:
-- Confirm the round trip for a larger/multi-block program (only tested
-  with short, single-block-or-so programs so far).
 - Re-examine the still-open items from before the interleaving fix -
   the exact `B` bits 0-3/7, independent transfer-size confirmation,
   `UFD80V20.bin` (never examined at all) - now that real files load and
