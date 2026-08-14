@@ -1189,25 +1189,86 @@ no channel-1/2 pattern at all, a read of block `638` (near the real
 directory/file layout (a different, non-system disk) rather than
 pointing at the same bug.
 
+#### Live-traced the real `ERR 37`/`ERR 48` chain to its actual mechanism - a real understanding gained, but the true root cause is still open
+
+Went back to the emulator itself (temporary PC/register watchpoints at
+several specific addresses, removed afterward) rather than more static
+reading, since the previous round's "channel-1 read looks like a
+`BASICERR.SYS` validation" theory turned out to need direct verification.
+Two of this round's own working theories were tested and **disproven** in
+the process - recorded here rather than quietly dropped, since both
+looked highly plausible before being checked:
+
+- **Not cassette code.** A static grep for the literal byte pattern that
+  raises error `0xA5` (37) turned up `LD A,0A5h` at `0x05F6`, inside what
+  looked exactly like a Kansas-City-FSK cassette receiver (`CP 02h`/
+  `CP 03h` STX/ETX framing, a checksum, calls into `L0619`/`L061B`).
+  Live-watching that exact address during a real `LOAD` showed **it is
+  never executed at all** - a coincidental false match, not the real
+  path. (`L0619`/`L061B` themselves turned out to be the tail of the
+  periodic PIO interrupt handler already documented in Milestone 7,
+  reused as a general-purpose "commit state and return via `RETI`"
+  primitive - not cassette-specific code at all, on closer reading.)
+- **Not a `DR0:`-prefix parsing problem, and not failing device-chain
+  matching either.** Tried `LOAD WPROT`, `LOAD DR0:WPROT`, and
+  `LOAD DR 0:WPROT` (matching `disk009.img`'s own space-separated label
+  literally) - all three produced **byte-for-byte identical execution
+  traces**, ruling out prefix syntax as the variable that matters here.
+  More importantly, dumping the live device chain at `0xFE0A` at the
+  moment of failure shows it's built exactly right: `DR0`-`DR6` all
+  present, all pointing at the real shared handler `0x6EE4`, `CAS`/`PR`/
+  `IEC` present and correctly terminating the chain - the DOS ROM's own
+  device registration (Milestone 6's earlier `L6D24` finding) is
+  confirmed working correctly with the sector-formula fix in place.
+
+**What's actually happening, confirmed by live register/memory
+inspection**: the real failure is inside a base-ROM routine at `0x0819`
+onward that builds a small RAM record for the parsed command - found by
+dumping it directly rather than guessing: `[self-pointer:2][resume
+address:2]["WPROT   BAC"]["DR0"][6 more bytes]`, a genuine parsed-command
+structure holding the 8+3 filename and the 3-character device name this
+project's own device-chain research already described, confirming that
+part of the design end-to-end. Chasing the actual error through nested
+calls (`L084B`/`L088A`/`L08A5`/`L0184`) shows this code path isn't
+device-name matching at all, despite resembling it superficially - it's
+default-extension handling (conditionally copying a literal `"BAC"`/
+`"BAS"` string into the record if no extension was typed), and a shared
+low-level primitive (`L08A5`) that reads two bytes from a register-supplied
+pointer, does arithmetic against the *call site's own return address*
+(a `-9`-through-`+15`-step encoded "which of 9 near-identical call sites was
+this" trick), and hands the result to `L0184`, which requires the
+resulting byte to be `0xC3` (a real `JP` opcode) as a sanity check before
+trusting it further - failing that check is what raises the error. In
+the traced case, the pointer being dereferenced landed on the *first two
+characters of the filename itself* (`"WP"` from `"WPROT"`, read as the
+16-bit value `0x5057`) rather than on anything resembling real code,
+which is certainly wrong, but **why** the pointer ends up there - whether
+this project's bypass has left some register/RAM cell unpopulated that a
+real ABCbus transaction would set, or whether this specific code path
+was never meant to be reached this way at all - is not yet understood.
+Documented honestly as the real state of things rather than asserting a
+fix that hasn't been verified.
+
 **Revised remaining work**:
-- Pin down what the channel-1 read's content is actually being checked
-  against, and why it fails - likely candidates: this project's own
-  understanding of what "the real last block of `BASICERR.SYS`" should
-  contain may still be incomplete, or there's a second, still-unfound
-  register/RAM input this project's bypass doesn't populate that a real
-  ABCbus transaction would.
-- Investigate the separate `ERR 48`/pre-command-error anomaly seen after
-  a `SAVE` in the same run (confirm whether block 6 is really a
-  free-space bitmap and whether this project's write path updates it
-  correctly) and the one-off `buf_addr=0xF503` (versus the clean
-  `0xF500`) spotted in that same test - not yet explained.
+- The `L08A5`/`L0184` mechanism's real purpose still isn't fully
+  understood - next step is identifying what register/RAM state a real
+  ABCbus-driven `LOAD` would have going into `L084B` that this project's
+  bypass doesn't reproduce, most likely by comparing against what happens
+  on a `LOAD` of a genuinely nonexistent file (which should legitimately
+  hit a similar-looking error path) versus a file this project already
+  knows is real and well-formed.
 - `abc80sim`'s own `src/abcfile.c`/`src/fileop.c`/`src/hostfile.c`
   (not yet read) may have more directly-relevant detail on the real
-  ABC-DOS directory/file format if the above doesn't resolve things
-  quickly.
+  ABC-DOS directory/file format and could shortcut further blind
+  disassembly tracing.
 - If still stuck, **fall back to `UFD80V20.bin`** (the alternate,
   still-unexamined real DOS ROM already committed in
-  `abc80/resources/rom/`).
+  `abc80/resources/rom/`) - a different ROM's `LOAD` implementation may
+  not share this exact code path at all.
+- Investigate the separate `ERR 48`/pre-command-error anomaly seen after
+  a `SAVE` in the same run, and the one-off `buf_addr=0xF503` (versus the
+  clean `0xF500`) spotted in that same test - not yet explained, and
+  possibly related to (or a second symptom of) the same root cause.
 - The rest of the "Still open" items above (the exact `B` bits 0-3/7,
   independent transfer-size confirmation now partially done via the real
   image's clean 640-block division) remain open regardless.
