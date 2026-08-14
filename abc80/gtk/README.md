@@ -41,26 +41,33 @@ same convention as `bin/abc80`.) `--disk`/`--ram32k` behave identically to
 `--quickload`/`--quicksave` aren't supported yet — not essential for "run
 in a window," and can be added later if useful.
 
-## Status: working - real pixel rendering verified
+## Status: working - real pixel rendering and keyboard input confirmed
 
 Builds cleanly and launches a real window titled "ABC80". Verified by an
 actual screenshot (not just "it compiled"): the real ROM's own sign-on
 banner ("ABC80") renders as genuine pixels — a blocky, low-resolution
 letterform matching the real 6×10 chargen ROM scaled up, not a Unicode
 approximation — with a real solid cursor block beneath it, exactly
-matching what the real ROM draws to video RAM at boot.
+matching what the real ROM draws to video RAM at boot. Keyboard input
+reaching BASIC was confirmed hands-on by the user in a real session
+(this sandboxed environment has no Accessibility permission to script
+synthetic keystrokes itself, so that verification couldn't be automated
+here).
 
-**Not yet verified interactively in this environment**: live keyboard
-input reaching BASIC, and a real GRAPHICS-mode program's true 2×3 block
-pixels (as opposed to the boot banner's TEXT-mode rendering, which is the
-only path exercised so far). The keyboard-event handling
-(`GtkEventControllerKey` → `abc80_keyboard_press()`) is implemented and
-reviewed but not yet exercised by a real keystroke in this specific
-sandboxed environment (no Accessibility permission available here to
-script synthetic keystrokes) — needs a real, hands-on test.
+**A real bug found on exit, fixed**: closing the window produced
+`Gtk-CRITICAL **: gtk_widget_queue_draw: assertion 'GTK_IS_WIDGET
+(widget)' failed` - the pacing timer wasn't stopped when the window
+closed, so it could fire once more against an already-destroyed drawing
+area. Fixed with the standard pattern: the window's own `"destroy"`
+signal removes the timer's saved `GSource` and clears `AppState.
+drawing_area` to `NULL` (checked first in `on_timer_tick()` too, as
+defense in depth against an already-queued tick racing the removal).
 
 GRAPHICS-mode pixel geometry (the 2×3 sub-cell split within a 6×10 real
 character cell) is grounded directly against MAME's real
 `src/mame/luxor/abc80_v.cpp` `draw_character()` (`if (l < 3) r0 = 0; else
 if (l < 7) r1 = 0; else r2 = 0;`) — scanlines 0-2/3-6/7-9 (3/4/3, since 10
-doesn't split evenly by 3), not assumed or evenly divided.
+doesn't split evenly by 3), not assumed or evenly divided. **Not yet
+independently verified against a real GRAPHICS-mode program's own true
+block pixels** - only the TEXT-mode boot banner and keyboard input have
+been confirmed hands-on so far.

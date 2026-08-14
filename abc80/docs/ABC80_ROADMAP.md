@@ -1940,22 +1940,37 @@ low-resolution letterform matching the real 6×10 chargen ROM scaled up,
 beneath it. This is the concrete deliverable this whole milestone exists
 for, confirmed working, not assumed from a clean compile.
 
-**Not yet verified interactively in this environment**: live keyboard
-input reaching BASIC (typing a program and `LIST`ing it back), and a
-real GRAPHICS-mode program's true 2×3 block pixels specifically (the
-boot banner only exercises TEXT mode). The keyboard-event handling
-(`GtkEventControllerKey` → `abc80_keyboard_press()`, GDK keyvals mapped
-directly since they equal real ASCII/Latin-1 codepoints for printable
-characters, plus Milestone 10's real left/right-arrow-to-backspace
-mapping for the special keys) is implemented and code-reviewed but not
-yet exercised by a real keystroke here - this sandboxed environment has
-no Accessibility permission available to script synthetic keystrokes at
-the OS level. Needs a real, hands-on test - honestly flagged as open
-rather than claimed done on the strength of a boot-screen screenshot
-alone.
+**Confirmed working by the user, hands-on**: keyboard input reaches
+BASIC correctly in a real window session - the interactive gap this
+project's own sandboxed environment couldn't close itself (no
+Accessibility permission to script synthetic keystrokes) is closed by a
+real human test instead.
+
+**A real bug found on exit, fixed**: closing the window produced a
+`Gtk-CRITICAL **: gtk_widget_queue_draw: assertion 'GTK_IS_WIDGET
+(widget)' failed`. Root cause: the `g_timeout_add()` pacing timer was
+never stopped when the window closed, so it could fire once more against
+the drawing area after GTK had already started tearing it down. Fixed
+with the standard GTK pattern for this: connect to the window's own
+`"destroy"` signal, and have that handler call `g_source_remove()` on
+the timer's saved source ID (plus clear `AppState.drawing_area` to
+`NULL` as defense in depth - `on_timer_tick()` checks it first
+regardless of whether the source removal already landed, in case a tick
+was already queued before `"destroy"` ran). The halt-on-unimplemented-
+opcode path also clears the saved source ID to `0` before returning
+`G_SOURCE_REMOVE`, so a later window close can't call
+`g_source_remove()` on an ID GLib already invalidated internally.
+Couldn't mechanically reproduce the exact warning in this sandboxed
+environment either (no Accessibility permission to simulate clicking the
+close button), so this fix relies on the pattern being standard/
+well-understood rather than a before/after repro here - confirmed only
+that the fix doesn't regress boot/rendering (a fresh screenshot after
+the change still shows the real ROM banner correctly).
 
 **Remaining open items**:
-- The interactive keyboard/GRAPHICS-mode verification above.
+- Explicit verification that a real GRAPHICS-mode program renders true
+  2×3 block pixels (only the TEXT-mode boot banner and general keyboard
+  input have been confirmed hands-on so far).
 - Glyph-cache-vs-per-pixel-`cairo_fill()` performance at real frame
   rates - not yet measured; the current renderer fills one rectangle per
   set pixel bit, which may or may not be fast enough for smooth 30fps

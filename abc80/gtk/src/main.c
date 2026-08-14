@@ -95,6 +95,7 @@ typedef struct {
     double last_render_sec;
     bool ram32k_enabled;
     GtkWidget *drawing_area;
+    guint timer_source_id;
 } AppState;
 
 // Mirrors abc80/emu/src/main.c's own abc80_bus_read_hook() exactly (same
@@ -277,6 +278,15 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval,
 static gboolean on_timer_tick(gpointer user_data) {
     AppState *app = user_data;
 
+    // The window may have been closed and its drawing area destroyed
+    // since the last tick (on_window_destroy() below clears this and
+    // removes this very timer, but that removal and an already-queued
+    // tick can still race) - bail out immediately rather than risk
+    // gtk_widget_queue_draw() on a freed widget.
+    if (!app->drawing_area) {
+        return G_SOURCE_REMOVE;
+    }
+
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     double elapsed_real = (double)(now.tv_sec - app->run_start_time.tv_sec) +
@@ -296,6 +306,11 @@ static gboolean on_timer_tick(gpointer user_data) {
                                  &app->total_cycles, &app->next_pio_interrupt_at);
         if (cycles < 0) {
             fprintf(stderr, "Execution halted: unimplemented opcode at PC=0x%04X\n", app->cpu.pc);
+            // GLib treats G_SOURCE_REMOVE as self-removal - matching that
+            // here so on_window_destroy() (if the window closes later,
+            // after a halt) doesn't call g_source_remove() on an ID GLib
+            // has already invalidated.
+            app->timer_source_id = 0;
             return G_SOURCE_REMOVE;
         }
     }
@@ -306,6 +321,26 @@ static gboolean on_timer_tick(gpointer user_data) {
     }
 
     return G_SOURCE_CONTINUE;
+}
+
+// Fires when the window closes, *before* GTK finishes tearing down its
+// child widgets. Removes the still-running GLib timer explicitly rather
+// than leaving it to fire again against an about-to-be-freed (or already
+// freed) drawing area - the real cause of the "gtk_widget_queue_draw:
+// assertion 'GTK_IS_WIDGET (widget)' failed" critical this project's own
+// testing found on exit before this handler existed. Clearing
+// app->drawing_area to NULL too, as defense in depth: on_timer_tick()
+// checks it first regardless of whether this handler's g_source_remove()
+// already stopped the timer, in case any tick was already queued before
+// this ran.
+static void on_window_destroy(GtkWidget *window, gpointer user_data) {
+    (void)window;
+    AppState *app = user_data;
+    if (app->timer_source_id != 0) {
+        g_source_remove(app->timer_source_id);
+        app->timer_source_id = 0;
+    }
+    app->drawing_area = NULL;
 }
 
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
@@ -328,9 +363,11 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     g_signal_connect(key_controller, "key-pressed", G_CALLBACK(on_key_pressed), app);
     gtk_widget_add_controller(window, key_controller);
 
+    g_signal_connect(window, "destroy", G_CALLBACK(on_window_destroy), app);
+
     clock_gettime(CLOCK_MONOTONIC, &app->run_start_time);
     app->last_render_sec = 0.0;
-    g_timeout_add(ABC80_GTK_TIMER_INTERVAL_MS, on_timer_tick, app);
+    app->timer_source_id = g_timeout_add(ABC80_GTK_TIMER_INTERVAL_MS, on_timer_tick, app);
 
     gtk_window_present(GTK_WINDOW(window));
 }
