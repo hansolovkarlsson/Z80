@@ -1112,19 +1112,95 @@ above may have left the disk in a subtly inconsistent state (perhaps
 the block 6 bitmap-like update isn't fully correct) that a fresh boot
 against that same modified image now trips over - not yet investigated.
 
+#### Channel/buffer layout re-verified correct - `LOAD`'s real remaining blocker is a second, disk-position-dependent read
+
+Went looking for the "`B` bits 4-6 = channel" vs. `abc80sim`'s `k[1] & 7`
+/`k[1] >> 6` mismatch flagged above by reading `L6068`'s own real body
+(`0x606B` onward) instruction-by-instruction, rather than assuming either
+side was right. It resolves cleanly, and both are actually correct,
+just describing two different things:
+
+- `L606B` immediately overwrites the caller's `B` with a **hardcoded
+  function-code constant** (`3` for read, `0x0C` for write - matching
+  this project's own earlier finding) before ever sending it anywhere,
+  and gets the real drive-select byte from a fixed RAM cell
+  (`(0xFD01) & 7`), not from any caller register at all. So `abc80sim`'s
+  `k[1] & 7` (drive/unit select) genuinely has no relationship to the
+  caller's original `B` - it's real, but it's about a completely
+  different byte in the 4-byte command packet than this project's own
+  register-level trap ever touches.
+- The caller's *original* `B` (saved via `PUSH BC`/`POP BC` around the
+  packet-send sequence, restored before use) is read back only much
+  later, at `L6106`: `AND 70h` then `RRCA ×4` (i.e. exactly `(B >> 4) &
+  0x07`) to compute a **host-RAM buffer address** —
+  `H = buf_base_high + channel`, precisely matching
+  `abc80_disk_trap()`'s own existing `channel`/`buf_addr` computation.
+
+So this project's own channel/buffer extraction was **already right**,
+confirmed directly against the real code rather than left as an
+unverified guess - no fix was needed there after all. `abc80sim`'s
+`k[1]` bit layout is real too, just for the separate, ROM-internal
+drive-select field this project's single-flat-file bypass model doesn't
+need to reproduce at all.
+
+**Ruled out `DIRCOPY.BAC`'s blank data as the general explanation for
+`ERR 37`**: computed every one of `disk003.img`'s real 14 directory
+entries' start blocks with the *exact* controller formula (not the
+`>>5`-of-combined-bytes shortcut, which happens to agree with it only
+because every entry's low byte has its bottom 5 bits clear) and checked
+each against real disk content. Thirteen land on solid, structured,
+clearly-real data with a consistent-looking 3-byte header. Only
+`DIRCOPY.BAC` (block 127) lands on pure `0x40` filler - the same
+"unformatted" pattern found at the old mystery blocks - meaning this
+one specific file's data genuinely isn't present on this real dump
+(deleted-but-not-cleared entry, or simply never written), not an
+emulator bug. Testing `LOAD` against files that *do* have real data
+(`WPROT`, `LIB`) still fails, ruling that theory out as the general
+cause.
+
+**The real remaining pattern, found by tracing several different `LOAD`
+attempts**: every one - regardless of target file or which of
+`disk001.img`/`disk002.img`/`disk003.img` is used - follows an
+identical shape: read the directory (`16`), read the target file's own
+first block (correctly, at whatever block this project's own formula
+computes), then two *further* reads into two *different* channels
+(`2` and `1`) before failing. The channel-`2` read is always
+`target_block + 1` (the file's own second block, a sensible read-ahead)
+and always succeeds. The channel-`1` read is the odd one: a fixed
+value **not related to the target file at all** - `31` against
+`disk003.img`, `29` against `disk001.img`/`disk002.img` - decoding
+(via the real sector formula) to `D=3` with varying `E`, the same `D`
+value as `BASICERR.SYS`'s own directory entry, i.e. this looks like
+"the real last block of the `BASICERR.SYS` message file" (a plausible
+disk-integrity/version check reading the system error-message file as
+a validation step during open), and it differs between disks simply
+because each real disk's own `BASICERR.SYS` is a different real length.
+This read also reports success (`ok=1`) every time - the failure
+happens interpreting its content, not fetching it, and `buf_addr` was
+confirmed clean (exact `0xF500`/`0xF600`/`0xF700` multiples, no
+off-by-few address bug) in this simpler case, unlike an unrelated
+`0xF503` buf-address anomaly separately spotted in a same-run
+`SAVE`-then-`LOAD` test.
+
+`disk009.img` diverges differently under the identical `LOAD LIB` test -
+no channel-1/2 pattern at all, a read of block `638` (near the real
+640-block disk's own end), and `ERR 48` (library error) rather than
+`ERR 37` - consistent with `disk009.img` simply having a different real
+directory/file layout (a different, non-system disk) rather than
+pointing at the same bug.
+
 **Revised remaining work**:
-- Diagnose `ERR 37` on `LOAD DIRCOPY` - most likely culprits are the
-  `>>5` start-block decoding or the channel/buffer bit-layout mismatch
-  noted below.
-- Re-derive the channel/buffer bit layout against `abc80sim`'s own
-  `k[1]` convention (unit select = `k[1] & 7`, buffer select =
-  `k[1] >> 6`) rather than this project's earlier, independently-derived
-  "`B` bits 4-6 = channel" reading - the two don't obviously agree, and
-  every test so far has only ever exercised channel/buffer `0`, so a
-  real mismatch could still be hiding there untested.
-- Investigate the `ERR 48`/pre-command-error anomaly after a `SAVE` -
-  confirm whether block 6 is really a free-space bitmap and whether
-  this project's write path updates it correctly.
+- Pin down what the channel-1 read's content is actually being checked
+  against, and why it fails - likely candidates: this project's own
+  understanding of what "the real last block of `BASICERR.SYS`" should
+  contain may still be incomplete, or there's a second, still-unfound
+  register/RAM input this project's bypass doesn't populate that a real
+  ABCbus transaction would.
+- Investigate the separate `ERR 48`/pre-command-error anomaly seen after
+  a `SAVE` in the same run (confirm whether block 6 is really a
+  free-space bitmap and whether this project's write path updates it
+  correctly) and the one-off `buf_addr=0xF503` (versus the clean
+  `0xF500`) spotted in that same test - not yet explained.
 - `abc80sim`'s own `src/abcfile.c`/`src/fileop.c`/`src/hostfile.c`
   (not yet read) may have more directly-relevant detail on the real
   ABC-DOS directory/file format if the above doesn't resolve things
@@ -1132,7 +1208,7 @@ against that same modified image now trips over - not yet investigated.
 - If still stuck, **fall back to `UFD80V20.bin`** (the alternate,
   still-unexamined real DOS ROM already committed in
   `abc80/resources/rom/`).
-- The rest of the "Still open" items above (the exact `B`.bits 0-3/7,
+- The rest of the "Still open" items above (the exact `B` bits 0-3/7,
   independent transfer-size confirmation now partially done via the real
   image's clean 640-block division) remain open regardless.
 
