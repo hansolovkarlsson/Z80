@@ -1801,6 +1801,66 @@ corrupted variant. Full regression suite still passes; this only touches
 `poll_stdin_byte()`'s one call site, wrapping it rather than changing its
 own behavior.
 
+## Milestone 11: a real GTK window — not started
+
+**Goal**: run `bin/abc80` in its own window instead of a host terminal.
+Not yet scoped in detail - recorded here as a real, intended next
+milestone rather than left unwritten, per the user's own request.
+
+**The key architectural decision, already leaning one way**: this
+shouldn't necessarily follow `cpm/gtk/`'s own precedent (a thin
+launcher spawning the real CLI binary under a pty, handed to a
+`VteTerminal` widget - see `cpm/gtk/README.md`). That pattern is the
+right fit for CP/M specifically because CP/M output really is just
+VT100/ANSI text a real terminal widget renders correctly on its own.
+ABC80 is different: Milestone 2's own display-backend decision
+(`abc80/emu/src/render.c`) *deliberately* chose a terminal-glyph
+approach "for cheapness," explicitly deferring real pixel rendering -
+GRAPHICS mode (the real 2×3 block-mosaic mode) is approximated today
+by mapping onto Unicode's "Symbols for Legacy Computing" sextant block
+rather than drawing real pixels, because a terminal cell can't address
+individual pixels at all. A real GTK window - a `GtkDrawingArea` (or
+similar) driven by Cairo, rendering actual pixels rather than routing
+through a terminal widget - would finally close that gap instead of
+working around it, and there's already real, verified groundwork to
+build on: `bin/abc80-chargen-dump`, `bin/abc80-video-timing-dump`, and
+`bin/abc80-render-demo` (Milestone 2) already independently verify the
+exact chargen-ROM/video-timing-PROM pixel-decode logic a real
+framebuffer renderer would need, against known synthetic input - this
+wouldn't be starting from nothing.
+
+**A real, honestly-flagged risk, not a reason to avoid starting**:
+`cpm/gtk/`'s own GTK launcher is still intermittently blocked by a
+confirmed macOS 26 OS bug - an allocator crash inside
+`libsystem_malloc`'s "xzone" zone during `posix_spawn()` of a large,
+many-dylib binary, matching a bug Apple's own engineers have
+acknowledged on their Developer Forums (~2-3% of launches; see
+`cpm/gtk/README.md`'s own citation). Not fixable from application code.
+A framebuffer-based ABC80 window wouldn't need VTE/Pango/HarfBuzz at
+all (just GTK4 + Cairo), which may make it somewhat less exposed simply
+by linking fewer/smaller dylibs, but it's the same class of OS-level
+risk either way, not something achievable to design around.
+
+**Open design questions, not yet resolved**:
+- Main-loop integration: `--interactive`'s existing real-time pacing
+  (`clock_gettime()`/`nanosleep()`-driven, blocking `select()` for
+  keyboard polling) is built around a synchronous CLI loop, not a GLib
+  event loop - a GTK version needs a `g_timeout_add()`/`GSource`-driven
+  redraw and non-blocking key-event callbacks instead, not a direct port
+  of the current loop.
+- Keyboard input: real `GDK` key-press/key-release events feeding
+  `abc80_keyboard_press()` directly, replacing `poll_keyboard_byte()`'s
+  raw-terminal-byte/ESC-sequence state machine (Milestone 10) entirely
+  rather than adapting it - a real GTK window gets real key events, not
+  bytes to decode.
+- Whether a windowed build also becomes a natural point to attempt real,
+  live SN76477 audio playback (currently `--wav`-file-only, Milestone 5)
+  instead of just video - not decided, and a separate scope question
+  from the display itself.
+- Opt-in build target, same convention as `gtk`/`abc80` today (never
+  part of `make`/`make test`), given the same GTK4 dependency and
+  platform-specific risk.
+
 ## Memory map (grounded, not guessed)
 
 Cross-checked between MAME's current mainline driver
