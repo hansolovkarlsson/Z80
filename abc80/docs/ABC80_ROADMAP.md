@@ -1475,15 +1475,72 @@ existing fix generalizes.
 
 **Remaining, smaller open items**:
 - Re-examine the still-open items from before the interleaving fix -
-  the exact `B` bits 0-3/7, independent transfer-size confirmation,
-  `UFD80V20.bin` (never examined at all) - now that real files load and
-  save correctly, several may resolve quickly or turn out moot.
+  the exact `B` bits 0-3/7, independent transfer-size confirmation - now
+  that real files load and save correctly, several may resolve quickly
+  or turn out moot.
 - Confirm whether the free-space/allocation bookkeeping at block 6 is
   fully correct for a disk that eventually fills up, not just the
   currently-tested case of ample free space.
 - Consider committing `disk003.img` (or a small, purpose-built test
   image) into the repo now that it backs a real, working feature rather
   than a research artifact - still an open decision, not yet made.
+
+#### `UFD80V20.bin` examined (research only, not wired up) - a real, more general sibling driver, not a simpler fallback
+
+Disassembled the alternate DOS ROM (`bin/z80dasm`, same `0x6000` base
+assumption as `ABCDOS80.bin` - it decodes cleanly there too) to see
+whether it might be a useful fallback or point of comparison, now that
+`ABCDOS80.bin` itself is fully working. It's neither a dead end nor a
+simpler alternative - it shares the exact same real hardware protocol
+at the low level, confirmed concretely rather than assumed:
+
+- **Same function codes.** Found its own read/write entry points (two
+  variants each, differing only in an initial channel value) load `C=3`
+  (read sector) and `C=0x0C` (write sector) into the same field
+  position before transmitting - byte-for-byte the same real ABC830-
+  family controller function codes this project's own `ABCDOS80.bin`
+  research already found and `abc80sim`/the pico project's own
+  controller code confirmed independently. Real, concrete proof the
+  underlying hardware protocol is a genuine constant across DOS
+  variants, not an `ABCDOS80.bin`-specific detail.
+- **Same 4-byte command-packet mechanism**, transmitted one byte at a
+  time via `OUT (0)` with the identical `IN (1)`/`RRCA`/wait-for-ready
+  handshake this project already reverse-engineered - just a different
+  register-to-packet-field order (`C,B,D,E` here vs. `ABCDOS80.bin`'s
+  `B,C,D,E`).
+- **Same buffer-address computation.** Its own equivalent of
+  `ABCDOS80.bin`'s `L6106` (`L620A` here) reads the identical RAM cell
+  (`0xFD12`) and extracts the caller's `B` bits 4-6 as a channel number
+  added to the buffer base's high byte - the exact mechanism this
+  project's own bypass implements, including (by the same reasoning
+  that led to this project's own dual-purpose-low-byte bug) presumably
+  the same low-byte-reuse hazard, unconfirmed but structurally
+  identical.
+- **Genuinely more general than `ABCDOS80.bin`, not simpler.** Where
+  `ABCDOS80.bin` hardcodes a single `OUT (1),0x2Dh` ("mo" drive type)
+  card-select, `UFD80V20.bin` computes its card-select value at runtime
+  from a RAM-configurable per-unit table (`0xFD01` masked and looked up
+  against a table near `0xFFC0`/`0xFFF9`), and branches to a *different*
+  sector-address bit-mask depending on the resolved drive type (`H=1`
+  vs. `H=4` selecting different constants at its own sector-encoding
+  routine) - real support for multiple real controller/media types
+  (`mo`/`mf`/`sf`) in one ROM, not just the single type `ABCDOS80.bin`
+  assumes. It also uses the Z80's own `OUTI` block-transfer instruction
+  for bulk output instead of `ABCDOS80.bin`'s manual byte-at-a-time
+  polled loop - a real firmware-level optimization difference between
+  the two.
+
+**Not pursued further, and why**: none of `ABCDOS80.bin`'s specific
+trap addresses (`0x6068`/`0x60A1`) apply here - `UFD80V20.bin` is laid
+out completely differently, so wiring up a working `--disk` bypass for
+it would mean re-deriving its own equivalent entry points and its own
+per-drive-type sector formula from scratch, comparable in scope to this
+whole milestone's `ABCDOS80.bin` effort, for a ROM that isn't gating
+anything now that `ABCDOS80.bin` itself has a complete, verified
+`SAVE`/`LOAD` round trip. Documented here as real, grounded research
+(not "still open" in the sense of blocking anything) in case future
+work specifically wants multi-drive-type support this project's current
+bypass doesn't attempt.
 
 ## Milestone 8: `--interactive` — real keyboard input and a live screen — done
 

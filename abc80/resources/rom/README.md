@@ -79,7 +79,7 @@ open.
 | File | Description | Size | CRC32 |
 |---|---|---|---|
 | `ABCDOS80.bin` | ABC-DOS for ABC80 — the host-side DOS ROM, real base address `0x6000` (confirmed by disassembling it there and finding internally-consistent jump targets throughout the full 4KB range) | 4096 | `2cb2192f` |
-| `UFD80V20.bin` | UFD-DOS v2.0 for ABC80 — the alternate real DOS variant, not yet examined | 4096 | `69b09c0b` |
+| `UFD80V20.bin` | UFD-DOS v2.0 for ABC80 — the alternate real DOS variant. Disassembled for comparison against `ABCDOS80.bin` (see `abc80/docs/ABC80_ROADMAP.md`'s Milestone 6 section) — real base address `0x6000` also confirmed; shares the exact same low-level ABCbus function codes (`3`=read/`0x0C`=write sector) but is a genuinely more general, multi-controller-type driver (dynamic card-select, per-type sector-address masking, `OUTI`-based bulk transfer) rather than `ABCDOS80.bin`'s single fixed "mo" type. Not wired into `bin/abc80` — its own low-level entry points sit at different addresses than `ABCDOS80.bin`'s, so the existing `--disk` bypass's trap points don't apply to it | 4096 | `69b09c0b` |
 | `FIO-V3.2.bin` | "PROM on FIO board" (2708, 1KB) — firmware for the floppy controller card's *own* internal Z80 (see the FD2/FD2U technical manual's `FLOPPY DISKENS DATOR` section), not the ABC80 host; not relevant to a host-side bypass, since it never executes on this emulator's own CPU |
 
 All three downloaded from abc80.net's archive
