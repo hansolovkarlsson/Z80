@@ -627,7 +627,7 @@ sound WAV render (frequency re-measured at 640.01Hz via zero-crossing
 analysis, still matching the 640.00Hz prediction) — all pass with no
 regressions from before this milestone.
 
-### Floppy/DOS controller sub-step — protocol research and first implementation attempt (in progress)
+### Floppy/DOS controller sub-step — protocol research and a working `SAVE`/`LOAD` implementation — done
 
 **Why this is scoped differently from every other sub-step here**: a real
 ABC830/832/838-class controller (the family the `abc80_cards` slot list's
@@ -1775,12 +1775,14 @@ where the real detail lives:
   controller support (Milestone 6's remaining second half) is also done:
   a working `--disk` bypass boots the real, unmodified ABC-DOS ROM and
   supports genuine `SAVE`/`LOAD` round trips against real ABC80 disk
-  images, verified across independent process runs - see that
-  sub-step's own write-up above for the full derivation. `UFD-DOS`
-  (the alternate real DOS ROM, `UFD80V20.bin`) remains unexamined, and a
-  few narrower items (multi-block-file round trips, disk-full behavior,
-  the exact meaning of `B`'s unused bits) are still open - also covered
-  in that write-up.
+  images, verified across independent process runs (including a
+  multi-block file, byte-for-byte) - see that sub-step's own write-up
+  above for the full derivation. `UFD-DOS` (the alternate real DOS ROM,
+  `UFD80V20.bin`) has been examined and compared but not wired up - a
+  genuinely more general multi-drive-type driver, not needed now that
+  `ABC-DOS` itself works. A few narrower items (disk-full behavior, the
+  exact meaning of `B`'s unused bits) are still open - also covered in
+  that write-up.
   Cassette storage is a host-file bypass of BASIC's own program-storage
   pointers, not real analog tape emulation, and sound only synthesizes a
   single steady-tone case (no noise/SLF-warble/envelope shaping) rendered
@@ -1797,9 +1799,9 @@ where the real detail lives:
   expansion sub-step (see above) — `0x4000`-`0x7BFF` and, by default,
   `0x8000`-`0xBFFF` now correctly float (fixed `0xFF` reads, matching MAME's
   own no-card `abcbus_slot_device` behavior) instead of being ordinary flat
-  RAM. `0x8000`-`0xBFFF` still has no real DOS/printer/IEC ROM card content
-  even with `--ram32k` off — that's the still-open second half of
-  Milestone 6, not this sub-step.
+  RAM, except for `0x6000`-`0x6FFF` when `--disk` is active (the real DOS
+  ROM). `0x8000`-`0xBFFF` still has no real printer/IEC ROM card content —
+  out of scope, no milestone currently targets those cards.
 - **ROM write-protection**: `0x0000`-`0x3FFF` is writable in this model,
   matching this repo's existing flat-memory-model precedent for the CP/M
   target (`CLAUDE.md`'s Architecture section) rather than a new abstraction
