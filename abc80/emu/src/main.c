@@ -525,7 +525,15 @@ static bool abc80_disk_write_block(uint16_t block, const uint8_t *src) {
 // loading data ahead of normal execution.
 static int abc80_disk_trap(Z80 *cpu, uint8_t *ram, bool is_read) {
     uint8_t channel = (uint8_t)((cpu->b >> 4) & 0x07);
-    uint16_t block = (uint16_t)(((uint16_t)cpu->d << 8) | cpu->e);
+    // Real ABC830-class ("mo") controller sector addressing is NOT a flat
+    // 16-bit (D<<8)|E block number - it's packed as (D<<3) + (E>>5) +
+    // (E&31), confirmed against a real, independent open-source ABC80
+    // emulator's own controller implementation (sasq64/abc80sim, src/
+    // disk.c's cur_sector(), non-"new"/non-hard-disk case) rather than
+    // guessed - see ABC80_ROADMAP.md's Milestone 6 section. Using the
+    // flat interpretation silently sent every read/write to the wrong
+    // real sector.
+    uint16_t block = (uint16_t)(((uint16_t)cpu->d << 3) + (cpu->e >> 5) + (cpu->e & 0x1F));
     uint16_t buf_base = (uint16_t)(ram[ABC80_DOS_BUFPTR_ADDR] |
                                     (ram[ABC80_DOS_BUFPTR_ADDR + 1] << 8));
     uint16_t buf_addr = (uint16_t)(buf_base + (uint16_t)channel * ABC80_DISK_BLOCK_SIZE);

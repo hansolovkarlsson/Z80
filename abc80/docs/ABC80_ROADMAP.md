@@ -1032,25 +1032,106 @@ itself, but it's a genuine correctness fix or the ROM's own real
 success/failure branching would misbehave against any real image with a
 different block count.
 
+#### The real breakthrough: the sector-number formula was wrong, not the disk image
+
+Prompted by the user pointing at a real, independent open-source ABC80
+emulator - **sasq64/abc80sim** (<https://github.com/sasq64/abc80sim>) -
+that also implements floppy support. Rather than guessing at how it
+solved this, read its actual controller implementation
+(`src/disk.c`/`src/abcio.c`) directly. It takes a completely different
+approach from this project's own bypass: it emulates the real ABCbus
+port-level protocol itself (card-select via `OUT (1),n` storing
+`n & 0x3F`, a 4-byte command packet `K[0..3]` shifted in one byte at a
+time via sequential `OUT`s to port 0, dispatch by card-select value -
+`36`/`44`/`45`/`46` for `hd`/`mf`/`mo`/`sf` drive types respectively),
+rather than trapping a fixed PC address the way this project does. Its
+card-select table confirms `45` (`0x2D`) is the "`mo`" (mini-floppy,
+single-sided, `40×1×16 = 640` sectors) type - the exact card-select
+value and exact sector count this project's own research already
+independently found for the real `ABC830` controller, useful
+cross-confirmation.
+
+The genuinely new information is `cur_sector()`, the function computing
+a real sector index from the command packet's `k[2]`/`k[3]` bytes (this
+project's own `D`/`E` register values, per the calling-convention
+research above):
+
+```c
+if (state->new)
+    return (k2 << 8) + k3;
+else
+    return (((k2 << 3) + (k3 >> 5)) * state->secperclust) + (k3 & 31);
+```
+
+The `mo` drive type (matching this project's real disk images) doesn't
+set `new`, and has `secperclust == 1`, so the real formula reduces to
+`(D << 3) + (E >> 5) + (E & 31)` - **not** the flat `(D << 8) | E` this
+project's own `abc80_disk_trap()` had been using since the bypass was
+first built. Recomputing the boot-time scan's own eight observed values
+against the *real* formula is decisive: all eight share `D = 2`, and
+`E` cycles through multiples of `0x20` (so `E & 31` is always `0`),
+giving real sector numbers `16, 17, 18, ..., 23` - not `512, 544, ...,
+736` as this project had been reporting for three separate investigation
+rounds. Sector `16` is the *exact* second copy of the real directory
+this project's own earlier research already found - the scan was never
+probing some mysterious high-numbered region at all; every prior
+investigation session (the blank-image loop, the `ERR 41` trace, the
+`disk009.img` comparison, the EOF-read bug) was chasing symptoms of
+this one wrong formula, reading/writing the wrong real sector every
+single time. Fixed `abc80_disk_trap()` to use the real formula, citing
+`abc80sim`'s `disk.c` directly in the comment rather than re-deriving it
+from scratch.
+
+**Result, verified by real execution**: `SAVE TEST` against `disk003.img`
+now completes with **no error at all** - previously `ERR 41` ("disk
+full"). Diffing the disk image before/after shows real, structurally
+valid writes: a new eleven-byte directory entry (`TEST    BAC`, start
+marker `03 00 00 00` - decoding via this project's own `>>5` hypothesis
+to block 24) appended to *both* directory copies (blocks 8 and 16),
+real tokenized-BASIC-looking data written to blocks 24-25, and a change
+to block 6 (very likely a free-space bitmap being updated - not yet
+confirmed). This is the single biggest result in this whole Milestone 6
+investigation: real, correct, ROM-driven disk writes, not a trap
+returning a plausible-looking success code.
+
+**`LOAD` makes real, different progress too, but isn't fully working
+yet**: `LOAD DIRCOPY` (a real pre-existing file) against a *clean*
+`disk003.img` now reports **`ERR 37`** (`FELAKTIGT RECORDFORMAT` -
+"malformed record format") instead of the old `ERR 21` ("file not
+found") - the file is being *found* now (real progress), but something
+about interpreting its data once located still isn't right; not yet
+diagnosed; the `>>5` start-block hypothesis or the (still-unverified,
+still using this project's original disassembly-derived bit layout
+rather than `abc80sim`'s `k[1]` layout) channel/buffer extraction are
+the most likely remaining suspects. Separately, `LOAD TEST` (loading
+back the file just `SAVE`d in the test above, against the *same,
+already-modified* image) hit `ERR 48` (`FEL I BIBLIOTEKET` - "error in
+the library") - and, oddly, printed that same `ERR 48` once *before* the
+`LOAD TEST` command even appeared on screen, suggesting the `SAVE`
+above may have left the disk in a subtly inconsistent state (perhaps
+the block 6 bitmap-like update isn't fully correct) that a fresh boot
+against that same modified image now trips over - not yet investigated.
+
 **Revised remaining work**:
-- The scan's real accept condition still isn't known - next step is
-  reading `L6978`/the `L6827`-`L6850` loop body closely enough to name
-  the actual byte(s)/pattern it's testing for, now that "any non-blank
-  data" and "read success alone" are both ruled out.
-- If that continues to stall, **fall back to `UFD80V20.bin`** (the
-  alternate, still-unexamined real DOS ROM already committed in
-  `abc80/resources/rom/`) - it may have a simpler or differently
-  structured boot-time disk check worth comparing against `ABCDOS80.bin`'s,
-  or avoid this specific blocker entirely.
-- Try `disk001.img`/`disk002.img` (the official Luxor-numbered system
-  disks) as further ground truth, and try disks whose labels suggest a
-  non-system, plain data disk (unlikely to need this boot-time check to
-  succeed at all) as a different angle on the same question.
-- Try the same test from *within* a running program (e.g. a one-line
-  program that itself executes a `SAVE`-equivalent statement, run via
-  `RUN`) - not yet tried; still a real, distinct experiment even though
-  the `(IY+14)` theory that motivated it turned out to be a dead end for
-  `ERR 41` specifically.
+- Diagnose `ERR 37` on `LOAD DIRCOPY` - most likely culprits are the
+  `>>5` start-block decoding or the channel/buffer bit-layout mismatch
+  noted below.
+- Re-derive the channel/buffer bit layout against `abc80sim`'s own
+  `k[1]` convention (unit select = `k[1] & 7`, buffer select =
+  `k[1] >> 6`) rather than this project's earlier, independently-derived
+  "`B` bits 4-6 = channel" reading - the two don't obviously agree, and
+  every test so far has only ever exercised channel/buffer `0`, so a
+  real mismatch could still be hiding there untested.
+- Investigate the `ERR 48`/pre-command-error anomaly after a `SAVE` -
+  confirm whether block 6 is really a free-space bitmap and whether
+  this project's write path updates it correctly.
+- `abc80sim`'s own `src/abcfile.c`/`src/fileop.c`/`src/hostfile.c`
+  (not yet read) may have more directly-relevant detail on the real
+  ABC-DOS directory/file format if the above doesn't resolve things
+  quickly.
+- If still stuck, **fall back to `UFD80V20.bin`** (the alternate,
+  still-unexamined real DOS ROM already committed in
+  `abc80/resources/rom/`).
 - The rest of the "Still open" items above (the exact `B`.bits 0-3/7,
   independent transfer-size confirmation now partially done via the real
   image's clean 640-block division) remain open regardless.
@@ -1338,10 +1419,17 @@ where the real detail lives:
   <https://www.abc80.net/archive/luxor/ABC80/Kort-beskrivning-av-abc80-basic.pdf>
   (the primary source for `abc80/docs/ABC80_BASIC_REFERENCE.md`).
 - Real ABC80 floppy disk images: <https://www.abc80.net/archive/luxor/sw/disk_images/ABC80/160k/>
-  (49 real, dumped 160KB disk images with scanned labels/descriptions in
-  that directory's own `index.txt`; `disk003.img`, "System.diskett ABC80
+  (14 real, dumped 160KB disk images with scanned labels/descriptions in
+  that directory's own `index.txt` — corrected from this project's own
+  earlier, mistaken count of 49; `disk003.img`, "System.diskett ABC80
   Ver. 2.1," used as real ground truth for Milestone 6's floppy/DOS
   bypass sub-step, not yet committed into this repo).
+- sasq64/abc80sim, a real, independent open-source ABC80 emulator with
+  working floppy support — <https://github.com/sasq64/abc80sim> (`src/
+  disk.c`, `src/abcio.c`): source for the real ABC830/"mo" controller
+  sector-addressing formula this project's own bypass had wrong (see
+  Milestone 6's own write-up) — pointed at by the user rather than found
+  independently.
 
 See `abc80/docs/ABC80_REFERENCE.md` for a consolidated hardware reference
 (memory map, I/O ports, ROM/PROM inventory, per-subsystem register layouts)
