@@ -290,31 +290,49 @@ static void draw_screen(GtkDrawingArea *area, cairo_t *cr, int width, int height
 // --interactive mode already established (Milestone 10's real left/
 // right-arrow-to-backspace/cursor-advance mapping, plus the ordinary
 // Return key) need explicit handling here.
+//
+// Real Ctrl-<letter> chords (Ctrl-C to break a running program being the
+// user-reported gap - real ABC80 keyboard input treats it as a plain
+// 0x03 byte reaching the ROM's own break-combo check, per
+// abc80/emu/src/main.c's own raw-terminal-mode comment; ABC80_BASIC_
+// REFERENCE.md's Keyboard section documents Ctrl-X, "backspace the whole
+// line," the same way) need the same translation `--interactive`'s raw
+// terminal mode gets for free from the host tty driver - GDK, unlike a
+// tty, reports the plain letter keyval plus a separate Control modifier
+// bit rather than pre-folding it into a single control-code byte, so
+// this maps it by hand: Ctrl-A through Ctrl-Z become bytes 0x01-0x1A,
+// the standard ASCII control-code convention every real terminal already
+// uses for this. Checked before the plain-key switch below so a Ctrl
+// chord never falls through to being typed as its own bare letter.
 static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval,
                                 guint keycode, GdkModifierType state, gpointer user_data) {
     (void)controller;
     (void)keycode;
-    (void)state;
     (void)user_data;
 
     int ascii = -1;
-    switch (keyval) {
-        case GDK_KEY_Return:
-        case GDK_KEY_KP_Enter:
-            ascii = 0x0D;
-            break;
-        case GDK_KEY_BackSpace:
-        case GDK_KEY_Left:
-            ascii = 0x08; // real ABC80 backspace/cursor-left (Milestone 10)
-            break;
-        case GDK_KEY_Right:
-            ascii = 0x09; // real ABC80 non-destructive cursor-advance (Milestone 10)
-            break;
-        default:
-            if (keyval >= 0x20 && keyval < 0x7F) {
-                ascii = (int)keyval;
-            }
-            break;
+    guint lower = gdk_keyval_to_lower(keyval);
+    if ((state & GDK_CONTROL_MASK) && lower >= GDK_KEY_a && lower <= GDK_KEY_z) {
+        ascii = (int)(lower - GDK_KEY_a + 1);
+    } else {
+        switch (keyval) {
+            case GDK_KEY_Return:
+            case GDK_KEY_KP_Enter:
+                ascii = 0x0D;
+                break;
+            case GDK_KEY_BackSpace:
+            case GDK_KEY_Left:
+                ascii = 0x08; // real ABC80 backspace/cursor-left (Milestone 10)
+                break;
+            case GDK_KEY_Right:
+                ascii = 0x09; // real ABC80 non-destructive cursor-advance (Milestone 10)
+                break;
+            default:
+                if (keyval >= 0x20 && keyval < 0x7F) {
+                    ascii = (int)keyval;
+                }
+                break;
+        }
     }
     if (ascii >= 0 && abc80_keyboard_ready_for_next()) {
         abc80_keyboard_press((uint8_t)ascii);
@@ -461,6 +479,22 @@ static gboolean on_unix_signal(gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
+// Cmd-Q (via the app-level "quit" action and its <Primary>Q accelerator,
+// registered in main() below - <Primary> is Cmd on macOS, Ctrl elsewhere).
+// Destroys the real window rather than calling g_application_quit()
+// directly, for the identical reason on_unix_signal() above does: it
+// drives the same on_window_destroy() path a close-button click would,
+// so timer cleanup and a pending --quicksave flush happen from the one
+// real code path instead of a second copy of that logic here.
+static void on_quit_action(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+    (void)action;
+    (void)parameter;
+    AppState *app = user_data;
+    if (app->window) {
+        gtk_window_destroy(GTK_WINDOW(app->window));
+    }
+}
+
 // File menu actions (win.save-program/win.load-program/win.take-screenshot,
 // see activate() below for the GMenu/GtkPopoverMenuBar wiring). These
 // directly answer the real gap that prompted this menu in the first
@@ -588,6 +622,15 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
         {"take-screenshot", on_take_screenshot, NULL, NULL, NULL, {0}},
     };
     g_action_map_add_action_entries(G_ACTION_MAP(window), win_actions, G_N_ELEMENTS(win_actions), app);
+
+    // "<Primary>" is GTK's own portable primary-accelerator modifier -
+    // Ctrl on Linux/Windows, Cmd on macOS - so this one call is the real,
+    // idiomatic Cmd-S/Cmd-O on macOS the user asked for, not a hand-
+    // rolled GDK_META_MASK check (which would only be correct on one
+    // platform and would fight GTK's own accelerator dispatch, which
+    // already runs before on_key_pressed() ever sees the event).
+    gtk_application_set_accels_for_action(gtk_app, "win.save-program", (const char *[]){"<Primary>S", NULL});
+    gtk_application_set_accels_for_action(gtk_app, "win.load-program", (const char *[]){"<Primary>O", NULL});
 
     GMenu *file_menu = g_menu_new();
     g_menu_append(file_menu, "Save Program…", "win.save-program");
@@ -744,6 +787,21 @@ int main(int argc, char *argv[]) {
     app.next_pio_interrupt_at = ABC80_PIO_INTERRUPT_PERIOD_TSTATES;
 
     GtkApplication *gtk_app = gtk_application_new(NULL, G_APPLICATION_DEFAULT_FLAGS);
+
+    // App-level quit action + its Cmd-Q (macOS)/Ctrl-Q (elsewhere)
+    // accelerator - registered on the GApplication itself (not the
+    // window's own "win" action group) since quitting the whole app,
+    // unlike Save/Load Program, isn't really a per-window concept.
+    // Safe to register before the window exists: on_quit_action() reads
+    // app.window through the same static AppState activate() fills in,
+    // and no accelerator can actually fire before activate() has already
+    // run (there's no window yet to have focus).
+    GSimpleAction *quit_action = g_simple_action_new("quit", NULL);
+    g_signal_connect(quit_action, "activate", G_CALLBACK(on_quit_action), &app);
+    g_action_map_add_action(G_ACTION_MAP(gtk_app), G_ACTION(quit_action));
+    g_object_unref(quit_action);
+    gtk_application_set_accels_for_action(gtk_app, "app.quit", (const char *[]){"<Primary>Q", NULL});
+
     g_signal_connect(gtk_app, "activate", G_CALLBACK(activate), &app);
     int status = g_application_run(G_APPLICATION(gtk_app), 0, NULL);
     g_object_unref(gtk_app);

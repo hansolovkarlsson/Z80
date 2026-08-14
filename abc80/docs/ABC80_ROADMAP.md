@@ -2158,7 +2158,8 @@ program implies).
 Verified via clean compilation (zero warnings) and a non-visual smoke
 test: launched, ran for several seconds, confirmed no `Gtk-CRITICAL`/
 `Gtk-WARNING` output, sent a real `SIGTERM`, confirmed a clean exit.
-`make test` unaffected. Not yet confirmed hands-on by the user.
+`make test` unaffected. **Confirmed by the user, hands-on**: "It works.
+Load/Save too."
 
 ### Sub-step: a real `-h`/`--help`
 
@@ -2181,6 +2182,46 @@ just re-typing `--amber` into the old duplicate string. Verified by
 direct execution (no display access needed for this one): `--help`/`-h`
 both print the full flag list and exit `0`; an unrecognized flag prints
 the same full listing after an "Unknown argument" line and exits `1`.
+
+### Sub-step: real Ctrl-C break, and Cmd-Q/Cmd-S/Cmd-O
+
+**Ctrl-C** - user-reported: it didn't break a running program the way it
+does in `bin/abc80 --interactive`. Root cause: a real terminal's raw
+mode pre-folds Ctrl-<letter> into a single control-code byte before
+`--interactive`'s own `poll_stdin_byte()` ever sees it (see
+`abc80/emu/src/main.c`'s own raw-terminal-mode comment), but GDK reports
+the plain letter keyval plus a separate Control-modifier bit instead,
+and `on_key_pressed()` was discarding that modifier state entirely
+(`(void)state;`). Fixed by translating any Ctrl-<letter> chord to its
+standard ASCII control-code byte (`Ctrl-A`-`Ctrl-Z` → `0x01`-`0x1A`,
+checked before the existing plain-key switch) - real ABC80 hardware then
+sees the identical `0x03` byte a real terminal's raw mode would have
+produced for Ctrl-C, and Ctrl-X ("backspace the whole line," per
+`ABC80_BASIC_REFERENCE.md`'s Keyboard section) now works for the same
+reason.
+
+**Cmd-Q/Cmd-S/Cmd-O** - user-requested app-level shortcuts for
+quit/save/load. Bound via GTK's own portable `<Primary>` accelerator
+modifier (`gtk_application_set_accels_for_action()`), which resolves to
+Cmd on macOS and Ctrl elsewhere automatically, rather than a hand-rolled
+`GDK_META_MASK` check - the idiomatic GTK4 approach, and it means
+GtkApplication's own accelerator dispatch (which runs before a key event
+would ever reach `on_key_pressed()`) can't interact with the
+Ctrl-<letter> translation above at all (Cmd and Ctrl are different
+modifier keys). `<Primary>S`/`<Primary>O` bind to the existing
+`win.save-program`/`win.load-program` actions the File menu already
+uses; `<Primary>Q` is a new app-level `app.quit` action (quitting isn't
+really a per-window concept the way Save/Load are) whose handler
+destroys the real window - the same `on_window_destroy()` path a
+close-button click or `SIGTERM` already drives, so a pending
+`--quicksave` still flushes from Cmd-Q exactly like every other exit
+path, rather than a second copy of that logic.
+
+Verified via clean compilation (zero warnings) and the same non-visual
+smoke test as the prior sub-step; the Ctrl-C/Ctrl-X translation and the
+Cmd-Q/S/O accelerators themselves need the user's own hands-on keyboard
+to confirm, the same as every other real GDK-input change in this
+milestone.
 
 **Remaining open items**:
 - Live SN76477 audio, per this milestone's own earlier scoping decision

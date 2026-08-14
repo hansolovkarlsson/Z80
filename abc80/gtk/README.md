@@ -174,7 +174,8 @@ hardware isn't emulated (see `abc80/docs/ABC80_ROADMAP.md`'s Milestone
 `abc80_cassette_quicksave()`/`abc80_cassette_quickload()` the CLI's own
 `--quicksave`/`--quickload` flags already use, via the modern async
 `GtkFileDialog` (GTK 4.10+) rather than the older, now-deprecated
-`GtkFileChooserDialog`. "Take Screenshot" renders through the identical
+`GtkFileChooserDialog`. **Confirmed by the user, hands-on**: "It works.
+Load/Save too." "Take Screenshot" renders through the identical
 `draw_screen()` the live window uses, against an offscreen Cairo
 surface, so the saved PNG always matches what's on screen (amber
 palette, cursor blink phase, and all) rather than a second
@@ -193,3 +194,35 @@ line per flag plus an indented description, mirroring
 call it and exit `0` - the unrecognized-argument path now calls the same
 function too, instead of keeping its own separate, driftable copy of the
 flag list.
+
+**Ctrl-C now breaks a running program**: user-reported - Ctrl-C didn't
+stop BASIC the way it does in `bin/abc80 --interactive`. Root cause: a
+real terminal's raw mode pre-folds Ctrl-<letter> into a single control-
+code byte before `--interactive`'s own `poll_stdin_byte()` ever sees it,
+but GDK reports the plain letter keyval plus a separate Control-modifier
+bit instead, and `on_key_pressed()` was ignoring that modifier state
+entirely (`(void)state;`). Fixed by translating any Ctrl-<letter> chord
+to its standard ASCII control-code byte (`Ctrl-A` through `Ctrl-Z` →
+`0x01`-`0x1A`) before the existing plain-key switch runs - real ABC80
+hardware then sees the identical `0x03` byte a real terminal's raw mode
+would have produced for Ctrl-C, and Ctrl-X ("backspace the whole line,"
+per `ABC80_BASIC_REFERENCE.md`'s Keyboard section) now works too, for
+the same reason.
+
+**Cmd-Q/Cmd-S/Cmd-O**: user-requested app-level shortcuts for
+quit/save/load. Bound via GTK's own portable `<Primary>` accelerator
+modifier (`gtk_application_set_accels_for_action()`) rather than a
+hand-rolled `GDK_META_MASK` check in `on_key_pressed()` - `<Primary>`
+resolves to Cmd on macOS and Ctrl elsewhere automatically, and
+GtkApplication's own accelerator dispatch already runs before a key
+event would reach `on_key_pressed()` at all, so there's no interaction
+with the Ctrl-<letter>-to-ABC80-keyboard translation above (Cmd and
+Ctrl are different modifier keys - no ambiguity). `<Primary>S`/
+`<Primary>O` bind directly to the existing `win.save-program`/
+`win.load-program` actions the File menu already uses; `<Primary>Q`
+is a new app-level `app.quit` action (quitting isn't really a
+per-window concept the way Save/Load are) whose handler destroys the
+real window - the same `on_window_destroy()` path a close-button click
+or `SIGTERM` already drives, so a pending `--quicksave` still flushes
+from Cmd-Q exactly like it does from every other exit path, rather than
+a second copy of that logic.
