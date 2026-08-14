@@ -491,11 +491,15 @@ static bool abc80_disk_read_block(uint16_t block, uint8_t *dest) {
     }
     size_t n = fread(dest, 1, ABC80_DISK_BLOCK_SIZE, abc80_disk_file);
     if (n < ABC80_DISK_BLOCK_SIZE) {
-        // Reading past the real end of the image file - zero-fill the
-        // rest rather than leaving whatever garbage was already in the
-        // destination buffer, so an unformatted/short image reads back
-        // as consistent, predictable zero bytes.
+        // Reading at or past the real end of the image file - zero-fill
+        // the partial/nonexistent block for a predictable buffer, but
+        // report real failure (matching a real controller's own sector-
+        // not-found response for an out-of-range block) rather than a
+        // silent zero-filled success, which real ROM boot code observably
+        // relies on to tell a real block apart from empty media (see
+        // ABC80_ROADMAP.md's Milestone 6 section).
         memset(dest + n, 0, ABC80_DISK_BLOCK_SIZE - n);
+        return false;
     }
     return true;
 }

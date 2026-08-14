@@ -963,16 +963,89 @@ read/seek error for an out-of-range sector; not yet fixed, since it
 wasn't shown to be the actual cause of either error above, but flagged
 here rather than left silent.
 
+#### The scan is a bounded, one-shot boot check, not periodic - and the disk-image archive is smaller than earlier claimed
+
+Resolved possibility (2) above directly: added temporary instruction-count
+tracing to every `abc80_disk_trap()` call (removed afterward) and ran a
+boot-only test (no typed command at all, so any activity is purely
+boot-time). Result: the scan runs the same eight blocks in a fixed,
+uniform ~395-instruction cadence, for **exactly eight full cycles (64
+reads total)**, then stops calling the trap entirely for the rest of a
+2,000,000-instruction run - boot still reaches the normal `ABC80` banner
+and blinking-cursor `READY` state afterward. **This is a one-shot,
+bounded retry loop at boot, not a periodic background poll** - option
+(1) from the prior write-up, not (2). The uniform spacing (versus the
+periodic PIO interrupt's fixed 384 T-states, a different unit and a
+different, unrelated number) rules out any connection to Milestone 7's
+interrupt.
+
+While looking for a real disk more likely to satisfy this boot check,
+re-fetched abc80.net's own `sw/disk_images/ABC80/160k/` directory
+listing directly (`curl`, not summarized through a fetch tool) and found
+it actually contains **fourteen** images (`disk001.img`-`disk014.img`),
+not the forty-nine this project's own earlier write-up claimed -
+correcting that count rather than repeating it. Re-downloaded
+`disk003.img` fresh and confirmed it's byte-identical (`md5`) to the
+copy already used in this investigation, ruling out download corruption
+as the cause of anything found so far.
+
+The archive's own `index.txt` labels `disk001.img`/`disk002.img` as an
+official `SYSTEMSKIVA VER.1.0` with a real Luxor article number
+(`ARTNR:68 99101-31`), versus `disk003.img`'s third-party-authored
+`System.diskett ABC80 Ver. 2.1` - a plausible reason a specific disk
+might not match whatever this ROM's boot check expects. More usefully,
+**`disk009.img`'s own label reads `"Basregister 80 / Programskiva / DR
+0: / Run start"`** - real, primary-source confirmation that `DR0:` genuinely
+is the correct floppy device-prefix syntax (resolving that "not
+confirmed" item from the previous write-up) and, incidentally, that a
+real ABC80 user selects/runs a floppy program with a plain `DR 0:`
+prefix, matching this project's own earlier guess.
+
+Comparing raw bytes across all four candidate images at exactly the
+scanned blocks (512, 544, 576, 608) found something unexpected:
+`disk001.img`, `disk002.img`, and `disk003.img` all have the identical
+`0x40`-filled filler there, but **`disk009.img` has real, structured,
+non-filler data at those same four blocks** - a promising, concrete lead.
+Testing `disk009.img` through the same boot-only trace, though,
+**produced an identical trace to `disk003.img`, byte-for-byte** (same 64
+reads, same instruction counts, same final PC/state) - real content at
+those blocks doesn't change the outcome at all, at least not with the
+disk-image-read bug described next still in place. Ruled out, not yet
+explained: whatever this check is actually testing, it isn't simply
+"is there non-blank data at these four blocks."
+
+**Found and fixed a real bug this uncovered**: `abc80_disk_read_block()`
+returned success (`ok=1`, zero-filled) for a block number at or past the
+real end of the disk-image file - block 640 onward is out of range on
+this 640-block (163840-byte) image, and a real floppy controller would
+report a genuine seek/sector-not-found error there, not silent success.
+Fixed to return failure for a short/empty read, matching
+`abc80_disk_write_block()`'s own existing convention. Re-running the
+boot-only trace with the fix in place shows the scan behaves
+differently as a direct result - each cycle now stops after the first
+out-of-range block (`512, 544, 576, 608, 640[[fail]]` - five reads, not
+eight) rather than reading all eight before restarting - confirming the
+ROM's own retry logic really does branch on the read's success/failure,
+not just its content. The scan still doesn't ultimately succeed against
+either test disk even with this fix, so it isn't the root cause by
+itself, but it's a genuine correctness fix or the ROM's own real
+success/failure branching would misbehave against any real image with a
+different block count.
+
 **Revised remaining work**:
-- Determine whether the `512`-`736` scan is a one-shot boot check or a
-  periodic background poll - if it's periodic, find and trace whatever
-  *other* code path is actually reached when `LOAD`/`SAVE` runs, since
-  this scan itself isn't it.
-- Find a primary source (or derive from ROM disassembly, not guessed)
-  for the real floppy device-prefix syntax - `DR0:` is this project's own
-  unconfirmed guess, not a documented fact.
-- Fix `abc80_disk_read_block()`'s past-end-of-file behavior to report
-  failure instead of a silent zero-filled success.
+- The scan's real accept condition still isn't known - next step is
+  reading `L6978`/the `L6827`-`L6850` loop body closely enough to name
+  the actual byte(s)/pattern it's testing for, now that "any non-blank
+  data" and "read success alone" are both ruled out.
+- If that continues to stall, **fall back to `UFD80V20.bin`** (the
+  alternate, still-unexamined real DOS ROM already committed in
+  `abc80/resources/rom/`) - it may have a simpler or differently
+  structured boot-time disk check worth comparing against `ABCDOS80.bin`'s,
+  or avoid this specific blocker entirely.
+- Try `disk001.img`/`disk002.img` (the official Luxor-numbered system
+  disks) as further ground truth, and try disks whose labels suggest a
+  non-system, plain data disk (unlikely to need this boot-time check to
+  succeed at all) as a different angle on the same question.
 - Try the same test from *within* a running program (e.g. a one-line
   program that itself executes a `SAVE`-equivalent statement, run via
   `RUN`) - not yet tried; still a real, distinct experiment even though
@@ -980,8 +1053,7 @@ here rather than left silent.
   `ERR 41` specifically.
 - The rest of the "Still open" items above (the exact `B`.bits 0-3/7,
   independent transfer-size confirmation now partially done via the real
-  image's clean 640-block division, `UFD80V20.bin`) remain open
-  regardless.
+  image's clean 640-block division) remain open regardless.
 
 ## Milestone 8: `--interactive` — real keyboard input and a live screen — done
 
