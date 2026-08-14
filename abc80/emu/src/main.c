@@ -479,12 +479,37 @@ static uint8_t abc80_bus_read_hook(Z80 *cpu, uint16_t address, uint8_t stored_va
 // case some future ROM variant or code path changes it.
 #define ABC80_DOS_BUFPTR_ADDR 0xFD12
 
+// Real ABC830 ("mo") media is sector-interleaved within each 16-sector
+// track (interleave factor 7) - a real, physical disk-formatting detail,
+// not an artifact of this project's own bypass. The logical sector number
+// L6068/L60A1's calling convention computes (see abc80_disk_trap() below)
+// is NOT the same as a raw .img file's own on-disk byte offset: real
+// abc80.net-archived dumps (this project's own disk003.img among them)
+// store sectors in physical order, so a logical sector must be mapped to
+// its physical position before indexing the file. Confirmed against a
+// real, independent open-source ABC80 emulator (andersrcarlsson-stack/
+// abc80-pico-public, src/disk_controller.cpp's own phys_sector(), itself
+// citing abc80sim's "mo" interleave parameters ilfac=7/ilmsk=15) rather
+// than guessed - see ABC80_ROADMAP.md's Milestone 6 section for the
+// empirical verification (every one of disk003.img's real directory
+// entries resolves to a clean, consistent per-file header once this
+// mapping is applied, where every one of them read as blank/garbled
+// without it). Track-boundary sectors (multiples of 16) map to
+// themselves, which is why every previous investigation round's tests
+// that happened to land on one (the boot-time scan, the base directory
+// at sector 16) worked "by accident" without this fix.
+static uint16_t abc80_disk_phys_sector(uint16_t logical) {
+    const uint16_t il_mask = 15;
+    const uint16_t il_fac = 7;
+    return (uint16_t)((logical & ~il_mask) | ((logical * il_fac) & il_mask));
+}
+
 static bool abc80_disk_read_block(uint16_t block, uint8_t *dest) {
     if (!abc80_disk_file) {
         memset(dest, 0, ABC80_DISK_BLOCK_SIZE);
         return false;
     }
-    long offset = (long)block * ABC80_DISK_BLOCK_SIZE;
+    long offset = (long)abc80_disk_phys_sector(block) * ABC80_DISK_BLOCK_SIZE;
     if (fseek(abc80_disk_file, offset, SEEK_SET) != 0) {
         memset(dest, 0, ABC80_DISK_BLOCK_SIZE);
         return false;
@@ -506,7 +531,7 @@ static bool abc80_disk_read_block(uint16_t block, uint8_t *dest) {
 
 static bool abc80_disk_write_block(uint16_t block, const uint8_t *src) {
     if (!abc80_disk_file) return false;
-    long offset = (long)block * ABC80_DISK_BLOCK_SIZE;
+    long offset = (long)abc80_disk_phys_sector(block) * ABC80_DISK_BLOCK_SIZE;
     if (fseek(abc80_disk_file, offset, SEEK_SET) != 0) return false;
     size_t n = fwrite(src, 1, ABC80_DISK_BLOCK_SIZE, abc80_disk_file);
     fflush(abc80_disk_file);

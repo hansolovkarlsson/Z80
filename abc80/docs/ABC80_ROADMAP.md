@@ -1312,26 +1312,113 @@ successfully, which is now understood to happen somewhere after the
 dispatch this project traced last round, whose exact purpose is still
 not pinned down.
 
+#### The real root cause: `disk003.img` stores sectors in physical, interleaved order - `LOAD` of a real file now works end-to-end
+
+The user pointed at two more independent ABC80 projects while this
+project was mid-investigation of problem 1 above -
+[andersrcarlsson-stack/abc80-pico-public](https://github.com/andersrcarlsson-stack/abc80-pico-public)
+(a real hardware ABC80 emulator running on a Raspberry Pi Pico, whose
+own README claims "authentic ABCDOS - `SAVE`/`LOAD` the real ABC-bus
+way") and Torfinn Ingolfsen's `abc80sim` notes page (archived via the
+Wayback Machine, since the live site wasn't reachable from this
+environment - `curl` to it times out on port 443/80; the archived copy
+turned out to be pure build-troubleshooting logs with no protocol
+detail, a dead end, but confirmed harmless to rule out). The pico
+project's own `src/disk_controller.cpp` - fetched and read directly,
+not summarized - was the real find.
+
+Its own comments state plainly what this project had never modeled:
+**a real ABC830 ("mo") floppy's 16 sectors per track are physically
+interleaved (interleave factor 7), and the `.img` files abc80.net
+distributes are stored in physical order** - meaning the *logical*
+sector number this project's own `L6068`/`L60A1` calling-convention
+research already correctly derived (`(D<<3) + (E>>5) + (E&31)`) is
+**not** the same as a raw byte offset into the `.img` file. A logical
+sector must be mapped to its physical position first:
+
+```c
+constexpr unsigned IL_FAC = 7, IL_MASK = 15;
+inline unsigned phys_sector(unsigned s) {
+    return (s & ~IL_MASK) | ((s * IL_FAC) & IL_MASK);
+}
+```
+
+This project's own bypass (`abc80_disk_read_block()`/
+`abc80_disk_write_block()`) had been indexing `disk003.img` directly by
+the logical sector number since `--disk` was first built - every single
+disk access in every investigation round this milestone has been
+reading/writing the wrong physical sector, *except* when the logical
+sector happened to be a track-boundary multiple of 16 (which map to
+themselves under this permutation) - exactly the base directory copies
+at sectors 8/16, and the boot-time scan's own sectors, both of which
+*always* looked correct across every previous round precisely because
+they're fixed points of the interleave. This explains, in hindsight,
+why device-chain registration, the directory format, and the sector
+formula itself all checked out under direct inspection while `LOAD`
+still failed: everything *except* actual non-boundary file data was
+being tested correctly by accident.
+
+**Verified empirically before touching any code**: recomputed every one
+of `disk003.img`'s 14 real directory entries' physical sector (not just
+`DIRCOPY.BAC`, whose logical block 127 → physical 121 was the original
+anomaly) and checked the real bytes there. Every single one now shows a
+clean, consistent per-file header (`0x10 × directory-position`, `00`,
+`00`, `0xFF`, ...) - unmistakable, structured real data, not a
+coincidence.
+
+Implemented as `abc80_disk_phys_sector()` in `abc80/emu/src/main.c`,
+applied in both `abc80_disk_read_block()` and
+`abc80_disk_write_block()` before computing the file offset. **Result,
+verified by real execution**: `LOAD DR0:WPROT` now completes with no
+error and `LIST` shows the genuine, real Luxor `WPROT.BAC` utility's
+actual BASIC source (`10 REM ... WPROT.BAC ... Skriv/raderskyddar
+enstaka filer för ABC80 ... DATORUTVECKLING ... LUXOR`, real Swedish
+comments and all) - the first real file this project has ever
+successfully loaded off a real ABC80 disk image. `LOAD DR0:DIRCOPY`
+(the original blank-data anomaly) and `LOAD DR0:LIB`/`LOAD
+DR0:MARKDISK` all now succeed too, with no error. `LOAD DR0:MAP`
+correctly reports `HITTAR EJ FILEN` ("file not found") - genuinely
+correct behavior, since `MAP` on disk is a `.ABS` machine-code file, not
+a `.BAC`/`.BAS` BASIC program `LOAD`'s own default-extension search
+would find. Also incidentally confirms **problem 1 is largely resolved
+by the same fix**: the `L6E82` message-lookup mechanism reads from these
+same interleaved sectors (the real Swedish error-message text this
+project extracted earlier for `ABC80_REFERENCE.md`), so a `LOAD DR0:
+<name-that-genuinely-exists-but-fails-for-another-reason>` test now
+shows the real message `FEL I BIBLIOTEKET` on screen instead of a
+numeric fallback `ERR 37` - the uniform-secondary-failure masking
+problem this project's previous round diagnosed is gone for the cases
+tested so far.
+
+Full regression suite (`make test`) still passes unchanged - this fix
+only touches the `--disk`-gated bypass path.
+
+**Not yet resolved**: `SAVE`-then-`LOAD` of this project's *own*,
+freshly written file (`SAVE DR0:TEST3`, then `LOAD DR0:TEST3` in a
+separate run against the saved image) still fails, now with the real,
+correctly-displayed message `FEL I BIBLIOTEKET` (`ERR 48`, "library
+error") rather than the old numeric `ERR 37`. Comparing the written
+directory entry's own physical block against the real files' own
+consistent header pattern shows it does *not* match (`FF 17 61 FF FF
+...` rather than the `0x10×N, 00, 00, 0xFF` shape every real file has) -
+a real, narrower, separate bug in this project's own write/allocation
+path (not the interleaving fix, which is confirmed correct for every
+real file tested), not yet diagnosed.
+
 **Revised remaining work**:
-- Fix or at least fully explain the `L6E82` message-lookup failure first
-  (problem 1 above) - since it currently masks every other error code
-  with an identical `ERR 37`, fixing it should make problem 2's *real*
-  error code directly visible without further tracing.
-- Once the real error code for `WPROT` is visible, re-investigate
-  `L084B`/`0x085A`'s actual purpose knowing device-matching itself is
-  confirmed *not* the problem - it runs strictly after a successful
-  match.
-- `abc80sim`'s own `src/abcfile.c`/`src/fileop.c`/`src/hostfile.c`
-  (not yet read) may have more directly-relevant detail and could
-  shortcut further blind disassembly tracing.
-- If still stuck, **fall back to `UFD80V20.bin`** (the alternate,
-  still-unexamined real DOS ROM already committed in
-  `abc80/resources/rom/`) - a different ROM's `LOAD` implementation may
-  not share this exact code path at all.
-- Investigate the separate `ERR 48`/pre-command-error anomaly seen after
-  a `SAVE` in the same run, and the one-off `buf_addr=0xF503` (versus the
-  clean `0xF500`) spotted in that same test - not yet explained, and
-  possibly related to (or a second symptom of) the same root cause.
+- Diagnose why this project's own `SAVE`-written files don't produce
+  the same header shape real, disk-distributed files have - likely in
+  how the directory entry's start-block/size fields get computed, or
+  in the free-space/allocation bookkeeping (the block-6 write this
+  project's earlier rounds already flagged as a suspect).
+- Re-run the still-open items from before this fix now that real files
+  load correctly - transfer-size/`B`-bits confirmation, `UFD80V20.bin`,
+  etc. - since several of them may resolve for free or need
+  re-examination with correct sector addressing in place.
+- Consider committing `disk003.img` (or a small, purpose-built test
+  image) into the repo now that it's core to a real, working feature
+  rather than a research artifact - still an open decision, not yet
+  made.
 - The rest of the "Still open" items above (the exact `B` bits 0-3/7,
   independent transfer-size confirmation now partially done via the real
   image's clean 640-block division) remain open regardless.
@@ -1630,6 +1717,19 @@ where the real detail lives:
   sector-addressing formula this project's own bypass had wrong (see
   Milestone 6's own write-up) — pointed at by the user rather than found
   independently.
+- andersrcarlsson-stack/abc80-pico-public, a real ABC80 emulator running
+  on Raspberry Pi Pico hardware — <https://github.com/andersrcarlsson-stack/abc80-pico-public>
+  (`src/disk_controller.cpp`): source for the real sector-interleave
+  mapping (`phys_sector()`, interleave factor 7) that turned out to be
+  Milestone 6's actual remaining root cause — pointed at by the user
+  rather than found independently.
+- Torfinn Ingolfsen's `abc80sim` notes page —
+  <https://tingo.homedns.org/emulators/abc80sim/> (not reachable
+  directly from this environment; read via its Wayback Machine archive,
+  <http://web.archive.org/web/20250622044221/http://tingo.homedns.org/emulators/abc80sim/>)
+  — checked but turned out to contain only build-environment
+  troubleshooting logs, no protocol detail; a dead end, noted here for
+  completeness rather than silently omitted.
 
 See `abc80/docs/ABC80_REFERENCE.md` for a consolidated hardware reference
 (memory map, I/O ports, ROM/PROM inventory, per-subsystem register layouts)
