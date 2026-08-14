@@ -2160,6 +2160,28 @@ test: launched, ran for several seconds, confirmed no `Gtk-CRITICAL`/
 `Gtk-WARNING` output, sent a real `SIGTERM`, confirmed a clean exit.
 `make test` unaffected. Not yet confirmed hands-on by the user.
 
+### Sub-step: a real `-h`/`--help`
+
+User-reported: `--amber` was missing from `--help`'s own output. Root
+cause wasn't a stale/incomplete flag list - this app never had a
+dedicated `-h`/`--help` handler at all, unlike `bin/abc80`'s own
+(`print_usage()`, called from `main()`'s own `-h`/`--help` case). An
+unrecognized argument's terse one-line fallback message happened to be
+the only "usage" text this app ever printed, and by the time this was
+reported it already listed every flag correctly (generated from the same
+source as the fallback, not actually out of date) - but there was no way
+to see it without triggering what looked like an error, which is almost
+certainly what actually happened. Added a real `print_usage()`,
+mirroring the CLI's own style (one line per flag plus an indented
+description) exactly, wired `-h`/`--help` to call it and exit `0`, and
+had the unrecognized-argument path call the same function too instead of
+keeping a second, separately-maintained copy of the flag list - the
+actual root cause this bug traces to, fixed structurally rather than
+just re-typing `--amber` into the old duplicate string. Verified by
+direct execution (no display access needed for this one): `--help`/`-h`
+both print the full flag list and exit `0`; an unrecognized flag prints
+the same full listing after an "Unknown argument" line and exits `1`.
+
 **Remaining open items**:
 - Live SN76477 audio, per this milestone's own earlier scoping decision
   - still out of scope.

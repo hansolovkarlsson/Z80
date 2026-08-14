@@ -635,6 +635,36 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_window_present(GTK_WINDOW(window));
 }
 
+// Mirrors abc80/emu/src/main.c's own print_usage() style (one line per
+// flag plus an indented description) - that file's the CLI's own
+// dedicated -h/--help handler; this one had none at all until a user
+// noticed --amber (added later than --disk/--ram32k) was missing from
+// the terse one-line fallback message an unrecognized argument produced
+// (the *actual* usage text, past tense - see the "Unknown argument"
+// branch below - already listed every flag correctly by the time this
+// was reported, since it's generated from the same source; the real gap
+// was not having a proper --help at all, unlike the CLI).
+static void print_usage(const char *prog) {
+    printf("Usage:\n");
+    printf("  %s [rom_dir] [--disk FILE] [--ram32k] [--amber] [--quickload FILE] [--quicksave FILE]\n", prog);
+    printf("\n");
+    printf("  rom_dir            Directory containing the four ROM images\n");
+    printf("                     (default: resources/rom - run from inside abc80/)\n");
+    printf("  --disk FILE        Load the real ABC-DOS ROM at 0x6000 and back its floppy\n");
+    printf("                     I/O with a host file (created if it doesn't exist) -\n");
+    printf("                     see abc80/docs/ABC80_ROADMAP.md for how this bypass works.\n");
+    printf("  --ram32k           Model the real 16KB RAM-expansion mod at 0x8000-0xBFFF\n");
+    printf("                     (default: base 16K machine - that range floats)\n");
+    printf("  --amber            Amber-on-black palette (the Luxor ABC800's look, not\n");
+    printf("                     the base ABC80's own) instead of the default white-on-black\n");
+    printf("  --quickload FILE   Inject a saved program into BASIC's program storage\n");
+    printf("                     area once boot init has run (see cassette.h) - also\n");
+    printf("                     available from the File menu as \"Load Program...\"\n");
+    printf("  --quicksave FILE   Dump BASIC's current program storage (BOFA..EOFA) to\n");
+    printf("                     FILE when the window closes - also available from the\n");
+    printf("                     File menu as \"Save Program...\"\n");
+}
+
 int main(int argc, char *argv[]) {
     const char *rom_dir = "resources/rom";
     const char *disk_path = NULL;
@@ -645,7 +675,10 @@ int main(int argc, char *argv[]) {
         rom_dir = argv[arg_i++];
     }
     for (; arg_i < argc; arg_i++) {
-        if (strcmp(argv[arg_i], "--disk") == 0 && arg_i + 1 < argc) {
+        if (strcmp(argv[arg_i], "-h") == 0 || strcmp(argv[arg_i], "--help") == 0) {
+            print_usage(argv[0]);
+            return EXIT_SUCCESS;
+        } else if (strcmp(argv[arg_i], "--disk") == 0 && arg_i + 1 < argc) {
             disk_path = argv[++arg_i];
         } else if (strcmp(argv[arg_i], "--quickload") == 0 && arg_i + 1 < argc) {
             quickload_path = argv[++arg_i];
@@ -654,9 +687,8 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(argv[arg_i], "--ram32k") == 0 || strcmp(argv[arg_i], "--amber") == 0) {
             // handled below, after AppState exists
         } else {
-            fprintf(stderr, "Unknown argument: %s\n", argv[arg_i]);
-            fprintf(stderr, "Usage: %s [rom_dir] [--disk FILE] [--ram32k] [--amber] "
-                            "[--quickload FILE] [--quicksave FILE]\n", argv[0]);
+            fprintf(stderr, "Unknown argument: %s\n\n", argv[arg_i]);
+            print_usage(argv[0]);
             return EXIT_FAILURE;
         }
     }

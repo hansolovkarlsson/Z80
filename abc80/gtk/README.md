@@ -35,6 +35,7 @@ cd abc80
 ../bin/abc80-gtk resources/rom --ram32k
 ../bin/abc80-gtk resources/rom --quickload prog.cas --quicksave prog.cas
 ../bin/abc80-gtk resources/rom --amber
+../bin/abc80-gtk --help
 ```
 
 (Run from inside `abc80/` so the default `resources/rom` path resolves —
@@ -178,3 +179,17 @@ hardware isn't emulated (see `abc80/docs/ABC80_ROADMAP.md`'s Milestone
 surface, so the saved PNG always matches what's on screen (amber
 palette, cursor blink phase, and all) rather than a second
 implementation that could drift from it.
+
+**A real `-h`/`--help`**: user-reported - `--amber` was missing from
+`--help`'s output. Root cause: this app never had a dedicated `-h`/
+`--help` handler at all, unlike `bin/abc80`'s own - an unrecognized
+argument's terse one-line fallback message happened to double as the
+only "usage" text anyone would ever see, and it *did* already list every
+flag correctly by the time this was reported (generated from the same
+source, not actually stale), but there was no way to see it without
+triggering what looked like an error. Added a real `print_usage()` (one
+line per flag plus an indented description, mirroring
+`abc80/emu/src/main.c`'s own style exactly) and wired `-h`/`--help` to
+call it and exit `0` - the unrecognized-argument path now calls the same
+function too, instead of keeping its own separate, driftable copy of the
+flag list.
