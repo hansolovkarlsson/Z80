@@ -415,12 +415,14 @@ storage.
       simplification for `0x4000`-`0xBFFF` with genuine floating-bus
       behavior by default, plus an opt-in `--ram32k` flag modeling a real,
       well-documented 16KB expansion.
-- [ ] **Floppy/DOS controller card + ABC-DOS or UFD-DOS ROM loading — a
-      first `--disk` bypass exists and is mechanically verified working
-      (real DOS ROM boots and runs unmodified against it), but `SAVE`
-      doesn't complete yet - blocked on a disk-format-detection check
-      this project hasn't reverse-engineered.** See its own section
-      below.
+- [x] **Floppy/DOS controller card + ABC-DOS ROM loading — done.** A
+      `--disk` bypass (real DOS ROM boots and runs unmodified against it)
+      supports genuine `SAVE`/`LOAD` round trips against real ABC80 disk
+      images, verified across independent process runs. See its own
+      section below for the full derivation, including several dead
+      ends corrected along the way. `UFD-DOS` (the alternate ROM,
+      `UFD80V20.bin`) remains unexamined - out of scope now that
+      `ABC-DOS` itself works.
 
 ### RAM expansion sub-step (grounded, not guessed)
 
@@ -1393,35 +1395,72 @@ tested so far.
 Full regression suite (`make test`) still passes unchanged - this fix
 only touches the `--disk`-gated bypass path.
 
-**Not yet resolved**: `SAVE`-then-`LOAD` of this project's *own*,
-freshly written file (`SAVE DR0:TEST3`, then `LOAD DR0:TEST3` in a
-separate run against the saved image) still fails, now with the real,
-correctly-displayed message `FEL I BIBLIOTEKET` (`ERR 48`, "library
-error") rather than the old numeric `ERR 37`. Comparing the written
-directory entry's own physical block against the real files' own
-consistent header pattern shows it does *not* match (`FF 17 61 FF FF
-...` rather than the `0x10×N, 00, 00, 0xFF` shape every real file has) -
-a real, narrower, separate bug in this project's own write/allocation
-path (not the interleaving fix, which is confirmed correct for every
-real file tested), not yet diagnosed.
+#### The last bug: a dual-purpose RAM cell this bypass never fully accounted for - full `SAVE`/`LOAD` round trip now works
 
-**Revised remaining work**:
-- Diagnose why this project's own `SAVE`-written files don't produce
-  the same header shape real, disk-distributed files have - likely in
-  how the directory entry's start-block/size fields get computed, or
-  in the free-space/allocation bookkeeping (the block-6 write this
-  project's earlier rounds already flagged as a suspect).
-- Re-run the still-open items from before this fix now that real files
-  load correctly - transfer-size/`B`-bits confirmation, `UFD80V20.bin`,
-  etc. - since several of them may resolve for free or need
-  re-examination with correct sector addressing in place.
+Traced the `SAVE`-then-`LOAD` failure with the same live-tracing approach
+as the rest of this milestone (temporary instrumentation, removed after)
+rather than guessing again. The `SAVE` trace showed something
+concrete: two late writes in the sequence - the free-space-bookkeeping
+write to block 6 and, critically, the *second* write to the new file's
+own directory-entry block - used `buf_addr = 0xF503`/`0xF703` instead of
+the expected `0xF500`/`0xF700`, and that second write overwrote the
+*correct* header this project's own `SAVE` had just written moments
+earlier with garbage (`FF 17 61 FF FF ...`) - the real, concrete cause
+of `ERR 48` on load-back.
+
+`abc80_disk_trap()`'s `buf_addr` computation reads `ABC80_DOS_BUFPTR_ADDR`
+(`0xFD12`/`0xFD13`) live from RAM on every call, on the reasoning
+(documented in this project's own earlier comment) that "DOS init sets
+it to `0xF500`... read live... in case some future ROM variant changes
+it." Checking `abcdos80_dasm.txt` for every place that RAM cell is
+written turned up several addresses *outside* `L6068`/`L60A1` - real,
+un-bypassed ROM code this project's trap never touches - and one of them
+(`0x61C0`, `LD (0xFD12),A`) writes *only the low byte*. Since a real
+256-aligned buffer base's low byte is always `0x00`, that same RAM cell
+is evidently dual-purpose in the real ROM: also reused as a live
+byte-transfer progress counter inside the real per-byte transfer
+routines this bypass replaces wholesale with an instant `fread`/
+`fwrite`. Because this bypass never runs that real routine, whatever
+partial count real, un-trapped ROM code left there earlier (observed
+live: `3`) is never reset back to `0`, silently shifting every
+subsequent buffer address by that leftover count and corrupting
+whatever real data was already at the shifted destination.
+
+Fixed by no longer trusting the low byte at all - `buf_base` is now
+`(ram[ABC80_DOS_BUFPTR_ADDR + 1]) << 8` (high byte only, low byte forced
+to `0`), keeping the live high-byte read for the legitimate reason it
+was added (a future ROM/config might relocate the buffer region) while
+discarding the part proven to be repurposed.
+
+**Result, verified by real execution across a genuinely fresh, separate
+run** (not the same process/session, so no in-memory state could paper
+over a real bug): `SAVE DR0:FINAL` (`10 PRINT "HELLO WORLD"` / `20 PRINT
+1+1`) completes with no error; a completely separate `bin/abc80` process
+run afterward against the saved image does `LOAD DR0:FINAL` / `LIST` and
+prints back the exact two lines saved, byte-for-byte. `LOAD DR0:WPROT`
+(the real, disk-distributed file) still works identically after this
+change. `make test` still passes unchanged - this fix, like the
+interleaving one, only touches the `--disk`-gated bypass path.
+
+**This closes the loop this milestone set out to prove**: a real,
+unmodified ABC-DOS ROM, running on this project's shared Z80 core, can
+genuinely `SAVE` a BASIC program to a virtual floppy and `LOAD` it back
+in a later, independent session - the concrete goal stated all the way
+back at this section's own "Milestone 6: ABCbus expansion" opening.
+
+**Remaining, smaller open items**:
+- Confirm the round trip for a larger/multi-block program (only tested
+  with short, single-block-or-so programs so far).
+- Re-examine the still-open items from before the interleaving fix -
+  the exact `B` bits 0-3/7, independent transfer-size confirmation,
+  `UFD80V20.bin` (never examined at all) - now that real files load and
+  save correctly, several may resolve quickly or turn out moot.
+- Confirm whether the free-space/allocation bookkeeping at block 6 is
+  fully correct for a disk that eventually fills up, not just the
+  currently-tested case of ample free space.
 - Consider committing `disk003.img` (or a small, purpose-built test
-  image) into the repo now that it's core to a real, working feature
-  rather than a research artifact - still an open decision, not yet
-  made.
-- The rest of the "Still open" items above (the exact `B` bits 0-3/7,
-  independent transfer-size confirmation now partially done via the real
-  image's clean 640-block division) remain open regardless.
+  image) into the repo now that it backs a real, working feature rather
+  than a research artifact - still an open decision, not yet made.
 
 ## Milestone 8: `--interactive` — real keyboard input and a live screen — done
 
@@ -1653,12 +1692,15 @@ where the real detail lives:
   interactive keyboard input with a live, real-time-paced screen including
   a genuine Ctrl-C break to BASIC and real left/right arrow keys
   (Milestones 8-10, `bin/abc80 --interactive`) are done. Floppy/DOS
-  controller support (Milestone 6's remaining second half) has a working,
-  mechanically-verified `--disk` bypass (the real ABC-DOS ROM boots and
-  runs unmodified against it, with a fully-derived calling convention for
-  its low-level block I/O), but `SAVE` doesn't complete yet - blocked on
-  a disk-format-detection check this project hasn't reverse-engineered;
-  see that sub-step's own write-up above before resuming this.
+  controller support (Milestone 6's remaining second half) is also done:
+  a working `--disk` bypass boots the real, unmodified ABC-DOS ROM and
+  supports genuine `SAVE`/`LOAD` round trips against real ABC80 disk
+  images, verified across independent process runs - see that
+  sub-step's own write-up above for the full derivation. `UFD-DOS`
+  (the alternate real DOS ROM, `UFD80V20.bin`) remains unexamined, and a
+  few narrower items (multi-block-file round trips, disk-full behavior,
+  the exact meaning of `B`'s unused bits) are still open - also covered
+  in that write-up.
   Cassette storage is a host-file bypass of BASIC's own program-storage
   pointers, not real analog tape emulation, and sound only synthesizes a
   single steady-tone case (no noise/SLF-warble/envelope shaping) rendered

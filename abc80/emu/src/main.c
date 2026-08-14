@@ -559,8 +559,22 @@ static int abc80_disk_trap(Z80 *cpu, uint8_t *ram, bool is_read) {
     // flat interpretation silently sent every read/write to the wrong
     // real sector.
     uint16_t block = (uint16_t)(((uint16_t)cpu->d << 3) + (cpu->e >> 5) + (cpu->e & 0x1F));
-    uint16_t buf_base = (uint16_t)(ram[ABC80_DOS_BUFPTR_ADDR] |
-                                    (ram[ABC80_DOS_BUFPTR_ADDR + 1] << 8));
+    // ABC80_DOS_BUFPTR_ADDR's low byte is dual-purpose in the real ROM: the
+    // low byte of the (always 256-aligned) buffer base is 0x00 by
+    // construction, so the real ROM also reuses that same RAM cell as a
+    // live byte-transfer progress counter in the real per-byte transfer
+    // routines this bypass replaces wholesale (confirmed in
+    // abcdos80_dasm.txt: several addresses outside L6068/L60A1 write only
+    // this byte, e.g. 0x61C0's `LD (0xFD12),A`). Since this bypass never
+    // runs that real routine, that counter can be left mid-count (observed
+    // live: 0x03) by earlier, un-trapped ROM code, silently shifting every
+    // subsequent buffer address by that leftover count and corrupting
+    // whatever real data was already there - see ABC80_ROADMAP.md's
+    // Milestone 6 section for the real SAVE this was found from. Only the
+    // high byte is trustworthy to read live (DOS init sets it, and a
+    // future ROM/config might legitimately relocate it); the low byte is
+    // always forced to 0 rather than trusted.
+    uint16_t buf_base = (uint16_t)(ram[ABC80_DOS_BUFPTR_ADDR + 1] << 8);
     uint16_t buf_addr = (uint16_t)(buf_base + (uint16_t)channel * ABC80_DISK_BLOCK_SIZE);
 
     bool ok = is_read ? abc80_disk_read_block(block, &ram[buf_addr])

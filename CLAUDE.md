@@ -36,10 +36,10 @@ language `bin/abc80` actually runs, not the `z80asm` syntax
 input (including genuine real-time interactive keyboard input and a live,
 real-time-paced screen via `bin/abc80 --interactive`, not just scripted/
 piped input), cassette quickload/quicksave, a scoped SN76477 sound model,
-a real periodic PIO interrupt, and a correctly-modeled (floating-bus-by-
-default, optional `--ram32k`) memory map; only the floppy/DOS controller
-(the rest of Milestone 6) remains, with real protocol facts already
-derived from disassembling the actual ABC-DOS ROM.
+a real periodic PIO interrupt, a correctly-modeled (floating-bus-by-
+default, optional `--ram32k`) memory map, and (as of Milestone 6) a
+`--disk` bypass supporting genuine floppy `SAVE`/`LOAD` round trips
+against real ABC80 disk images through the real, unmodified ABC-DOS ROM.
 
 Three reference docs live in `cpm/docs/` alongside the roadmap:
 `Z80_REFERENCE.md` (the Z80 instruction set, including undocumented
