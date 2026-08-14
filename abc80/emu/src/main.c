@@ -254,6 +254,81 @@ static int poll_stdin_byte(void) {
     return (n == 1) ? byte : -1;
 }
 
+// Real ABC80 hardware has no dedicated cursor-key escape sequences (full
+// VT100-style arrow keys weren't yet a settled convention in 1978) - its
+// two cursor keys instead send the two adjacent ASCII control codes,
+// confirmed by disassembling this ROM's own line-editor
+// (`0x02BC`-`0x02CE`, the same routine keyboard.h's own comment already
+// grounds Milestone 3's debounce work in): `CP 08h / JR Z,L02B9` special-
+// cases byte 0x08 (Backspace/Ctrl-H) into a real destructive delete-left
+// (`L035B` at 0x035B decrements the column counter, walks the line buffer
+// pointer back one, and writes a literal space into video RAM at the
+// vacated cell - not a guess, read directly off the ROM), while
+// `CP 09h / CALL Z,L0348` special-cases byte 0x09 (Tab/Ctrl-I) into the
+// non-destructive counterpart (`L0348` at 0x0348 just walks a lookahead
+// pointer forward, re-displaying whatever was already there, unless it
+// hits the line's own terminating CR) - i.e. cursor-right. This matches
+// real ABC80 owners' own memory of the hardware exactly: the left arrow
+// key doubling as backspace.
+#define ABC80_LEFT_ARROW_BYTE  0x08
+#define ABC80_RIGHT_ARROW_BYTE 0x09
+
+// A modern terminal's left/right arrow keys don't send 0x08/0x09 though -
+// they send a 3-byte ANSI/VT100 CSI sequence (`ESC [ D` for left, `ESC [
+// C` for right). This small state machine recognizes exactly those two
+// sequences as they arrive one byte at a time from poll_stdin_byte()
+// (interactive terminal input only arrives this way; a piped/scripted
+// stdin could send the same three bytes too, and gets the identical
+// translation, for free) and rewrites them to the real ABC80 byte codes
+// above before anything reaches abc80_keyboard_press() - deliberately
+// narrow, not a general VT100 input parser: any other CSI sequence (e.g.
+// up/down), or a lone ESC with nothing recognizable following it within
+// ABC80_ESC_SEQUENCE_TIMEOUT_SEC, is simply dropped rather than
+// forwarded - harmless either way, since the real ROM's own line editor
+// above already silently ignores any control byte below 0x20 it doesn't
+// specifically recognize (`CP 20h / JR C,L02BC`).
+#define ABC80_ESC_SEQUENCE_TIMEOUT_SEC 0.05
+
+static int poll_keyboard_byte(void) {
+    static enum { ESC_NONE, ESC_SEEN, ESC_BRACKET } esc_state = ESC_NONE;
+    static struct timespec esc_started;
+
+    if (esc_state != ESC_NONE) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        double elapsed = (double)(now.tv_sec - esc_started.tv_sec) +
+                          (double)(now.tv_nsec - esc_started.tv_nsec) / 1e9;
+        if (elapsed > ABC80_ESC_SEQUENCE_TIMEOUT_SEC) {
+            esc_state = ESC_NONE; // gave up - a lone ESC, or a sequence
+                                   // this function doesn't recognize
+        }
+    }
+
+    int b = poll_stdin_byte();
+
+    if (esc_state == ESC_NONE) {
+        if (b == 0x1B) {
+            esc_state = ESC_SEEN;
+            clock_gettime(CLOCK_MONOTONIC, &esc_started);
+            return -1;
+        }
+        return b;
+    }
+
+    if (b < 0) return -1; // mid-sequence, still waiting for the next byte
+
+    if (esc_state == ESC_SEEN) {
+        esc_state = (b == '[') ? ESC_BRACKET : ESC_NONE;
+        return (esc_state == ESC_BRACKET) ? -1 : b;
+    }
+
+    // esc_state == ESC_BRACKET
+    esc_state = ESC_NONE;
+    if (b == 'D') return ABC80_LEFT_ARROW_BYTE;
+    if (b == 'C') return ABC80_RIGHT_ARROW_BYTE;
+    return -1; // some other CSI sequence - not translated, dropped
+}
+
 // Real ABC80 ROM chip layout (see abc80/docs/ABC80_ROADMAP.md's memory map,
 // grounded against MAME's src/mame/luxor/abc80.cpp): four 4Kx8 chips
 // filling 0x0000-0x3FFF, in address order.
@@ -559,7 +634,7 @@ int main(int argc, char *argv[]) {
         }
 
         if (abc80_keyboard_ready_for_next()) {
-            int stdin_byte = poll_stdin_byte();
+            int stdin_byte = poll_keyboard_byte();
             if (stdin_byte >= 0) {
                 abc80_keyboard_press((uint8_t)stdin_byte);
             }

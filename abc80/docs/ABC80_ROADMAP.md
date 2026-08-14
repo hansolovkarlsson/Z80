@@ -852,6 +852,58 @@ ROM's own disassembly-confirmed code paths:
 Full regression suite (`make test`, plus every existing `--interactive`
 and default-mode ABC80 check from Milestones 1-8) still passes unchanged.
 
+## Milestone 10: left/right arrow keys — done
+
+**Goal**: a real ABC80 owner's own account of the hardware - "the left
+key worked as a backspace (delete left)" - prompted checking whether the
+same could be done here, rather than assuming it and guessing at a
+mapping.
+
+**Grounded, not assumed**: disassembling this ROM's own line-editor
+(`0x02BC`-`0x02CE`, the same routine Milestone 3's keyboard debounce work
+and this document's own Milestone 9 write-up both already reference)
+confirms real ABC80 hardware has no dedicated cursor-key escape sequence
+for these two keys at all - it reuses two adjacent, pre-existing ASCII
+control codes instead, unsurprising for 1978 hardware (full VT100-style
+arrow-key escape sequences weren't yet a settled convention):
+
+- **Left arrow = `0x08`** (ASCII Backspace/Ctrl-H). `CP 08h / JR Z,L02B9`
+  in the line editor routes it to `L035B` (`0x035B`), which decrements
+  the column counter, walks the line buffer pointer back one position,
+  and writes a literal space into video RAM at the vacated screen cell -
+  a genuine, destructive delete-left, not a mere cursor move. Confirms
+  the real owner's own memory of the hardware exactly.
+- **Right arrow = `0x09`** (ASCII Tab/Ctrl-I). `CP 09h / CALL Z,L0348`
+  routes it to `L0348` (`0x0348`), the non-destructive counterpart: it
+  just walks a lookahead pointer forward, re-displaying whatever was
+  already there, unless it hits the line's own terminating CR.
+
+**Implementation**: a modern terminal's arrow keys don't send `0x08`/
+`0x09` - they send a 3-byte ANSI/VT100 CSI sequence (`ESC [ D` for left,
+`ESC [ C` for right). `poll_keyboard_byte()` (`abc80/emu/src/main.c`), a
+small state machine wrapping the existing `poll_stdin_byte()`, recognizes
+exactly those two sequences as they arrive one byte at a time and
+rewrites them to the real ABC80 byte codes above before anything reaches
+`abc80_keyboard_press()`. Deliberately narrow, not a general VT100 input
+parser: any other CSI sequence (e.g. up/down), or a lone ESC with nothing
+recognizable following it within a short timeout
+(`ABC80_ESC_SEQUENCE_TIMEOUT_SEC`, 50ms - generous for any real terminal,
+whose own multi-byte sequences arrive within microseconds of each other,
+while still resolving a genuine standalone Escape keypress promptly), is
+simply dropped rather than forwarded - harmless either way, since the
+real ROM's own line editor already silently ignores any control byte
+below `0x20` it doesn't specifically recognize. Applies uniformly to both
+`--interactive` and default (piped/scripted) input, since
+`poll_stdin_byte()` never treated interactive and piped input
+differently to begin with.
+
+**Verified against the real ROM**: typed `10 PRINT 1X`, then two real
+`ESC [ D` sequences (deleting `X` then `1`), then `2` - `LIST` afterward
+showed the correctly-edited `10 PRINT 2`, not `10 PRINT 1X2` or any
+corrupted variant. Full regression suite still passes; this only touches
+`poll_stdin_byte()`'s one call site, wrapping it rather than changing its
+own behavior.
+
 ## Memory map (grounded, not guessed)
 
 Cross-checked between MAME's current mainline driver
@@ -889,9 +941,9 @@ where the real detail lives:
   (Milestone 5), RAM expansion / floating-bus fidelity (Milestone 6's first
   sub-step), the real periodic PIO interrupt (Milestone 7), real
   interactive keyboard input with a live, real-time-paced screen including
-  a genuine Ctrl-C break to BASIC (Milestones 8-9, `bin/abc80
-  --interactive`) are done. No floppy/DOS controller yet (Milestone 6's
-  remaining second half) —
+  a genuine Ctrl-C break to BASIC and real left/right arrow keys
+  (Milestones 8-10, `bin/abc80 --interactive`) are done. No floppy/DOS
+  controller yet (Milestone 6's remaining second half) —
   real protocol facts have been derived by disassembling the actual ABC-DOS
   ROM (card-select address, port roles, command packet format, two
   identified operations), but the parameter encoding, transfer-length
