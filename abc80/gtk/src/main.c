@@ -1310,6 +1310,18 @@ int main(int argc, char *argv[]) {
     app.quicksave_path = quicksave_path;
     app.turbo_multiplier = turbo_multiplier;
     abc80_sound_state_init(&app.live_sound_state); // non-zero cap-voltage defaults - memset(0) above isn't enough
+    // live_sound_register's real "no write yet" default is 0x01
+    // (disabled - bit0=1), matching on_timer_tick()'s own fallback
+    // below. memset(0) above leaves it 0x00 instead, which
+    // abc80_sound_step_sample() decodes as bit0=0 (enabled) - a real,
+    // audible register configuration under the full SN76477 model,
+    // unlike the old VCO-only model which only recognized one specific
+    // register value as audible and treated everything else as silent.
+    // SDL's real-time audio callback thread can start reading this
+    // atomic before the first on_timer_tick() ever runs and sets it
+    // properly, so the zero-initialized default has to already be
+    // correct - found via a real, audible "note plays on launch" report.
+    atomic_store(&app.live_sound_register, 0x01);
     app.text_color = ABC80_GTK_DEFAULT_TEXT;
     app.canvas_bg_color = ABC80_GTK_DEFAULT_BG;
     app.border_color = ABC80_GTK_DEFAULT_BG; // matches canvas by default - see update_canvas_css()
