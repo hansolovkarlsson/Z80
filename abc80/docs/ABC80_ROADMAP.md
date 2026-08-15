@@ -2595,7 +2595,16 @@ where the real detail lives:
 ## Sources consulted
 
 - MAME mainline driver: `src/mame/luxor/abc80.cpp` (memory map, I/O map,
-  ROM filenames/CRC32 checksums, machine configuration).
+  ROM filenames/CRC32 checksums, machine configuration), fetched from
+  <https://raw.githubusercontent.com/mamedev/mame/master/src/mame/luxor/abc80.cpp>.
+- MAME's `SN76477` sound device: `src/devices/sound/sn76477.cpp`/`.h`
+  (per-sample RC-integrator formulas for the VCO/SLF/noise/one-shot/
+  attack-decay subsystems, and the measured voltage-threshold constants
+  they're built on), fetched from
+  <https://raw.githubusercontent.com/mamedev/mame/master/src/devices/sound/sn76477.cpp>
+  and the equivalent `.h` path — used to derive the real SLF/noise/
+  one-shot/envelope timing values in `ABC80_REFERENCE.md`'s Sound
+  section beyond the VCO's own (previously the only one grounded).
 - *Mikrodatorns ABC* (Gunnar Markesjö) — block diagrams and partial circuit
   schematics covering most of the machine; full text at
   <https://archive.org/stream/microdatorns_abc/microdatorns_abc_djvu.txt>.

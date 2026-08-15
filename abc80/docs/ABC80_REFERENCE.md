@@ -428,6 +428,53 @@ simulation of four interacting RC-timed subsystems — out of scope for what
 this project's own roadmap treats as its lowest-priority, purely cosmetic
 milestone.
 
+**Full board component values, and the real timing they produce** —
+pulled directly from MAME's own `src/mame/luxor/abc80.cpp` machine_config
+(fetched from `mamedev/mame` on GitHub) and hand-derived using
+`src/devices/sound/sn76477.cpp`'s own documented charge-rate formulas
+and measured voltage-threshold constants (`ONE_SHOT_CAP_VOLTAGE_RANGE`,
+`SLF_CAP_VOLTAGE_MIN/MAX`, `NOISE_CAP_VOLTAGE_RANGE`,
+`AD_CAP_VOLTAGE_RANGE`, etc. — the same per-subsystem RC-integrator
+formulas the VCO's own 640Hz figure above was derived from). VCO's own
+figure recomputed here too, as a sanity check on unit handling before
+trusting the rest: came out to exactly 640.00Hz, matching):
+
+```
+m_csg->set_noise_params(RES_K(47), RES_K(330), CAP_P(390));
+m_csg->set_decay_res(RES_K(47));
+m_csg->set_attack_params(CAP_U(10), RES_K(2.2));
+m_csg->set_amp_res(RES_K(33));
+m_csg->set_feedback_res(RES_K(10));
+m_csg->set_vco_params(0, CAP_N(10), RES_K(100));
+m_csg->set_pitch_voltage(0);
+m_csg->set_slf_params(CAP_U(1), RES_K(220));
+m_csg->set_oneshot_params(CAP_U(0.1), RES_K(330));
+```
+
+| Subsystem | Board R/C | Derived real value |
+|---|---|---|
+| VCO | R=100kΩ, C=10nF | 640.00 Hz (already known — recomputed as a cross-check) |
+| SLF (super low frequency oscillator) | R=220kΩ, C=1µF | ~3.98 Hz triangle wave (130.8ms rise / 120.4ms fall — asymmetric, not a symmetric triangle) |
+| Noise generator clock | R=47kΩ | ~24,888 Hz (the underlying LFSR clock rate feeding the noise filter below, not the audible noise "color" by itself) |
+| Noise filter | R=330kΩ, C=390pF | charge/discharge ~145,000 V/s — fast relative to the 24.9kHz noise clock, so the filter passes most of that clock's variation through rather than smoothing it heavily |
+| One-shot pulse | R=330kΩ, C=0.1µF | ~28.56 ms (envelope_mode==1 — a short, single percussive envelope per trigger, not continuous) |
+| Attack/decay envelope | attack R=2.2kΩ, decay R=47kΩ, shared C=10µF | attack ~22.0ms, decay ~470.0ms (envelope_mode==3, VCO-with-Alternating-Polarity — a fast-rising, slow-fading envelope shape, not symmetric) |
+
+Confirms the SLF/VCO-sweep ("warble/siren"), noise, one-shot, and
+alternating-polarity-envelope modes are all real, physically-grounded,
+implementable subsystems on *this* board specifically — not previously
+known because only the VCO's own R/C values had been pulled from the
+driver before now. Implementing them for real would mean porting
+`sn76477_device::sound_stream_update()`'s per-sample integrator loop
+(each subsystem is an independent RC charge/discharge state machine
+against fixed voltage thresholds — the SLF's own cap voltage drives the
+VCO's own charge ceiling when VCO mode is swept, the one real coupling
+between subsystems) into this project's own `sound.c`, following the
+same incremental-phase-per-sample pattern `abc80_sound_live_sample()`
+already established for the VCO-only case rather than `sound_stream_update()`'s batch-of-N-samples-per-call shape. Not yet
+implemented — this is grounding for that future work, not the work
+itself.
+
 ## BASIC error codes
 
 Extracted directly from a real, dumped ABC80 system disk
