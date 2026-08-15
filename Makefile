@@ -104,12 +104,14 @@ GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 # Links the shared core plus the ABC80 modules abc80/gtk/src/main.c
 # itself needs (video_timing.o/chargen.o for pixel decode, keyboard.o/
 # disk.o/step.o for the shared CPU step, sound.o for both abc80_step()'s
-# signature and the live-audio sample generator) - no render.o/charset.o,
-# since this target has its own Cairo renderer instead of render.c's
-# terminal-glyph one.
+# signature and the live-audio sample generator, charset.o for the
+# TEXT-mode character decode the plain-text .bas Save/Load path reuses
+# from render.c's own already-verified table) - no render.o, since this
+# target has its own Cairo renderer instead of render.c's terminal-glyph
+# one.
 ABC80_GTK_SRC_DIR := abc80/gtk/src
 ABC80_GTK_SRCS := $(wildcard $(ABC80_GTK_SRC_DIR)/*.c)
-ABC80_GTK_OBJS := $(ABC80_GTK_SRCS:.c=.o) $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/chargen.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/disk.o $(ABC80_SRC_DIR)/step.o $(ABC80_SRC_DIR)/sound.o $(ABC80_SRC_DIR)/cassette.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC80_GTK_OBJS := $(ABC80_GTK_SRCS:.c=.o) $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/chargen.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/disk.o $(ABC80_SRC_DIR)/step.o $(ABC80_SRC_DIR)/sound.o $(ABC80_SRC_DIR)/cassette.o $(ABC80_SRC_DIR)/charset.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
 ABC80_GTK_TARGET := $(BIN_DIR)/abc80-gtk
 ABC80_GTK_PKGS := gtk4 sdl2
 ABC80_GTK_CFLAGS := $(shell pkg-config --cflags $(ABC80_GTK_PKGS) 2>/dev/null)

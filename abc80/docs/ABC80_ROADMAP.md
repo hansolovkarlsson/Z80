@@ -2363,7 +2363,87 @@ correct pitch is the user's own hands-on job, the same honest split
 already used for every perceptual (visual) change in this milestone,
 just audio instead of video this time.
 
-With this, Milestone 11 has no remaining open items.
+With this, Milestone 11 had no remaining open items - the sub-step below
+is a genuine new feature added afterward, not a gap being closed.
+
+### Sub-step: plain-text `.bas` Save/Load, alongside tokenized `.bac`
+
+User-requested: the File menu's Save/Load Program only handled `.bac`
+(BASIC's own tokenized/compressed format); real ABC80 BASIC's own `LIST
+filename` also saves *uncompressed* plain text
+(`ABC80_BASIC_REFERENCE.md`), which the user wanted supported too. Both
+dialogs now offer `.bac`/`.bas` as `GtkFileFilter` choices (confirmed
+with the user: one menu item each, extension picks the format, over
+separate BAC/BAS menu entries) - whichever extension is chosen/typed
+picks the format, `.bac` remaining the default for a bare filename.
+
+**Why this needed real design work, not just a second file-format
+branch**: `.bac` works by copying BASIC's own tokenized `[BOFA, EOFA)`
+bytes verbatim - no token decoding needed at all. `.bas` is a genuinely
+different problem: those bytes are opaque single-byte-tokenized
+keywords, not ASCII, so producing real source text means either
+reverse-engineering the full token table or getting the real ROM to do
+the detokenization - the same "let the real ROM/DOS do the work at the
+I/O boundary" principle this project has used successfully for SAVE/
+LOAD, the disk bypass, and BDOS/BIOS interception throughout. Scoped via
+a written plan first (reusing `~/.claude/plans/mellow-cooking-parrot.md`
+again), grounded in two facts confirmed via direct execution before any
+code was written, not assumed:
+- `LIST n-n` (a range with identical start/end) lists exactly one line -
+  confirmed against a real 4-line typed program in
+  `bin/abc80 --interactive`. This is what makes per-line listing
+  scroll-proof regardless of program length, unlike a bare `LIST`
+  (which the ROM does clear the screen for first, but then scrolls
+  through normally for a long program, losing earlier lines from view).
+- `PRINT CHR$(12)\rLIST n-n\r` lands the command's echo and the listed
+  line's own text on fixed, repeatable video RAM rows (3 and 4,
+  0-indexed) every time, confirmed against three different line numbers
+  in sequence via a programmatic frame-by-frame parse of the CLI's own
+  terminal output, not eyeballed.
+
+**Implementation** (`abc80/gtk/src/main.c`): `extract_line_numbers()`
+walks `[BOFA, EOFA)` directly - the tokenized-line framing
+(`[length byte][line number, little-endian][...tokens...][0x0D]`, length
+including itself) was already documented from Milestone 4's own
+investigation, not new reverse-engineering, but the walk itself was
+still verified byte-by-byte against a real quicksave's raw bytes (a
+4-line test program, hand-decoded offset by offset) before being
+trusted. `build_bas_text()` drives `LIST n-n` per extracted line number
+via `inject_line()` (the same `abc80_keyboard_press()`/
+`abc80_keyboard_ready_for_next()` pair `on_key_pressed()` and the
+stdin-scripting path already use, pumped synchronously via `abc80_step()`
+rather than paced by `on_timer_tick()`'s real-time loop - a one-shot
+bounded batch, the same style `--quickload`'s own trigger already works
+within) and reads the result back via `capture_row_text()`, using the
+identical, already-verified `abc80_charset_codepoint()` decode
+`render.c`'s own `abc80_render_frame()` uses for TEXT mode - real UTF-8
+output for ABC80's Swedish-alphabet substitutions (Å/Ä/Ö/etc.), not just
+ASCII. `load_bas_text()` reverses this the low-risk way: no RAM-walking
+or video capture needed, just re-typing each line (UTF-8-decoded back to
+the correct ABC80 character byte via a small reverse table) through the
+same real keyboard path a human retyping a printed listing on real
+hardware would use - there's no ROM routine that ingests raw text as a
+data blob, so this *is* the real mechanism.
+
+**Verified via a real, comprehensive headless test** (temporarily added
+to `main()` behind an env var, removed after confirming - none of
+`inject_line()`/`build_bas_text()`/`load_bas_text()` touch any GTK
+widget, only `AppState.cpu`/`.ram`/keyboard.c state, so this needed no
+actual window): a 4-line program typed in, saved as text, reloaded after
+`NEW`, and re-saved again produced byte-identical output; the reloaded
+program was separately confirmed to actually `RUN` correctly (not just
+`LIST` identically - real executed output, not just matching source
+text); and a line containing Swedish Å/Ä/Ö round-tripped correctly
+through real UTF-8 encode/decode. `make abc80-gtk`/`make test` both
+clean; the usual non-visual smoke test (no `Gtk-CRITICAL`/
+`GLib-CRITICAL` output, clean `SIGTERM` exit) unaffected.
+
+**Known, stated limitation, not silently mishandled**: a source line
+wider than 40 columns would wrap onto a second video row this doesn't
+capture. Real menu-click UX (does the save feel responsive for a
+reasonably-sized program? does the picked format/extension behave as
+expected in the file dialog?) needs the user's own hands-on look, the
+same honest split as every other GTK-input change this session.
 
 ## Memory map (grounded, not guessed)
 

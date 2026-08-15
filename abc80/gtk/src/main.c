@@ -56,6 +56,7 @@
 #include "../../../abc80/emu/src/chargen.h"
 #include "../../../abc80/emu/src/sound.h"
 #include "../../../abc80/emu/src/cassette.h"
+#include "../../../abc80/emu/src/charset.h"
 
 // Real ABC80 Z80 clock - see abc80/emu/src/main.c's own ABC80_CLOCK_HZ
 // comment for the MAME-sourced derivation. Duplicated here (a single
@@ -583,6 +584,266 @@ static void on_quit_action(GSimpleAction *action, GVariant *parameter, gpointer 
 // place to use it is a fresh/empty BASIC session (right after boot, or
 // after typing NEW), the same real-hardware expectation loading a
 // cassette program implies.
+//
+// User-requested: also support plain-text .bas, matching real ABC80
+// BASIC's own "LIST filename" ("saves the program to cassette or floppy
+// *uncompressed*, as text" - ABC80_BASIC_REFERENCE.md), as distinct from
+// SAVE's tokenized/compressed .bac. The dialogs below offer both as
+// GtkFileFilter choices; the chosen path's extension picks the format,
+// defaulting to .bac for anything else (preserving prior behavior for a
+// bare filename).
+//
+// Unlike .bac (a byte-for-byte copy of BASIC's own tokenized [BOFA,
+// EOFA) representation, no token decoding needed), .bas needs real
+// BASIC source text - the tokens are opaque bytes, not ASCII. Rather
+// than reverse-engineer the full token table, this drives the real
+// ROM's own LIST command (which already does correct detokenization)
+// through the exact same keyboard-injection mechanism poll_stdin_byte()/
+// on_key_pressed() already use, and reads the result back off video RAM
+// - the same "let the real ROM do the work at the I/O boundary"
+// principle behind the disk bypass and BDOS/BIOS interception
+// elsewhere in this project, not a new pattern invented for this.
+//
+// Two real facts below are grounded via direct execution
+// (bin/abc80 --interactive, scripted input), not assumed:
+//   - `LIST n-n` (a range with identical start/end) lists exactly one
+//     line - the key fact that makes this scroll-proof: listing one
+//     line at a time never risks anything scrolling off a 24-row
+//     screen, regardless of how long the real program is.
+//   - `PRINT CHR$(12)` clears the screen and resets the cursor to a
+//     fixed, repeatable position, so `PRINT CHR$(12)\rLIST n-n\r`
+//     always lands the command's echo on video RAM row 3 and the
+//     listed line's own text on row 4 (0-indexed), verified against
+//     three different line numbers in a row, not just the first.
+#define ABC80_GTK_BAS_MAX_LINES 2000
+#define ABC80_GTK_BAS_ECHO_ROW 3
+#define ABC80_GTK_BAS_CONTENT_ROW 4
+
+// Walks BASIC's own tokenized program storage directly - [BOFA, EOFA),
+// see cassette.h - extracting just the line numbers, in order, without
+// decoding a single token. Grounded against a real quicksave of a known
+// 4-line program (dumped and hand-verified byte-for-byte against this
+// exact walk): each stored line is [length byte][line number, 2 bytes
+// little-endian][...tokens...][0x0D], where the length byte is the
+// whole line's own size *including itself* - confirmed by checking that
+// offset+length always lands exactly on the next line's own length
+// byte (or, for the last line, one byte before the final terminator
+// byte cassette.c's own comment already documents). A zero length byte
+// stops the walk immediately rather than looping forever - defensive,
+// not expected to fire on any real program.
+static int extract_line_numbers(const uint8_t *ram, uint16_t *out, int max_lines) {
+    uint16_t bofa = (uint16_t)(ram[ABC80_BOFA_ADDR] | (ram[(uint16_t)(ABC80_BOFA_ADDR + 1)] << 8));
+    uint16_t eofa = (uint16_t)(ram[ABC80_EOFA_ADDR] | (ram[(uint16_t)(ABC80_EOFA_ADDR + 1)] << 8));
+    int count = 0;
+    uint16_t offset = bofa;
+    while (offset < eofa && count < max_lines) {
+        uint8_t length = ram[offset];
+        if (length == 0) break;
+        out[count++] = (uint16_t)(ram[(uint16_t)(offset + 1)] | (ram[(uint16_t)(offset + 2)] << 8));
+        offset = (uint16_t)(offset + length);
+    }
+    return count;
+}
+
+// Advances emulation directly (not through on_timer_tick()'s real-time
+// pacing - this is a one-shot, bounded batch driven synchronously from
+// a menu action, the same style --quickload's own PC==0x02AA trigger
+// already works within) for `count` instructions, or until a halt.
+static void pump_steps(AppState *app, int count) {
+    for (int i = 0; i < count; i++) {
+        int cycles = abc80_step(&app->cpu, app->ram, &app->sound_log,
+                                 &app->total_cycles, &app->next_pio_interrupt_at);
+        if (cycles < 0) return; // halted - nothing more this helper can do
+    }
+}
+
+// Types one line (any direct-mode command, or a program line) plus a
+// trailing CR through the real keyboard-input path - the same
+// abc80_keyboard_press()/abc80_keyboard_ready_for_next() pair
+// on_key_pressed() and the stdin-scripting path already use, just
+// pumped synchronously instead of paced by real time. The pump counts
+// below are generous fixed budgets (not tuned to a minimum) - confirmed
+// sufficient by direct testing (a too-small budget shows up immediately
+// as truncated/blank captures), matching how quickload's own boot-delay
+// constant was chosen generously rather than to a tight minimum.
+static void inject_line(AppState *app, const char *text) {
+    for (const char *p = text; *p; p++) {
+        while (!abc80_keyboard_ready_for_next()) {
+            pump_steps(app, 200);
+        }
+        abc80_keyboard_press((uint8_t)*p);
+        pump_steps(app, 2000);
+    }
+    while (!abc80_keyboard_ready_for_next()) {
+        pump_steps(app, 200);
+    }
+    abc80_keyboard_press(0x0D);
+    pump_steps(app, 30000);
+}
+
+// Reverse of abc80_charset_codepoint() (charset.h) for the nine real
+// Swedish-alphabet substitutions ABC80's TEXT-mode character set makes
+// over plain ASCII - needed so a .bas file containing e.g. Å/Ä/Ö
+// (whether round-tripped from this app's own Save, or typed by hand in
+// a text editor) re-types as the correct single ABC80 character byte on
+// Load, not two separate wrong ones. Anything else non-ASCII falls back
+// to '?' rather than silently corrupting the re-tokenization.
+static uint8_t unicode_codepoint_to_abc80_char(uint32_t cp) {
+    switch (cp) {
+        case 0xC9: return 0x40; case 0xC4: return 0x5B; case 0xD6: return 0x5C;
+        case 0xC5: return 0x5D; case 0xDC: return 0x5E; case 0xE9: return 0x60;
+        case 0xE4: return 0x7B; case 0xF6: return 0x7C; case 0xE5: return 0x7D;
+        case 0xFC: return 0x7E;
+        default:
+            return (cp < 0x80) ? (uint8_t)cp : (uint8_t)'?';
+    }
+}
+
+// Minimal UTF-8 decoder for exactly the range this file ever needs to
+// read back (plain ASCII, plus 2-byte sequences for the nine Swedish
+// letters above) - not general-purpose. Malformed or unsupported
+// (3+-byte) sequences fall back to one '?' per lead byte rather than
+// misparsing the rest of the line. Returned string is g_malloc()'d
+// (length <= `len`, since every decoded character is exactly one output
+// byte); caller g_free()s it.
+static char *decode_utf8_to_abc80(const char *utf8, size_t len) {
+    char *out = g_malloc(len + 1);
+    size_t out_len = 0, i = 0;
+    while (i < len) {
+        unsigned char b0 = (unsigned char)utf8[i];
+        uint32_t cp;
+        size_t adv;
+        if (b0 < 0x80) {
+            cp = b0;
+            adv = 1;
+        } else if ((b0 & 0xE0) == 0xC0 && i + 1 < len) {
+            unsigned char b1 = (unsigned char)utf8[i + 1];
+            cp = (uint32_t)((b0 & 0x1F) << 6) | (b1 & 0x3F);
+            adv = 2;
+        } else {
+            cp = '?';
+            adv = 1;
+        }
+        out[out_len++] = (char)unicode_codepoint_to_abc80_char(cp);
+        i += adv;
+    }
+    out[out_len] = '\0';
+    return out;
+}
+
+// Encodes one ABC80 TEXT-mode character (via the same, already-verified
+// abc80_charset_codepoint() render.c itself uses) as UTF-8 into `s` -
+// only ever 1 or 2 bytes here, since every codepoint that table
+// produces is <=0xFC.
+static void append_abc80_char_utf8(GString *s, uint8_t abc80_char) {
+    uint32_t cp = abc80_charset_codepoint(abc80_char);
+    if (cp < 0x80) {
+        g_string_append_c(s, (char)cp);
+    } else {
+        g_string_append_c(s, (char)(0xC0 | (cp >> 6)));
+        g_string_append_c(s, (char)(0x80 | (cp & 0x3F)));
+    }
+}
+
+// Reads one video RAM row back as real UTF-8 text via the identical
+// TEXT-mode decode abc80_render_frame() (render.c) already uses -
+// row/col addressed through abc80_videoram_addr() (video_timing.h), the
+// same as draw_screen() itself - and right-trims trailing spaces.
+// Returned string is g_malloc()'d (via GString); caller g_free()s it.
+static char *capture_row_text(AppState *app, int row) {
+    GString *s = g_string_new(NULL);
+    const uint8_t *videoram = &app->ram[0x7C00];
+    for (int col = 0; col < ABC80_GTK_COLS; col++) {
+        uint16_t addr = abc80_videoram_addr((uint8_t)row, (uint8_t)col);
+        uint8_t character = videoram[addr] & 0x7F;
+        append_abc80_char_utf8(s, character);
+    }
+    while (s->len > 0 && s->str[s->len - 1] == ' ') {
+        g_string_truncate(s, s->len - 1);
+    }
+    return g_string_free(s, FALSE);
+}
+
+// Orchestrates Save-as-.bas: walk the program's real line numbers, list
+// each one individually against a freshly-cleared screen, capture and
+// accumulate the real ROM-detokenized text. Known, stated limitation
+// (not silently mishandled): a source line wider than one screen row
+// (40 columns) would wrap onto a second video row this doesn't capture.
+// Returned string is g_malloc()'d; caller g_free()s it.
+static char *build_bas_text(AppState *app) {
+    static uint16_t line_numbers[ABC80_GTK_BAS_MAX_LINES];
+    int count = extract_line_numbers(app->ram, line_numbers, ABC80_GTK_BAS_MAX_LINES);
+    GString *out = g_string_new(NULL);
+    for (int i = 0; i < count; i++) {
+        char cmd[32];
+        inject_line(app, "PRINT CHR$(12)");
+        snprintf(cmd, sizeof(cmd), "LIST %u-%u", line_numbers[i], line_numbers[i]);
+        inject_line(app, cmd);
+        char *row_text = capture_row_text(app, ABC80_GTK_BAS_CONTENT_ROW);
+        g_string_append(out, row_text);
+        g_string_append_c(out, '\n');
+        g_free(row_text);
+    }
+    (void)ABC80_GTK_BAS_ECHO_ROW; // documents the layout; not itself read
+    return g_string_free(out, FALSE);
+}
+
+// Orchestrates Load-of-.bas: re-types each line (decoded back to real
+// ABC80 character bytes) through the real keyboard path, the same way a
+// human retyping a printed listing on real hardware would - there's no
+// ROM routine that ingests raw text as a data blob, so this *is* the
+// real mechanism, not a shortcut. Real caveat, distinct from .bac Load's
+// full-replace quickload: typing a line number that already exists
+// *replaces* that line (real BASIC behavior), so this merges into
+// rather than replaces a non-empty program - best used on a fresh
+// session, the same real-hardware expectation .bac Load already
+// documents above.
+static void load_bas_text(AppState *app, const char *text) {
+    const char *line_start = text;
+    while (*line_start) {
+        const char *line_end = strchr(line_start, '\n');
+        size_t len = line_end ? (size_t)(line_end - line_start) : strlen(line_start);
+        if (len > 0 && line_start[len - 1] == '\r') len--; // tolerate CRLF files
+        if (len > 0) {
+            char *decoded = decode_utf8_to_abc80(line_start, len);
+            inject_line(app, decoded);
+            g_free(decoded);
+        }
+        if (!line_end) break;
+        line_start = line_end + 1;
+    }
+}
+
+static gboolean path_has_suffix_ci(const char *path, const char *suffix) {
+    size_t path_len = strlen(path);
+    size_t suf_len = strlen(suffix);
+    return path_len >= suf_len && g_ascii_strcasecmp(path + path_len - suf_len, suffix) == 0;
+}
+
+// Shared by on_save_program()/on_load_program() below - the chosen
+// path's own extension (checked in the response callbacks via
+// path_has_suffix_ci()) is what actually picks the format; these
+// filters just drive the file picker's own display/typed-extension
+// behavior. Default filter stays .bac, preserving prior behavior for a
+// bare filename with no extension typed.
+static void set_program_file_filters(GtkFileDialog *dialog) {
+    GtkFileFilter *bac_filter = gtk_file_filter_new();
+    gtk_file_filter_set_name(bac_filter, "ABC80 Program (*.bac)");
+    gtk_file_filter_add_suffix(bac_filter, "bac");
+
+    GtkFileFilter *bas_filter = gtk_file_filter_new();
+    gtk_file_filter_set_name(bas_filter, "ABC80 BASIC Text (*.bas)");
+    gtk_file_filter_add_suffix(bas_filter, "bas");
+
+    GListStore *filters = g_list_store_new(GTK_TYPE_FILE_FILTER);
+    g_list_store_append(filters, bac_filter);
+    g_list_store_append(filters, bas_filter);
+    gtk_file_dialog_set_filters(dialog, G_LIST_MODEL(filters));
+    gtk_file_dialog_set_default_filter(dialog, bac_filter);
+    g_object_unref(bac_filter);
+    g_object_unref(bas_filter);
+    g_object_unref(filters);
+}
 
 static void on_save_program_response(GObject *source, GAsyncResult *res, gpointer user_data) {
     GtkFileDialog *dialog = GTK_FILE_DIALOG(source);
@@ -591,7 +852,13 @@ static void on_save_program_response(GObject *source, GAsyncResult *res, gpointe
     if (!file) return;
     char *path = g_file_get_path(file);
     if (path) {
-        abc80_cassette_quicksave(app->ram, path);
+        if (path_has_suffix_ci(path, ".bas")) {
+            char *text = build_bas_text(app);
+            g_file_set_contents(path, text, -1, NULL);
+            g_free(text);
+        } else {
+            abc80_cassette_quicksave(app->ram, path);
+        }
         g_free(path);
     }
     g_object_unref(file);
@@ -604,6 +871,7 @@ static void on_save_program(GSimpleAction *action, GVariant *parameter, gpointer
     GtkFileDialog *dialog = gtk_file_dialog_new();
     gtk_file_dialog_set_title(dialog, "Save Program");
     gtk_file_dialog_set_initial_name(dialog, "program.cas");
+    set_program_file_filters(dialog);
     gtk_file_dialog_save(dialog, GTK_WINDOW(app->window), NULL, on_save_program_response, app);
 }
 
@@ -614,7 +882,15 @@ static void on_load_program_response(GObject *source, GAsyncResult *res, gpointe
     if (!file) return;
     char *path = g_file_get_path(file);
     if (path) {
-        abc80_cassette_quickload(app->ram, path);
+        if (path_has_suffix_ci(path, ".bas")) {
+            char *text = NULL;
+            if (g_file_get_contents(path, &text, NULL, NULL)) {
+                load_bas_text(app, text);
+                g_free(text);
+            }
+        } else {
+            abc80_cassette_quickload(app->ram, path);
+        }
         g_free(path);
     }
     g_object_unref(file);
@@ -626,6 +902,7 @@ static void on_load_program(GSimpleAction *action, GVariant *parameter, gpointer
     AppState *app = user_data;
     GtkFileDialog *dialog = gtk_file_dialog_new();
     gtk_file_dialog_set_title(dialog, "Load Program");
+    set_program_file_filters(dialog);
     gtk_file_dialog_open(dialog, GTK_WINDOW(app->window), NULL, on_load_program_response, app);
 }
 

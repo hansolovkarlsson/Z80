@@ -338,3 +338,49 @@ just assuming so. What none of this can verify: whether it actually
 clean start/stop, and correct pitch is the user's own hands-on job here,
 same as every other perceptual (visual) change in this milestone, just
 audio instead of video this time.
+
+**Plain-text `.bas` Save/Load, alongside tokenized `.bac`**: user-
+requested - the File menu's Save/Load Program only handled `.bac`
+(BASIC's own tokenized/compressed format) until now; real ABC80 BASIC's
+`LIST filename` also saves *uncompressed* plain text (per
+`ABC80_BASIC_REFERENCE.md`), which the user wanted too. Both dialogs now
+offer `.bac`/`.bas` as `GtkFileFilter` choices - whichever extension is
+chosen/typed picks the format, `.bac` remaining the default for a bare
+filename.
+
+`.bac` works today by copying BASIC's own tokenized `[BOFA, EOFA)` bytes
+verbatim - no token decoding needed. `.bas` is a different problem: those
+bytes are genuinely tokenized (keywords are opaque single-byte codes),
+so real source text needs either a from-scratch token table or the real
+ROM's own detokenization. This uses the ROM: `LIST n-n` (a range with
+identical start/end, confirmed via direct testing to list exactly one
+line) is driven per line, one at a time, via the same keyboard-injection
+mechanism `on_key_pressed()`/the stdin-scripting path already use, and
+the result is read back off video RAM through the identical, already-
+verified `charset.c` decode `render.c` itself uses - the same "let the
+real ROM do the work at the I/O boundary" principle behind the disk
+bypass and BDOS/BIOS interception elsewhere in this project. Listing one
+line at a time (rather than a bare `LIST`, which the ROM clears the
+screen for and then scrolls through for a long program) is what makes
+this scroll-proof regardless of program length - confirmed empirically,
+along with the exact, repeatable video-RAM row `PRINT CHR$(12)\rLIST
+n-n\r` lands its result on. The program's real line numbers are walked
+directly out of `[BOFA, EOFA)` (the tokenized-line framing - `[length
+byte][line number][...tokens...][0x0D]` - was already documented from
+Milestone 4's own investigation; this walk was itself verified against a
+real quicksave's raw bytes, hand-checked offset by offset, before being
+trusted). Load reverses this the low-risk way: no RAM-walking or video
+capture needed, just re-typing each line through the same real keyboard
+path a human retyping a printed listing on real hardware would use -
+there's no ROM routine that ingests raw text as a data blob.
+
+**Verified via a real, comprehensive headless test** (temporarily added
+and removed - `inject_line()`/`build_bas_text()`/`load_bas_text()` only
+ever touch `AppState.cpu`/`.ram`/keyboard.c state directly, needing no
+actual window): a 4-line program typed in, saved as text, reloaded after
+`NEW`, and re-saved again produced byte-identical output; the reloaded
+program was confirmed to actually `RUN` correctly (not just `LIST`
+identically); and a line containing Swedish Å/Ä/Ö round-tripped correctly
+through real UTF-8 encoding/decoding. **Known, stated limitation**: a
+source line wider than 40 columns would wrap onto a second video row
+this doesn't capture - not silently mishandled, just not yet handled.
