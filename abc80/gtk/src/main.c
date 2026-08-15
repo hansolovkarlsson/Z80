@@ -680,6 +680,73 @@ static void on_border_color(GSimpleAction *action, GVariant *parameter, gpointer
     gtk_color_dialog_choose_rgba(dialog, GTK_WINDOW(app->window), &app->border_color, NULL, on_border_color_response, app);
 }
 
+// Save Preferences (win.save-preferences, Colors menu) - user-requested:
+// persist the three Colors-menu settings so they don't reset to the
+// defaults (or whatever --amber seeded) on the next launch. A GKeyFile
+// at $XDG_CONFIG_HOME/abc80-gtk/prefs.ini (g_get_user_config_dir()'s own
+// cross-platform resolution, not a hand-rolled macOS-specific path) -
+// GdkRGBA's own gdk_rgba_to_string()/gdk_rgba_parse() round-trip cleanly
+// through a single string value per color, so no custom serialization
+// format is needed. There's no separate "Load Preferences" menu item -
+// load_preferences() (called once from main(), before --amber can
+// override it) runs automatically at every launch, which is the whole
+// point of something being a *preference* rather than a one-off
+// --quickload-style action the user repeats by hand each time.
+static char *prefs_file_path(void) {
+    return g_build_filename(g_get_user_config_dir(), "abc80-gtk", "prefs.ini", NULL);
+}
+
+static void load_preferences(AppState *app) {
+    char *path = prefs_file_path();
+    GKeyFile *kf = g_key_file_new();
+    if (g_key_file_load_from_file(kf, path, G_KEY_FILE_NONE, NULL)) {
+        char *text_str = g_key_file_get_string(kf, "Colors", "TextColor", NULL);
+        char *bg_str = g_key_file_get_string(kf, "Colors", "BackgroundColor", NULL);
+        char *border_str = g_key_file_get_string(kf, "Colors", "BorderColor", NULL);
+        GdkRGBA rgba;
+        if (text_str && gdk_rgba_parse(&rgba, text_str)) app->text_color = rgba;
+        if (bg_str && gdk_rgba_parse(&rgba, bg_str)) app->canvas_bg_color = rgba;
+        if (border_str && gdk_rgba_parse(&rgba, border_str)) app->border_color = rgba;
+        g_free(text_str);
+        g_free(bg_str);
+        g_free(border_str);
+    }
+    g_key_file_free(kf);
+    g_free(path);
+}
+
+static void on_save_preferences(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+    (void)action;
+    (void)parameter;
+    AppState *app = user_data;
+
+    char *dir = g_build_filename(g_get_user_config_dir(), "abc80-gtk", NULL);
+    g_mkdir_with_parents(dir, 0755);
+    g_free(dir);
+
+    GKeyFile *kf = g_key_file_new();
+    char *text_str = gdk_rgba_to_string(&app->text_color);
+    char *bg_str = gdk_rgba_to_string(&app->canvas_bg_color);
+    char *border_str = gdk_rgba_to_string(&app->border_color);
+    g_key_file_set_string(kf, "Colors", "TextColor", text_str);
+    g_key_file_set_string(kf, "Colors", "BackgroundColor", bg_str);
+    g_key_file_set_string(kf, "Colors", "BorderColor", border_str);
+    g_free(text_str);
+    g_free(bg_str);
+    g_free(border_str);
+
+    char *path = prefs_file_path();
+    GError *error = NULL;
+    if (g_key_file_save_to_file(kf, path, &error)) {
+        printf("Saved preferences to '%s'\n", path);
+    } else {
+        fprintf(stderr, "Failed to save preferences to '%s': %s\n", path, error->message);
+        g_error_free(error);
+    }
+    g_free(path);
+    g_key_file_free(kf);
+}
+
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
     AppState *app = user_data;
 
@@ -703,6 +770,7 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
         {"text-color", on_text_color, NULL, NULL, NULL, {0}},
         {"background-color", on_background_color, NULL, NULL, NULL, {0}},
         {"border-color", on_border_color, NULL, NULL, NULL, {0}},
+        {"save-preferences", on_save_preferences, NULL, NULL, NULL, {0}},
     };
     g_action_map_add_action_entries(G_ACTION_MAP(window), win_actions, G_N_ELEMENTS(win_actions), app);
 
@@ -723,6 +791,10 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     g_menu_append(colors_menu, "Text Color…", "win.text-color");
     g_menu_append(colors_menu, "Canvas Background Color…", "win.background-color");
     g_menu_append(colors_menu, "Border Color…", "win.border-color");
+    GMenu *prefs_section = g_menu_new();
+    g_menu_append(prefs_section, "Save Preferences", "win.save-preferences");
+    g_menu_append_section(colors_menu, NULL, G_MENU_MODEL(prefs_section));
+    g_object_unref(prefs_section);
     GMenu *menubar_model = g_menu_new();
     g_menu_append_submenu(menubar_model, "File", G_MENU_MODEL(file_menu));
     g_menu_append_submenu(menubar_model, "Colors", G_MENU_MODEL(colors_menu));
@@ -873,9 +945,11 @@ int main(int argc, char *argv[]) {
     app.text_color = ABC80_GTK_DEFAULT_TEXT;
     app.canvas_bg_color = ABC80_GTK_DEFAULT_BG;
     app.border_color = ABC80_GTK_DEFAULT_BG; // matches canvas by default - see update_canvas_css()
+    load_preferences(&app); // overrides the three colors above if a saved prefs.ini exists
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--ram32k") == 0) app.ram32k_enabled = true;
+        // --amber wins over a saved preference too, as an explicit choice for this one launch.
         if (strcmp(argv[i], "--amber") == 0) app.text_color = ABC80_GTK_AMBER_TEXT;
     }
 

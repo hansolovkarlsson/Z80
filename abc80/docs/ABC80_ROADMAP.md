@@ -2287,6 +2287,33 @@ rendering, regardless of what color it's set to. Verified via clean
 compilation and the same non-visual smoke test as every other sub-step
 here; the actual visual fix needs the user's own hands-on look.
 
+### Sub-step: Save Preferences (persisting the Colors menu)
+
+User-requested: persist the three Colors-menu settings so they don't
+reset on the next launch. `Save Preferences`, a new item at the bottom
+of the Colors menu (in its own visually separated `GMenu` section),
+writes `text_color`/`canvas_bg_color`/`border_color` to a `GKeyFile` at
+`$XDG_CONFIG_HOME/abc80-gtk/prefs.ini` (`g_get_user_config_dir()`'s own
+cross-platform resolution - `$HOME/.config` when `$XDG_CONFIG_HOME`
+isn't set, on every platform GLib supports, not a hand-rolled
+macOS-specific path). Each color round-trips through a single string
+via `GdkRGBA`'s own `gdk_rgba_to_string()`/`gdk_rgba_parse()`, so no
+custom serialization format was needed.
+
+No separate "Load Preferences" menu item - `load_preferences()` runs
+automatically once at startup, before `--amber` can override it (so an
+explicit launch-time flag still wins over a saved preference), which is
+the actual point of something being a *preference* rather than a
+one-off action repeated by hand every launch. Verified via two
+non-visual smoke tests: a normal launch with no `prefs.ini` present
+(the common first-run case - the loader fails gracefully, defaults
+apply, no warnings) and a second launch against a hand-written
+`prefs.ini` in the real GKeyFile format (confirms the loader doesn't
+warn/crash on genuine input, cleaned up afterward rather than left for
+the user's next real launch). The actual Save Preferences menu click,
+and confirming picked colors really do return on the next launch, needs
+the user's own hands-on look.
+
 **Remaining open items**:
 - Live SN76477 audio, per this milestone's own earlier scoping decision
   - still out of scope.

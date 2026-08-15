@@ -268,3 +268,27 @@ scoping the CSS class to a new `canvas_wrapper` box holding *only*
 `drawing_area`, as `menu_bar`'s sibling rather than its cousin -
 `border_color` now can't reach anywhere near the menu bar's own
 rendering, regardless of what color it's set to.
+
+**Save Preferences**: user-requested - persist the three Colors-menu
+settings so they don't reset on the next launch. A new `Save
+Preferences` item at the bottom of the Colors menu (in its own visually
+separated `GMenu` section) writes `text_color`/`canvas_bg_color`/
+`border_color` to a `GKeyFile` at `$XDG_CONFIG_HOME/abc80-gtk/prefs.ini`
+(`g_get_user_config_dir()`'s own cross-platform resolution - `$HOME/
+.config` when `$XDG_CONFIG_HOME` isn't set, on every platform GLib
+supports, not a hand-rolled macOS-specific path). Each color round-trips
+through a single string via `GdkRGBA`'s own `gdk_rgba_to_string()`/
+`gdk_rgba_parse()`, so no custom serialization format was needed.
+
+There's no separate "Load Preferences" menu item - `load_preferences()`
+runs automatically once at startup (before `--amber` can override it,
+so an explicit launch-time flag still wins over a saved preference),
+which is the actual point of something being a *preference* rather than
+a one-off action the user repeats by hand every launch. Verified via two
+non-visual smoke tests: a normal launch with no `prefs.ini` present
+(the common first-run case - `g_key_file_load_from_file()` fails
+gracefully, defaults apply, no warnings), and a second launch against a
+hand-written `prefs.ini` in the real GKeyFile format (confirms the
+loader itself doesn't warn/crash on genuine input) - the actual Save
+Preferences menu click, and confirming the picked colors really do come
+back on the next launch, needs the user's own hands-on look.
