@@ -2223,6 +2223,23 @@ Cmd-Q/S/O accelerators themselves need the user's own hands-on keyboard
 to confirm, the same as every other real GDK-input change in this
 milestone.
 
+### Sub-step: an invisible canvas margin
+
+Follow-up to the canvas margin above - user-reported: the margin showed
+the default GTK theme background, a different color from the canvas's
+own black, so it read as a visible border around the "screen" rather
+than blending in. Fixed with a small `GtkCssProvider`
+(`.abc80-canvas-area { background-color: black; }`) applied to
+`layout_box`, the container `menu_bar`/`drawing_area` both sit in - both
+children are opaque and paint over their own allocated area regardless,
+so the CSS background only actually shows through in the margin area
+itself. Always black, not conditional on `--amber`, since
+`draw_screen()` never touches the background, only the foreground
+palette. Verified via clean compilation and the same non-visual smoke
+test as the prior sub-steps, run once in each palette (default and
+`--amber`) - the visual result itself needs the user's own hands-on
+look, same as every other real GDK-rendering change in this milestone.
+
 **Remaining open items**:
 - Live SN76477 audio, per this milestone's own earlier scoping decision
   - still out of scope.

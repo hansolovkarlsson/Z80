@@ -663,6 +663,24 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_box_append(GTK_BOX(layout_box), app->drawing_area);
     gtk_window_set_child(GTK_WINDOW(window), layout_box);
 
+    // User-requested: the margin around the canvas (above) showed
+    // through as the default GTK theme background - a different color
+    // from draw_screen()'s own black, so it read as a visible border
+    // rather than blending in. Painting layout_box's own background
+    // black makes the margin invisible against the canvas, since
+    // menu_bar and drawing_area (both opaque) paint over their own
+    // allocated areas regardless - only the margin (unclaimed by any
+    // child) shows layout_box's background at all. Always black, not
+    // conditional on --amber: draw_screen() only ever changes the
+    // foreground color for the amber palette, never the background.
+    GtkCssProvider *css_provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_string(css_provider, ".abc80-canvas-area { background-color: black; }");
+    gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+                                                GTK_STYLE_PROVIDER(css_provider),
+                                                GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(css_provider);
+    gtk_widget_add_css_class(layout_box, "abc80-canvas-area");
+
     GtkEventController *key_controller = gtk_event_controller_key_new();
     g_signal_connect(key_controller, "key-pressed", G_CALLBACK(on_key_pressed), app);
     gtk_widget_add_controller(window, key_controller);

@@ -160,7 +160,16 @@ crammed into its own frame. Fixed with a plain widget margin
 via `gtk_widget_set_margin_*()` - real empty space outside
 `draw_screen()`'s own `cairo_scale()`'d coordinate space, not part of
 the emulated picture at all, centered within the window
-(`gtk_widget_set_halign`/`valign(..., GTK_ALIGN_CENTER)`).
+(`gtk_widget_set_halign`/`valign(..., GTK_ALIGN_CENTER)`). Follow-up,
+also user-requested: that margin initially showed the default GTK theme
+background - a different color from the canvas's own black, so it read
+as a visible border rather than blending in. Fixed with a small
+`GtkCssProvider` (`.abc80-canvas-area { background-color: black; }`)
+applied to `layout_box`, the container `menu_bar`/`drawing_area` both sit
+in - both children are opaque and paint over their own allocated area
+regardless, so this only actually shows through in the margin itself.
+Always black, not conditional on `--amber`, since `draw_screen()` never
+changes the background, only the foreground palette.
 
 **A File menu**: `Save Program…`/`Load Program…`/`Take Screenshot…`, a
 real in-window `GtkPopoverMenuBar` built from a `GMenu` model (not
