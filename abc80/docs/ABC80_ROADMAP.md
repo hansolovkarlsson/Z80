@@ -1801,7 +1801,7 @@ corrupted variant. Full regression suite still passes; this only touches
 `poll_stdin_byte()`'s one call site, wrapping it rather than changing its
 own behavior.
 
-## Milestone 11: a real GTK window — done (audio deferred)
+## Milestone 11: a real GTK window — done
 
 **Goal**: run `bin/abc80` in its own window instead of a host terminal, as
 a real pixel framebuffer rather than routing through a terminal widget -
@@ -2314,9 +2314,56 @@ the user's next real launch). The actual Save Preferences menu click,
 and confirming picked colors really do return on the next launch, needs
 the user's own hands-on look.
 
-**Remaining open items**:
-- Live SN76477 audio, per this milestone's own earlier scoping decision
-  - still out of scope.
+### Sub-step: live audio, closing this milestone's last deferred item
+
+User asked, once the rest of the window was solid, whether it was time
+to add sound - the one item deliberately deferred since this milestone's
+own original scoping decision. Scoped first via a written plan (see
+`~/.claude/plans/mellow-cooking-parrot.md`, reused for this sub-step the
+same way it was for the original GTK-window scoping) since it's this
+app's first real architectural change: every feature so far ran
+entirely on GTK's own main-loop thread, and real-time audio needs its
+own callback thread. Added SDL2 (`sdl2`, confirmed available via
+Homebrew's `sdl2-compat`, an actively-maintained SDL2-API shim over
+SDL3) to `bin/abc80-gtk`'s own dependencies only, via the same
+`pkg-config`-derived `ABC80_GTK_CFLAGS`/`ABC80_GTK_LIBS` pattern already
+used for `gtk4` - `bin/abc80` stays SDL2-free, its own batch `--wav`
+flag unchanged.
+
+Plays the exact same one case `--wav` already models (Milestone 5): a
+steady 640Hz square-wave VCO tone whenever port `0x06` selects it,
+silence otherwise - no new modeled cases. `sound.c`'s previously
+file-private gating decode is now public
+(`abc80_sound_is_steady_vco_tone()`), and a new
+`abc80_sound_live_sample()` generates one sample via an incremental
+running phase (the standard real-time-audio technique to stay
+click-free across buffer boundaries) - `abc80_sound_render_wav()` itself
+was not touched or refactored to share this, zero regression risk to
+the already-working `--wav` path. The one new concurrency surface this
+introduces, deliberately kept as narrow as the plan called for: a
+single `_Atomic uint8_t` on `AppState` (`live_sound_register`), written
+once per timer tick by the main thread and read by SDL's own real-time
+audio callback - no queues, no locks.
+
+**Verified two different ways, honestly split**: the new
+`abc80_sound_live_sample()` math is checked the same rigorous way
+Milestone 5 already checks the batch renderer - a new `bin/abc80-sound-
+demo --live` mode generates the same silence→tone→silence sequence
+sample-by-sample through the live path, and zero-crossing frequency
+analysis measured **640.02Hz against the 640.00Hz prediction** (0.003%
+error, in the same range as the batch renderer's own 639.39Hz/639.95Hz
+measurements from Milestone 5), both silence segments confirmed at 0
+RMS. Real execution was also confirmed clean - launched, ran BASIC that
+actually executes `OUT 6,64`/`OUT 6,1` to toggle the tone live, no SDL
+error output, no crash, clean `SIGTERM` exit - proving `SDL_Init`/
+`SDL_OpenAudioDevice` genuinely coexist with GTK's main loop rather than
+just assuming so. What none of this can verify: whether it actually
+*sounds* right - confirming a real audible tone, clean start/stop, and
+correct pitch is the user's own hands-on job, the same honest split
+already used for every perceptual (visual) change in this milestone,
+just audio instead of video this time.
+
+With this, Milestone 11 has no remaining open items.
 
 ## Memory map (grounded, not guessed)
 

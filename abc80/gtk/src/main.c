@@ -14,10 +14,18 @@
 // Runs the CPU core in-process (unlike cpm/gtk/, which spawns a separate
 // child process) via a single GLib timer callback that runs a bounded
 // instruction batch each time it fires, then returns to GTK's own main
-// loop - single-threaded, no new locking/races in a codebase that's never
-// needed any (a real architectural choice made with the user before
-// writing this file - see the plan preserved at
+// loop - single-threaded, no locking/races in a codebase that had never
+// needed any at the time this was first written (a real architectural
+// choice made with the user - see the plan preserved at
 // ~/.claude/plans/mellow-cooking-parrot.md for the full reasoning).
+// Live SN76477 audio (audio_callback() below) is the one deliberate
+// exception, added later, scoped via the same plan file reused for that
+// sub-step: SDL2 runs its own real-time audio thread internally, handed
+// the current sound register through a single atomic byte
+// (AppState.live_sound_register) rather than a queue or lock - the
+// narrowest concurrency surface that could actually work for real-time
+// audio, not a reason to abandon the single-threaded design everywhere
+// else.
 //
 // Shares abc80_step() (step.h) with bin/abc80's own --interactive loop,
 // so the carefully-derived per-instruction logic (keyboard debounce,
@@ -34,9 +42,11 @@
 #include <unistd.h>
 #include <sys/select.h>
 #include <math.h>
+#include <stdatomic.h>
 
 #include <gtk/gtk.h>
 #include <glib-unix.h>
+#include <SDL2/SDL.h>
 
 #include "../../../z80core/z80.h"
 #include "../../../abc80/emu/src/step.h"
@@ -67,6 +77,15 @@
 // the same reason ABC80_CLOCK_HZ above is - a single constant, not logic,
 // and main.c has no header of its own to export it from.
 #define ABC80_BLINK_HZ 3.125
+
+// Matches abc80/emu/src/sound.c's own private WAV_SAMPLE_RATE exactly -
+// duplicated here (a single number, not logic) since sound.c doesn't
+// expose it, the same small-constant duplication already used for
+// ABC80_CLOCK_HZ/ABC80_BLINK_HZ above. Real-time audio wants a small
+// buffer for low latency without risking underruns on a real device;
+// 1024 sample frames at 44100Hz is ~23ms, a common, safe default.
+#define ABC80_GTK_AUDIO_SAMPLE_RATE 44100
+#define ABC80_GTK_AUDIO_BUFFER_SAMPLES 1024
 
 // Text/background/border are all independently user-choosable at
 // runtime now (the Colors menu, see activate() below), so these are
@@ -125,7 +144,7 @@ typedef struct {
     uint8_t ram[RAM_SIZE];
     uint8_t attr_rom[256];
     uint8_t chargen_rom[ABC80_CHARGEN_ROM_SIZE];
-    Abc80SoundLog sound_log; // required by abc80_step()'s signature; never rendered (Milestone 11's own audio-deferred decision)
+    Abc80SoundLog sound_log; // required by abc80_step()'s signature; drives live_sound_register below
     uint64_t total_cycles;
     uint64_t next_pio_interrupt_at;
     struct timespec run_start_time;
@@ -142,6 +161,18 @@ typedef struct {
     GtkWidget *window;
     GtkWidget *drawing_area;
     guint timer_source_id;
+    // Live audio (see audio_callback() below) - the only two fields in
+    // this struct ever touched from a thread other than GTK's own main
+    // one. live_sound_register is written once per timer tick (main
+    // thread) and read every audio buffer fill (SDL's own real-time
+    // audio thread) - a single atomic byte, deliberately not a queue or
+    // lock, per this milestone's own scoping decision to keep this
+    // app's first real concurrency surface as narrow as possible.
+    // live_sound_phase is the opposite: owned exclusively by the audio
+    // thread, never touched from the main thread at all.
+    _Atomic uint8_t live_sound_register;
+    double live_sound_phase;
+    SDL_AudioDeviceID audio_device;
 } AppState;
 
 // Mirrors abc80/emu/src/main.c's own abc80_bus_read_hook() exactly (same
@@ -365,6 +396,27 @@ static int poll_stdin_byte(void) {
     return -1;
 }
 
+// Runs on SDL's own real-time audio thread (started internally by
+// SDL_OpenAudioDevice() - see main() below), never on GTK's main thread.
+// Reads app->live_sound_register (the one value the main thread hands
+// off, atomically - see on_timer_tick()'s own comment) and fills the
+// buffer via abc80_sound_live_sample() (sound.h), which owns
+// app->live_sound_phase entirely - the main thread never touches it.
+// This function's own math (the incremental-phase square wave, gated by
+// abc80_sound_is_steady_vco_tone()) is verified independently via
+// bin/abc80-sound-demo --live, the same "prove it against known input"
+// discipline abc80_sound_render_wav() already had - not just assumed
+// correct because it compiles.
+static void audio_callback(void *userdata, Uint8 *stream, int len) {
+    AppState *app = userdata;
+    int16_t *samples = (int16_t *)stream;
+    int n = len / (int)sizeof(int16_t);
+    uint8_t reg = atomic_load(&app->live_sound_register);
+    for (int i = 0; i < n; i++) {
+        samples[i] = abc80_sound_live_sample(reg, &app->live_sound_phase, ABC80_GTK_AUDIO_SAMPLE_RATE);
+    }
+}
+
 static gboolean on_timer_tick(gpointer user_data) {
     AppState *app = user_data;
 
@@ -423,6 +475,16 @@ static gboolean on_timer_tick(gpointer user_data) {
         }
     }
 
+    // Hands the current SN76477 register byte off to the audio thread -
+    // once per tick (not per instruction; 5ms is far under any audio
+    // buffering latency), after the batch loop above so this always
+    // reflects the truly-current state. No changes needed to the shared
+    // step.c/abc80_sound_write() write path itself - this just reads
+    // what it already recorded. The 0x01 default (disabled) matches
+    // abc80_sound_render_wav()'s own default for an empty log.
+    atomic_store(&app->live_sound_register,
+                 app->sound_log.count > 0 ? app->sound_log.events[app->sound_log.count - 1].data : 0x01);
+
     if (elapsed_real - app->last_render_sec >= ABC80_RENDER_INTERVAL_SEC) {
         app->last_render_sec = elapsed_real;
         // Same real ABC80_BLINK_HZ-derived phase computation as
@@ -458,6 +520,11 @@ static void on_window_destroy(GtkWidget *window, gpointer user_data) {
     // loop with a real exit; this window instead runs until closed).
     if (app->quicksave_path) {
         abc80_cassette_quicksave(app->ram, app->quicksave_path);
+    }
+
+    if (app->audio_device != 0) {
+        SDL_CloseAudioDevice(app->audio_device);
+        app->audio_device = 0;
     }
 }
 
@@ -990,6 +1057,32 @@ int main(int argc, char *argv[]) {
     abc80_keyboard_init_port_aliases();
     abc80_sound_log_init(&app.sound_log);
     app.next_pio_interrupt_at = ABC80_PIO_INTERRUPT_PERIOD_TSTATES;
+
+    // Live audio (see audio_callback() above). SDL_INIT_AUDIO only -
+    // never SDL_INIT_VIDEO/a window - so there's no overlap with GTK's
+    // own Cocoa/X11/Wayland windowing, just SDL's own real-time audio
+    // thread running independently underneath GTK's main loop.
+    // allowed_changes=0 requests the exact format (mono/16-bit/44100Hz,
+    // matching sound.c's own WAV format) rather than risking SDL's own
+    // sample-rate/format conversion path.
+    if (SDL_Init(SDL_INIT_AUDIO) != 0) {
+        fprintf(stderr, "Warning: SDL_Init(SDL_INIT_AUDIO) failed: %s - continuing without audio\n", SDL_GetError());
+    } else {
+        SDL_AudioSpec want;
+        SDL_zero(want);
+        want.freq = ABC80_GTK_AUDIO_SAMPLE_RATE;
+        want.format = AUDIO_S16SYS;
+        want.channels = 1;
+        want.samples = ABC80_GTK_AUDIO_BUFFER_SAMPLES;
+        want.callback = audio_callback;
+        want.userdata = &app;
+        app.audio_device = SDL_OpenAudioDevice(NULL, 0, &want, NULL, 0);
+        if (app.audio_device == 0) {
+            fprintf(stderr, "Warning: SDL_OpenAudioDevice failed: %s - continuing without audio\n", SDL_GetError());
+        } else {
+            SDL_PauseAudioDevice(app.audio_device, 0);
+        }
+    }
 
     GtkApplication *gtk_app = gtk_application_new(NULL, G_APPLICATION_DEFAULT_FLAGS);
 

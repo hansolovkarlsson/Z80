@@ -636,14 +636,18 @@ launcher like `bin/z80-gtk` above, but a real Cairo pixel framebuffer:
 ABC80 has genuine bitmap GRAPHICS-mode graphics a terminal widget can't
 address, which `bin/abc80`'s own `--interactive` mode approximates with
 Unicode block characters (see `abc80/emu/src/render.c`'s own comment).
-Runs the CPU core in-process via a single-threaded `g_timeout_add()`
-batch loop rather than spawning a child process, sharing `abc80_step()`
+Runs the CPU core in-process via a `g_timeout_add()` batch loop rather
+than spawning a child process, sharing `abc80_step()`
 (`abc80/emu/src/step.h`) with `--interactive`'s own loop so the
-per-instruction logic isn't duplicated. Verified working via real
-screenshots: the ROM's own sign-on banner and genuine GRAPHICS-mode 2×3
-block-mosaic pixels both render correctly, real interactive keyboard
-input reaches BASIC, and `--quickload`/`--quicksave` round-trip
-byte-identically against the CLI's own — see `abc80/gtk/README.md` and
-`abc80/docs/ABC80_ROADMAP.md`'s Milestone 11 for the full write-up and
-what's still open (live audio, out of scope for this milestone).
+per-instruction logic isn't duplicated. Single-threaded except for one
+deliberately narrow exception: live SN76477 audio (SDL2) runs its own
+real-time callback thread, handed the current sound register via a
+single atomic byte rather than a queue or lock. Verified working via
+real screenshots: the ROM's own sign-on banner and genuine GRAPHICS-mode
+2×3 block-mosaic pixels both render correctly, real interactive keyboard
+input reaches BASIC, `--quickload`/`--quicksave` round-trip
+byte-identically against the CLI's own, and the live-audio tone's
+frequency is independently verified via zero-crossing analysis — see
+`abc80/gtk/README.md` and `abc80/docs/ABC80_ROADMAP.md`'s Milestone 11
+for the full write-up (that milestone now has no open items).
 

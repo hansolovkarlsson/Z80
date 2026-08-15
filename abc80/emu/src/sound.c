@@ -92,9 +92,15 @@ double abc80_sound_vco_freq_hz(void) {
     return 0.64 / (ABC80_SOUND_VCO_RES_OHMS * ABC80_SOUND_VCO_CAP_FARADS);
 }
 
+#define WAV_SAMPLE_RATE 44100
+#define WAV_AMPLITUDE 8000
+
 // Decodes whether `data` selects the one case this model synthesizes:
 // enabled, VCO-only mixer, Mixer-Only envelope, fixed (non-swept) pitch.
-static int is_steady_vco_tone(uint8_t data) {
+// Public (sound.h) since Milestone 11's live-audio callback
+// (abc80/gtk/src/main.c) needs the identical gating decode - not a
+// second copy of this bit logic.
+int abc80_sound_is_steady_vco_tone(uint8_t data) {
     int enabled = !(data & 0x01);
     int vco_mode_fixed = !(data & 0x04); // bit2==0
     int mixer_a = (data >> 4) & 1, mixer_b = (data >> 3) & 1, mixer_c = (data >> 5) & 1;
@@ -102,6 +108,23 @@ static int is_steady_vco_tone(uint8_t data) {
     int envelope_1 = (data >> 7) & 1, envelope_2 = (data >> 6) & 1;
     int envelope_mode = (envelope_2 << 1) | envelope_1;
     return enabled && vco_mode_fixed && (mixer_mode == 0) && (envelope_mode == 2);
+}
+
+// See sound.h's own comment - the live-callback counterpart to
+// abc80_sound_render_wav()'s per-sample body below, sharing the same
+// WAV_AMPLITUDE swing but with an incremental rather than absolute-time
+// phase, since a real-time callback runs indefinitely rather than over
+// a known, bounded duration.
+int16_t abc80_sound_live_sample(uint8_t data, double *phase, double sample_rate) {
+    if (!abc80_sound_is_steady_vco_tone(data)) {
+        return 0;
+    }
+    int16_t sample = (*phase < 0.5) ? WAV_AMPLITUDE : -WAV_AMPLITUDE;
+    *phase += abc80_sound_vco_freq_hz() / sample_rate;
+    if (*phase >= 1.0) {
+        *phase -= 1.0;
+    }
+    return sample;
 }
 
 static void put_u32le(unsigned char *buf, uint32_t v) {
@@ -115,9 +138,6 @@ static void put_u16le(unsigned char *buf, uint16_t v) {
     buf[0] = (unsigned char)(v & 0xFF);
     buf[1] = (unsigned char)((v >> 8) & 0xFF);
 }
-
-#define WAV_SAMPLE_RATE 44100
-#define WAV_AMPLITUDE 8000
 
 int abc80_sound_render_wav(const Abc80SoundLog *log, uint64_t total_t_states,
                             double clock_hz, const char *path) {
@@ -170,7 +190,7 @@ int abc80_sound_render_wav(const Abc80SoundLog *log, uint64_t total_t_states,
         uint8_t reg = (log->count > 0) ? log->events[event_index].data : 0x01; // default: disabled
 
         int16_t sample = 0;
-        if (log->count > 0 && is_steady_vco_tone(reg)) {
+        if (log->count > 0 && abc80_sound_is_steady_vco_tone(reg)) {
             double phase = fmod(t_sec * vco_freq, 1.0);
             sample = (int16_t)((phase < 0.5) ? WAV_AMPLITUDE : -WAV_AMPLITUDE);
         }

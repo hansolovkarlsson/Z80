@@ -39,6 +39,26 @@ void abc80_sound_write(Abc80SoundLog *log, uint64_t t_state, uint8_t data);
 // sound.c for the formula and its derivation.
 double abc80_sound_vco_freq_hz(void);
 
+// Decodes whether `data` (a real port-0x06 byte) selects the one case
+// this model synthesizes real audio for: enabled, VCO-only mixer,
+// Mixer-Only envelope, fixed (non-SLF-swept) pitch - see sound.c's own
+// top comment for the full bit layout. Every other combination (noise,
+// SLF warble, one-shot/alternating-polarity envelopes) is silence in
+// this model, not incorrect audio - a documented, deliberate gap.
+int abc80_sound_is_steady_vco_tone(uint8_t data);
+
+// One sample of the live, gated square-wave tone at `data`'s current
+// register state, for a real-time audio callback (Milestone 11's
+// bin/abc80-gtk) rather than abc80_sound_render_wav()'s own offline
+// batch rendering below. Advances *phase by vco_freq/sample_rate and
+// wraps it mod 1.0 each call - the standard incremental-phase technique
+// a live callback needs to stay click-free across buffer boundaries,
+// as opposed to render_wav()'s absolute-time-based phase calculation
+// (fine for a bounded offline render, not what an indefinitely-running
+// callback should do). *phase must persist across calls (owned by the
+// caller, typically once per audio device) and starts at 0.0.
+int16_t abc80_sound_live_sample(uint8_t data, double *phase, double sample_rate);
+
 // Renders `log` to a 44100Hz mono 16-bit PCM WAV file at `path`,
 // spanning real time [0, total_t_states / clock_hz) seconds. Returns 1
 // on success, 0 on any error (reported to stderr).

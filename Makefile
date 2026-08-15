@@ -97,19 +97,21 @@ GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 # abc80/docs/ABC80_ROADMAP.md) - a genuine Cairo pixel framebuffer, not a
 # VTE-terminal thin launcher like cpm/gtk/ above (ABC80 has real bitmap
 # GRAPHICS-mode graphics a terminal widget can't address). Opt-in only,
-# same as `gtk`/`abc80` - never part of `all`/`test`. Only needs `gtk4`
-# (no VTE - this target never spawns a child process). Links the shared
-# core plus the ABC80 modules abc80/gtk/src/main.c itself needs
-# (video_timing.o/chargen.o for pixel decode, keyboard.o/disk.o/step.o
-# for the shared CPU step, sound.o only because abc80_step()'s signature
-# requires a log even though this target never renders it) - no
-# render.o/charset.o, since this target has its own Cairo renderer
-# instead of render.c's terminal-glyph one.
+# same as `gtk`/`abc80` - never part of `all`/`test`. Needs `gtk4` (no
+# VTE - this target never spawns a child process) and `sdl2` (Milestone
+# 11's live-audio callback - the only real dependency reason, `bin/abc80`
+# itself stays SDL2-free and keeps its own batch `--wav` renderer as-is).
+# Links the shared core plus the ABC80 modules abc80/gtk/src/main.c
+# itself needs (video_timing.o/chargen.o for pixel decode, keyboard.o/
+# disk.o/step.o for the shared CPU step, sound.o for both abc80_step()'s
+# signature and the live-audio sample generator) - no render.o/charset.o,
+# since this target has its own Cairo renderer instead of render.c's
+# terminal-glyph one.
 ABC80_GTK_SRC_DIR := abc80/gtk/src
 ABC80_GTK_SRCS := $(wildcard $(ABC80_GTK_SRC_DIR)/*.c)
 ABC80_GTK_OBJS := $(ABC80_GTK_SRCS:.c=.o) $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/chargen.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/disk.o $(ABC80_SRC_DIR)/step.o $(ABC80_SRC_DIR)/sound.o $(ABC80_SRC_DIR)/cassette.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
 ABC80_GTK_TARGET := $(BIN_DIR)/abc80-gtk
-ABC80_GTK_PKGS := gtk4
+ABC80_GTK_PKGS := gtk4 sdl2
 ABC80_GTK_CFLAGS := $(shell pkg-config --cflags $(ABC80_GTK_PKGS) 2>/dev/null)
 ABC80_GTK_LIBS := $(shell pkg-config --libs $(ABC80_GTK_PKGS) 2>/dev/null)
 
