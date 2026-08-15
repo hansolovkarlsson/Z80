@@ -342,6 +342,15 @@ clean start/stop, and correct pitch is the user's own hands-on job here,
 same as every other perceptual (visual) change in this milestone, just
 audio instead of video this time.
 
+**Update** (later sub-step, see `ABC80_ROADMAP.md`): this VCO-only
+description is now historical - `abc80_sound_is_steady_vco_tone()`/
+`abc80_sound_live_sample()`/`live_sound_phase` above were all replaced
+by a single `abc80_sound_step_sample()`/`Abc80SoundState` pair modeling
+every real SN76477 subsystem (SLF, noise, one-shot, envelopes), shared
+with a redesigned `abc80_sound_render_wav()` rather than two separate
+VCO-only implementations. Live audio now plays whatever real register
+combination is active, not just the single steady-tone case.
+
 **Plain-text `.bas` Save/Load, alongside tokenized `.bac`**: user-
 requested - the File menu's Save/Load Program only handled `.bac`
 (BASIC's own tokenized/compressed format) until now; real ABC80 BASIC's

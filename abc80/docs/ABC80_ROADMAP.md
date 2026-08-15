@@ -2516,6 +2516,144 @@ both clean. Real menu-click UX and whether the sped-up drawing actually
 *feels* right needs the user's own hands-on look, the same honest split
 as every other GTK-input/perceptual change this session.
 
+### Sub-step: full SN76477 emulation (SLF, noise, one-shot, envelopes)
+
+User-requested, after asking about the real SN76477 chip's capabilities
+beyond the fixed-pitch beep `sound_demo.bas` already exercised: the real
+board's R/C values for its other four subsystems (SLF, noise, one-shot,
+attack/decay envelope) were grounded from MAME's real `abc80.cpp`/
+`sn76477.cpp` source (fetched from `mamedev/mame` on GitHub) earlier
+this session (`ab00a74`, `ABC80_REFERENCE.md`'s Sound section) - this
+sub-step turns that grounding into a real implementation, scoped via a
+written plan first (`~/.claude/plans/mellow-cooking-parrot.md`).
+
+**Architecture**: a new `Abc80SoundState` struct + `abc80_sound_step_sample()`
+(`sound.h`/`sound.c`) ports MAME's own `sound_stream_update()` per-sample
+body - every subsystem is an independent RC charge/discharge integrator
+against fixed voltage thresholds, with one real coupling (SLF-swept VCO
+mode: the VCO's own charging ceiling tracks the SLF's current cap
+voltage rather than a fixed value). This **replaces**
+`abc80_sound_live_sample()` and unifies what were previously two
+independent VCO-only implementations (`abc80_sound_render_wav()`'s
+absolute-time phase math, and the live callback's incremental-phase
+math) into one shared function both now drive - a real architecture fix
+`abc80_sound_render_wav()` needed anyway once subsystem state became
+genuinely history-dependent (a one-shot's running flip-flop, a cap
+mid-charge) rather than a pure function of absolute time.
+
+**Two real corrections found by reading MAME's actual source rather
+than assuming, each significant enough to be worth recording**:
+
+- **The one-shot doesn't trigger on writing `envelope_mode==1`** - a
+  first-draft heuristic assumption, self-caught before it was ever
+  trusted. Reading MAME's own `enable_w()` in full: the real one-shot
+  triggers (and the attack/decay cap resets) on the **enable bit's
+  0→1 transition specifically** (bit0 going from enabled to disabled) -
+  "one-shot runs regardless of envelope mode" per that function's own
+  comment. Real software fires a one-shot pulse by writing an enabled
+  register value, then a disabled one, then re-enabling - not by
+  writing `envelope_mode==1` and leaving it there. `sound.c` now tracks
+  the previous call's bit0 to detect this real edge.
+- **The VCO's own ceiling formula needed a special case for the fixed
+  (non-swept) pitch this board actually uses.** MAME's literal
+  `vco_cap_voltage_max = m_vco_voltage + VCO_TO_SLF_VOLTAGE_DIFF`
+  formula, applied at this board's natural `vco_voltage=0`, gives a
+  ceiling of just 0.35V - confirmed by direct testing to swing the cap
+  in under one 44.1kHz sample, an inaudible near-Nyquist buzz, not
+  640Hz. This directly contradicted the project's own already-verified
+  (real ROM execution, FFT-checked) 640Hz figure, so - rather than trust
+  a transcription that couldn't be reconciled after repeated re-reads -
+  `sound.c` special-cases `vco_voltage<=0` to use the full
+  `VCO_CAP_VOLTAGE_MAX` ceiling instead, anchored to the already-verified
+  closed form. ABC80's board only ever drives `vco_voltage` to 0 or 2.5
+  (never a continuous range - MAME's own general formula is built for
+  hardware that can), so this two-value special case is complete for
+  every register value this hardware can actually produce; 2.5V still
+  correctly saturates silent via the existing ceiling-exceeds-max gate,
+  unaffected by this.
+
+**One real bug caught by the regression check itself, before it shipped**:
+the first draft returned `0` for the mixer's "off" half-cycle instead of
+`-amplitude`, producing a unipolar (0/+8000) square wave instead of the
+original bipolar (±8000) one - audibly different, and not what MAME's
+own `out_pos_gain`/`out_neg_gain`-around-a-center-voltage model does
+either. Caught immediately by the very first regression render (raw
+samples alternating `8000, 0, 8000, 0...` instead of `8000, -8000...`),
+fixed before moving on to the new modes at all.
+
+**Known, honest side effects of switching to a real per-sample model**,
+not silently absorbed: the VCO's own measured frequency shifted from the
+old continuous-phase implementation's ~639.95Hz to **~629.5-630.0Hz**
+(confirmed via both a Goertzel-based frequency measurement and simple
+zero-crossing counts) - a real, ~1.6% consequence of genuine 44.1kHz
+per-sample discretization (each cap-voltage step either clamps exactly
+to the ceiling or doesn't, so the simulation consistently rounds to 35
+samples per half-cycle rather than averaging 34.44) that MAME's own
+real algorithm would exhibit too, not a bug introduced here - `f =
+0.64/(R×C) = 640Hz` remains the correct *ideal* closed form (unchanged
+in `abc80_sound_vco_freq_hz()`, still used for the printed reference
+figure), just not bit-exact to what a real discretized simulation at
+this sample rate produces. Separately, alternating-polarity envelope
+mode (`envelope_mode==3`) was found to settle into a steady near-max
+amplitude rather than audibly swinging, once implemented and measured -
+also not a bug: the underlying ~630Hz VCO oscillation toggles `ad_charging`
+on/off roughly every 0.75ms, far faster than the ~22ms attack/~470ms
+decay time constants can respond to, so the fast-charge/slow-decay
+asymmetry keeps the envelope pinned near max under that rapid
+micro-toggling - confirmed the underlying oscillation itself is still
+genuinely present and correctly alternating in sign throughout.
+
+**Verified via direct execution at every stage, not assumed correct
+from the formulas alone**:
+- Regression: `bin/abc80-sound-demo` (batch and `--live`) still
+  produces the exact same envelope timing (silence/tone/silence at
+  0.5s/1.0s/0.5s) as before this change, confirmed via WAV analysis
+  before trusting any new mode.
+- Each new mode independently verified via `bin/abc80-sound-demo --mode
+  {slf,vco-swept,noise,one-shot,alt-polarity}` (new flag) and a Python
+  WAV-envelope/frequency analysis script: SLF alone shows a clean
+  120.4ms/130.8ms alternating toggle (predicted ~3.98Hz, confirmed
+  exactly); VCO swept by SLF shows a genuine sweeping dominant frequency
+  (650Hz-3300Hz, cycling at the SLF's own ~250ms period, not a fixed
+  tone); noise alone shows highly irregular zero-crossing intervals
+  (4-46 samples, stdev 4.6, vs. a clean tone's near-identical intervals
+  every cycle); one-shot shows a clean ~20-25ms attack rising to full
+  scale then a ~470ms decay tail, matching the predicted attack/decay
+  constants almost exactly; alternating polarity's underlying ~630Hz
+  oscillation confirmed present (see above for why the amplitude
+  envelope itself doesn't audibly swing).
+- **Real ROM-driven cross-check**, mirroring how the original VCO figure
+  was cross-checked against both a synthetic sequence and real ROM
+  execution: a small BASIC test program (`OUT 6,80` for SLF,
+  `OUT 6,72` for noise, real delay loops between) run through
+  `bin/abc80 --wav`, with zero `ERR` lines. The real ROM-driven SLF
+  segment measured **120.4ms/130.8ms alternating - byte-for-byte
+  identical** to the synthetic test's own numbers; the real noise
+  segment's interval statistics (4-32 samples, mean 9.2, stdev 4.4)
+  closely matched the synthetic noise test's (4-46, mean 9.3, stdev
+  4.6). Incidental finding along the way: the real ROM appears to emit
+  its own brief keyboard-click tone through the SN76477 while a program
+  is being typed, visible in the WAV as activity before the test
+  program's own first `OUT` statement ever executes - not investigated
+  further (out of scope here), but worth knowing when reading a
+  real-ROM sound capture's own timeline.
+- `make abc80 && make abc80-gtk && make test` all clean; the usual
+  non-visual smoke test (no `Gtk-CRITICAL`/`GLib-CRITICAL`, clean
+  `SIGTERM` exit) unaffected.
+
+**Explicitly not attempted**: MAME's exact analog output-stage gain-table
+curve (`out_pos_gain`/`out_neg_gain`, `center_to_peak_voltage_out()`) -
+a linear `attack_decay_cap_voltage`-fraction scaling is used instead
+(full scale unchanged for Mixer-Only mode), consistent with this
+model's pre-existing "plain square wave, not the real analog output
+amplifier" simplification stance rather than a new one introduced here.
+Whether the new modes actually *sound* right - real audible warble,
+noise character, percussive punch - needs the user's own hands-on
+listen, the same honest split as every other perceptual change this
+session; what's verified here is that the real register-toggle timing
+and spectral character match their hand-derived, MAME-grounded
+predictions, not that a human has confirmed it's pleasant to hear.
+
 ## Memory map (grounded, not guessed)
 
 Cross-checked between MAME's current mainline driver

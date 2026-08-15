@@ -170,10 +170,10 @@ typedef struct {
     // audio thread) - a single atomic byte, deliberately not a queue or
     // lock, per this milestone's own scoping decision to keep this
     // app's first real concurrency surface as narrow as possible.
-    // live_sound_phase is the opposite: owned exclusively by the audio
+    // live_sound_state is the opposite: owned exclusively by the audio
     // thread, never touched from the main thread at all.
     _Atomic uint8_t live_sound_register;
-    double live_sound_phase;
+    Abc80SoundState live_sound_state;
     SDL_AudioDeviceID audio_device;
 } AppState;
 
@@ -402,10 +402,10 @@ static int poll_stdin_byte(void) {
 // SDL_OpenAudioDevice() - see main() below), never on GTK's main thread.
 // Reads app->live_sound_register (the one value the main thread hands
 // off, atomically - see on_timer_tick()'s own comment) and fills the
-// buffer via abc80_sound_live_sample() (sound.h), which owns
-// app->live_sound_phase entirely - the main thread never touches it.
-// This function's own math (the incremental-phase square wave, gated by
-// abc80_sound_is_steady_vco_tone()) is verified independently via
+// buffer via abc80_sound_step_sample() (sound.h), which owns
+// app->live_sound_state entirely - the main thread never touches it.
+// This function's own math (every SN76477 subsystem's real per-sample
+// RC-integrator model) is verified independently via
 // bin/abc80-sound-demo --live, the same "prove it against known input"
 // discipline abc80_sound_render_wav() already had - not just assumed
 // correct because it compiles.
@@ -415,7 +415,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
     int n = len / (int)sizeof(int16_t);
     uint8_t reg = atomic_load(&app->live_sound_register);
     for (int i = 0; i < n; i++) {
-        samples[i] = abc80_sound_live_sample(reg, &app->live_sound_phase, ABC80_GTK_AUDIO_SAMPLE_RATE);
+        samples[i] = abc80_sound_step_sample(&app->live_sound_state, reg, ABC80_GTK_AUDIO_SAMPLE_RATE);
     }
 }
 
@@ -1309,6 +1309,7 @@ int main(int argc, char *argv[]) {
     app.quickload_done = (quickload_path == NULL);
     app.quicksave_path = quicksave_path;
     app.turbo_multiplier = turbo_multiplier;
+    abc80_sound_state_init(&app.live_sound_state); // non-zero cap-voltage defaults - memset(0) above isn't enough
     app.text_color = ABC80_GTK_DEFAULT_TEXT;
     app.canvas_bg_color = ABC80_GTK_DEFAULT_BG;
     app.border_color = ABC80_GTK_DEFAULT_BG; // matches canvas by default - see update_canvas_css()

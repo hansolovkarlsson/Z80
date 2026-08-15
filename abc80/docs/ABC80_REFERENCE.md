@@ -416,17 +416,21 @@ values. Measured (FFT/zero-crossing) against both a synthetic register-event
 sequence and real ROM-driven `OUT` execution: 639.39 Hz and 639.95 Hz
 respectively, both within 0.1% of predicted.
 
-**Scope**: this emulator only synthesizes real audio for the single most
-common case — `mixer_mode==0` (VCO alone), `envelope_mode==2` (Mixer Only,
-continuous output), VCO mode 0 (fixed pitch) — a steady tone at a fixed
-frequency, output as a plain square wave via `bin/abc80 --wav FILE` (no
-live audio in this environment). Every other register combination (noise,
-SLF, one-shot, alternating polarity, SLF-swept warble) produces silence in
-this model rather than an attempt at incorrect audio. Full analog
-SN76477 simulation (MAME's own `sn76477.cpp`) is a genuine per-sample
-simulation of four interacting RC-timed subsystems — out of scope for what
-this project's own roadmap treats as its lowest-priority, purely cosmetic
-milestone.
+**Scope**: as of `abc80/docs/ABC80_ROADMAP.md`'s "full SN76477 emulation"
+sub-step, this emulator synthesizes every real subsystem below — VCO
+(fixed or SLF-swept), SLF alone, the noise generator, one-shot, and the
+attack/decay envelope (including Mixer Only, One-Shot, and
+VCO-with-Alternating-Polarity envelope modes), all via
+`abc80_sound_step_sample()` (`sound.c`) — not just the single VCO-alone/
+Mixer-Only case this section originally covered. One deliberate
+simplification remains: amplitude uses a linear
+`attack_decay_cap_voltage`-fraction scale rather than MAME's exact
+analog output-stage gain-table curve (`out_pos_gain`/`out_neg_gain`,
+`center_to_peak_voltage_out()`) — full scale, unchanged, for Mixer Only
+mode; see that sub-step's own write-up for the two real corrections
+found while porting MAME's algorithm (the one-shot's real
+enable-transition trigger, and a VCO-ceiling special case) and its full
+verification results.
 
 **Full board component values, and the real timing they produce** —
 pulled directly from MAME's own `src/mame/luxor/abc80.cpp` machine_config
@@ -460,20 +464,20 @@ m_csg->set_oneshot_params(CAP_U(0.1), RES_K(330));
 | One-shot pulse | R=330kΩ, C=0.1µF | ~28.56 ms (envelope_mode==1 — a short, single percussive envelope per trigger, not continuous) |
 | Attack/decay envelope | attack R=2.2kΩ, decay R=47kΩ, shared C=10µF | attack ~22.0ms, decay ~470.0ms (envelope_mode==3, VCO-with-Alternating-Polarity — a fast-rising, slow-fading envelope shape, not symmetric) |
 
-Confirms the SLF/VCO-sweep ("warble/siren"), noise, one-shot, and
+Confirmed the SLF/VCO-sweep ("warble/siren"), noise, one-shot, and
 alternating-polarity-envelope modes are all real, physically-grounded,
 implementable subsystems on *this* board specifically — not previously
 known because only the VCO's own R/C values had been pulled from the
-driver before now. Implementing them for real would mean porting
-`sn76477_device::sound_stream_update()`'s per-sample integrator loop
-(each subsystem is an independent RC charge/discharge state machine
-against fixed voltage thresholds — the SLF's own cap voltage drives the
-VCO's own charge ceiling when VCO mode is swept, the one real coupling
-between subsystems) into this project's own `sound.c`, following the
-same incremental-phase-per-sample pattern `abc80_sound_live_sample()`
-already established for the VCO-only case rather than `sound_stream_update()`'s batch-of-N-samples-per-call shape. Not yet
-implemented — this is grounding for that future work, not the work
-itself.
+driver before now. Now implemented: `sound.c`'s `abc80_sound_step_sample()`
+ports `sn76477_device::sound_stream_update()`'s per-sample integrator
+loop directly (each subsystem an independent RC charge/discharge state
+machine against fixed voltage thresholds — the SLF's own cap voltage
+drives the VCO's own charge ceiling when VCO mode is swept, the one
+real coupling between subsystems), replacing the old VCO-only
+`abc80_sound_live_sample()` and unifying it with
+`abc80_sound_render_wav()` into one shared implementation both now
+drive — see `ABC80_ROADMAP.md`'s own sub-step for the full
+implementation, correction, and verification write-up.
 
 ## BASIC error codes
 
