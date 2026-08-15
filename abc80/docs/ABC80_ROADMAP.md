@@ -2654,6 +2654,53 @@ session; what's verified here is that the real register-toggle timing
 and spectral character match their hand-derived, MAME-grounded
 predictions, not that a human has confirmed it's pleasant to hear.
 
+### Sub-step: fixing a continuous boot-time tone the fuller model exposed
+
+User-reported, immediately after the sub-step above: `bin/abc80-gtk`
+played a continuous tone from launch that never stopped. Root-caused
+via a temporary debug hook logging every real port-`0x06` write (added,
+used, then fully removed): the real ROM writes to that port exactly
+**once** during its own boot sequence - `data=0x00` at `PC=0x0098`,
+T-state 223 - and never again during idle. Confirmed independently via
+`bin/abc80 --wav` with *no* keyboard input at all: 100% nonzero samples
+across a 77-second render before the fix, 0% after.
+
+`0x00` decodes (correctly, per the real bit layout) to enabled=true,
+mixer=VCO, `envelope_mode==0` ("VCO" - envelope tracks the VCO's own
+flip-flop directly) - a real, valid SN76477 configuration that this
+board's actual R/C values (fast ~1.5ms VCO cycle vs. slow ~470ms decay)
+ramp up to full volume over roughly 50-150ms and then hold indefinitely,
+the identical "fast-charge/slow-decay pins it near max" mechanism
+already found and documented for alternating-polarity mode above - not
+a new bug in that logic, just a second place the same real effect shows
+up. The previous, narrower VCO-only model never produced audio for
+`envelope_mode!=2` at all, so this boot write was always silently
+harmless before - a real regression this fuller, more faithful model
+newly exposed, not introduced by it.
+
+Real ABC80 hardware humming continuously forever after every boot,
+undocumented in any of this project's own extensive primary-source
+research (service manual, BASIC manual, MAME driver, hobbyist forums),
+was judged implausible for a shipped product - almost certainly this
+write is a generic "clear the port" boot step with no real sonic
+intent, not a genuine hardware quirk to faithfully reproduce. Fixed by
+treating literal byte `0x00` as the same "nothing real written yet"
+sentinel `0x01` already serves elsewhere in this codebase (the WAV
+renderer's own log-empty default, live audio's own pre-first-tick
+default) - silence for this one specific, non-intentional value, with
+no change to genuine `envelope_mode==0` behavior for any other register
+byte a real program might deliberately write.
+
+**Verified**: the CLI's own no-input boot-only WAV render confirmed
+silent (0/3,407,965 nonzero samples, previously 3,407,931/3,407,965).
+Re-ran every existing check afterward to confirm nothing else moved -
+the VCO-only regression sequence's envelope timing, the SLF mode's
+120.4ms/130.8ms intervals, and the one-shot pulse's attack/decay shape
+all came back byte-for-byte identical to their pre-fix values, since
+the fix only special-cases the single literal value `0x00` and none of
+those test sequences ever use it. `make test` and the usual non-visual
+GTK smoke test both clean.
+
 ## Memory map (grounded, not guessed)
 
 Cross-checked between MAME's current mainline driver

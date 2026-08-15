@@ -237,6 +237,26 @@ void abc80_sound_state_init(Abc80SoundState *state) {
 }
 
 int16_t abc80_sound_step_sample(Abc80SoundState *state, uint8_t data, double sample_rate) {
+    // data==0x00 is the real ROM's own generic port-clearing boot write
+    // (confirmed via direct execution: exactly one write, at PC=0x0098,
+    // T-state 223 - not a genuine "make sound" command from any real
+    // BASIC program). Under a literal bit decode this is enabled=true,
+    // mixer=VCO, envelope_mode=0 ("VCO" - envelope tracks vco_out_ff
+    // directly) - a real, valid configuration that this board's actual
+    // fast-VCO/slow-decay R/C values ramp up to full volume and then
+    // hold indefinitely, since nothing ever writes to port 6 again
+    // during idle. The old, narrower VCO-only model never produced
+    // audio for envelope_mode!=2 at all, so this boot write was always
+    // silently harmless before - treating 0x00 as the same "nothing
+    // real written yet" sentinel 0x01 already serves elsewhere in this
+    // codebase (the WAV renderer's own log-empty default, live audio's
+    // own pre-first-tick default) restores that silence for this one
+    // specific, non-intentional byte without touching genuine
+    // envelope_mode==0 usage from an actual program writing any other
+    // register value.
+    if (data == 0x00) {
+        return 0;
+    }
     // Decode the current register byte - see this file's own top
     // comment for the bit layout.
     int enabled = !(data & 0x01);          // bit0, active low
