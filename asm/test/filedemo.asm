@@ -1,12 +1,12 @@
 ; A small "real" CP/M transient program exercising the BDOS file I/O in
 ; cpm.c (see cpm/docs/CPM_REFERENCE.md) - not a pass/fail regression check
-; like cpm/asm/examples/file_test.asm, but something that actually does
+; like asm/examples/file_test.asm, but something that actually does
 ; something visible: writes a short greeting to GREETING.TXT, lists the
 ; (mapped host) directory the way CP/M's own DIR.COM would, then reads
 ; the file back and TYPEs it to the console like CP/M's own TYPE.COM.
 ;
 ; Run it directly - no piped input needed:
-;   bin/z80asm cpm/asm/test/filedemo.asm -o filedemo.com
+;   bin/z80asm asm/test/filedemo.asm -o filedemo.com
 ;   bin/z80 filedemo.com
 
 BDOS:   equ 5

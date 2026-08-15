@@ -1,5 +1,5 @@
 ; A small "real" CP/M file-copy utility (like PIP/COPY.COM), exercising
-; genuine multi-record sequential I/O - the gap cpm/asm/test/filedemo.asm's
+; genuine multi-record sequential I/O - the gap asm/test/filedemo.asm's
 ; comment flagged (it only ever writes one 128-byte record). Not a
 ; pass/fail regression check; meant to be run and read by hand.
 ;
@@ -15,7 +15,7 @@
 ;      lists the directory (F_SFIRST/F_SNEXT), then TYPEs DEST.TXT back to
 ;      prove the copy is byte-for-byte correct.
 ;
-;   bin/z80asm cpm/asm/test/copydemo.asm -o copydemo.com
+;   bin/z80asm asm/test/copydemo.asm -o copydemo.com
 ;   bin/z80 copydemo.com
 
 BDOS:   equ 5

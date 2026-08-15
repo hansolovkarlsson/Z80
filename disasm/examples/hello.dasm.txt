@@ -1,5 +1,5 @@
 ; Output of `z80dasm hello.com -l 0x34`, where hello.com is
-; cpm/asm/examples/hello.asm assembled by z80asm. Matches hello.asm's real
+; asm/examples/hello.asm assembled by z80asm. Matches hello.asm's real
 ; instruction stream exactly, including auto-generated labels (L010D for
 ; the DJNZ loop target, L0129 for the JP NZ target).
 ;

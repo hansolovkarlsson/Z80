@@ -45,7 +45,7 @@ assembling the real unmodified `zexall.z80` source, produces a program our
 own (independently ZEXALL-validated) emulator executes correctly. Getting
 there surfaced and fixed several real dialect gaps, documented below.
 
-- [x] Two-pass assembler (`cpm/asm/src/`, builds to `bin/z80asm`): lexer-free
+- [x] Two-pass assembler (`asm/src/`, builds to `bin/z80asm`): lexer-free
   line-oriented parser, symbol table with forward-reference resolution, a
   recursive-descent expression evaluator (`+ - * / % & | ^ ~`, `$` for the
   current address, `low()`/`high()`), and an instruction encoder covering
@@ -61,7 +61,7 @@ there surfaced and fixed several real dialect gaps, documented below.
   relational operators (`eq`/`ne`/`lt`/`le`/`gt`/`ge`, plus symbolic
   `= <> < <= > >=`), lowest precedence, non-chaining, `-1`/`0` for
   true/false (the traditional assembler convention).
-- [x] `MACRO`/`ENDM`/`LOCAL`/`INCLUDE` (`cpm/asm/src/preprocess.c`) as a text
+- [x] `MACRO`/`ENDM`/`LOCAL`/`INCLUDE` (`asm/src/preprocess.c`) as a text
   substitution stage that runs once and flattens into a line list fed
   unchanged into the two passes above. `name MACRO param1,param2,...`
   definitions (matching the common M80/ZSM4 convention, name before the
@@ -72,7 +72,7 @@ there surfaced and fixed several real dialect gaps, documented below.
   doesn't); `INCLUDE "path"` resolved relative to the including file's own
   directory, not the invoking working directory. Also added `ERROR
   'message'`, used by `zexall.z80`'s own macros as a self-check.
-- [x] Four example programs (`cpm/asm/examples/`) assembled and run through
+- [x] Four example programs (`asm/examples/`) assembled and run through
   `bin/z80` as an end-to-end correctness check — not just
   assembled, actually executed and checked for the right behavior:
   `hello.asm` (labels, `DJNZ`, conditional jumps, CP/M BDOS calls),
@@ -204,7 +204,7 @@ there surfaced and fixed several real dialect gaps, documented below.
     macro body*, so the inner block's `ENDM` isn't mistaken for the end of
     the enclosing `MACRO` — the `REPT`/`ENDM` text itself is captured
     verbatim, uninterpreted, at this stage; (b) actual `REPT` expansion
-    happens in `cpm/asm/src/main.c`'s two-pass driver (`run_pass()`), not the
+    happens in `asm/src/main.c`'s two-pass driver (`run_pass()`), not the
     preprocessor, since (like `IF`) the repeat count can depend on `$`
     (`dss`'s callers use `&lab+4-$` and `&lab+30-$`). This needed a real
     driver-level restructure: `run_pass()` now walks the preprocessed line
@@ -214,7 +214,7 @@ there surfaced and fixed several real dialect gaps, documented below.
     symbol state, and literally reprocess that line range that many times
     before continuing — something `assemble_line()` can't do on its own
     since it only ever sees one line at a time.
-  - Validated at three levels: a new `cpm/asm/examples/rept_test.asm`
+  - Validated at three levels: a new `asm/examples/rept_test.asm`
     exercises top-level `REPT`, `REPT` nested inside a `MACRO` body
     (mirroring `dss` exactly), and a `$`-dependent count used to pad to a
     fixed target address — disassembled the output and confirmed the
@@ -245,7 +245,7 @@ there surfaced and fixed several real dialect gaps, documented below.
      line handling the colon form already used.
   With both fixed, `cpm/resources/tastybasic/derive.sh`'s C-preprocessed,
   directive-translated `tastybasic_cpm.asm` assembles and runs correctly.
-- [x] **Disassembler** (`cpm/disasm/src/`, builds to `bin/z80dasm`) — the
+- [x] **Disassembler** (`disasm/src/`, builds to `bin/z80dasm`) — the
   assembler's sibling tool, in a separate binary rather than a mode flag
   on `z80asm` (reading is a different shape of problem: no expression
   evaluator or symbol table needed, but does need to re-derive labels
@@ -257,17 +257,17 @@ there surfaced and fixed several real dialect gaps, documented below.
     (`L`=code, from `JP`/`CALL`/`JR`/`DJNZ`/`RST`; `D`=data, from `(nn)`
     memory operands). Output is valid `z80asm` input (raw bytes are
     trailing `;` comments, ignored on reassembly).
-  - Covers the full instruction set from `cpm/docs/Z80_REFERENCE.md`,
+  - Covers the full instruction set from `docs/Z80_REFERENCE.md`,
     including everything in the "Implementation status" table there that
     the *emulator* can't execute yet (`IN`/`OUT`, `IM`, `RETI`/`RETN`,
     `LD A,I` etc.) — the disassembler decodes real Z80 machine code, not
     just what this project's own emulator happens to support today. Also
     the undocumented `DD`/`FD CB` register-copy form (shown as e.g. `RLC
     (IX+5),B` when the copy target isn't `(HL)`'s slot).
-  - Validated against `cpm/asm/examples/hello.asm` and `selftest.asm`:
+  - Validated against `asm/examples/hello.asm` and `selftest.asm`:
     assemble, disassemble, and the code region matches the source
     exactly byte-for-byte in meaning (including the `(IX+d)`/`IXH`/`IYH`
-    forms `selftest.asm` exercises) — see `cpm/disasm/examples/`. Also spot-
+    forms `selftest.asm` exercises) — see `disasm/examples/`. Also spot-
     checked against the real `zexall.com`: the decoded `start:` routine
     matches `zexall.z80`'s own source exactly (`LD HL,(6)` / `LD SP,HL` /
     ...), and CB/ED/`DD CB`-prefixed forms (`BIT`, `SBC HL`, `RRD`,
@@ -295,7 +295,7 @@ there surfaced and fixed several real dialect gaps, documented below.
   `C_READSTR`, 11 `C_STAT`) — implemented in `cpm.c`, backed by a
   `termios`-raw host terminal (only when stdin is a real TTY; a piped
   stdin just does a blocking `read()`, EOF mapped to `^Z`). Regression
-  coverage: `cpm/asm/examples/console_test.asm`, driven with piped stdin by
+  coverage: `asm/examples/console_test.asm`, driven with piped stdin by
   `cpm/tests/run_tests.sh` since it needs specific input bytes rather than
   running standalone like the other example programs. Two host-terminal
   translations only surfaced once a real program was actually typed at
@@ -321,7 +321,7 @@ there surfaced and fixed several real dialect gaps, documented below.
   boot an unmodified CP/M disk image (that still needs the DPH/DPB
   machinery `cpm/docs/CPM_REFERENCE.md` documents but this design
   deliberately skips) — revisit only if something concrete needs it.
-  Regression coverage: `cpm/asm/examples/file_test.asm` (create, rename, read
+  Regression coverage: `asm/examples/file_test.asm` (create, rename, read
   back, wildcard search, delete, confirm gone).
 - [x] **Real-world validation: Tasty Basic** (`cpm/resources/tastybasic/`) — the
   best return on effort of anything tried this phase. Rather than only
@@ -465,7 +465,7 @@ there surfaced and fixed several real dialect gaps, documented below.
   83`. Fixed by disambiguating on whether a hex digit immediately
   follows the `$` (two adjacent primaries with no operator between them,
   as in `$` immediately followed by more digits, would never be
-  meaningful otherwise) — see `cpm/docs/ASSEMBLER.md`'s Numbers and literals
+  meaningful otherwise) — see `docs/ASSEMBLER.md`'s Numbers and literals
   table. Confirmed no other real source in this project uses `$`
   followed immediately by a hex digit for anything else, so this was a
   SARGON-only silent-corruption bug, invisible until actually looking at
@@ -604,7 +604,7 @@ there surfaced and fixed several real dialect gaps, documented below.
      so every 4th entry's "start a new line" branch silently took the
      wrong path. Fixed by scanning the *full* alphanumeric token first
      and deciding hex/binary/decimal from what it ends with, not from a
-     greedy hex-digit scan — see `cpm/docs/ASSEMBLER.md`'s Numbers and
+     greedy hex-digit scan — see `docs/ASSEMBLER.md`'s Numbers and
      literals table for the now-supported binary suffix. Confirms once
      more that even a translated, non-original-Z80 source (unlike
      SARGON) can surface a genuine gap nothing else had ever exercised;
@@ -805,7 +805,7 @@ there surfaced and fixed several real dialect gaps, documented below.
   `find_or_reopen_file()` in `cpm.c`, the same real-hardware reasoning
   `alloc_open_file()` already applies one paragraph up for sequential
   I/O's FCB-reuse case. Both messages are gone with the fix in place;
-  `cpm/asm/examples/file_test.asm` check 6 is the permanent, dBASE-independent
+  `asm/examples/file_test.asm` check 6 is the permanent, dBASE-independent
   regression test. The real Ashton-Tate dBASE II 2.43 binary itself
   (`cpm_disk/DBASE.COM`/`DBASEOVR.COM`/`DBASEMSG.TXT`) was added to the
   repo afterward — its "unpublished... proprietary" license text is more
@@ -920,7 +920,7 @@ there surfaced and fixed several real dialect gaps, documented below.
   user as `Disk read error`, aborting the compile the moment a source
   file needed more than one `#include`. Fixed by routing `F_READ`/
   `F_WRITE` (functions 20/21) through `find_or_reopen_file()` too. See
-  `CLAUDE.md`'s File I/O section; `cpm/asm/examples/file_test.asm` check 7 is
+  `CLAUDE.md`'s File I/O section; `asm/examples/file_test.asm` check 7 is
   the permanent regression test. (With this fixed, `L2.C` compiles
   cleanly under this project's own emulator - the RED editor and CDB
   debugger, both distributed only as C source plus `.LBR` library
@@ -960,7 +960,7 @@ there surfaced and fixed several real dialect gaps, documented below.
   VT52/Heath-Zenith-H19-class terminal - a different protocol from
   dBASE's ADM-3A, found and fixed the same way (a real pty capture); see
   `CLAUDE.md`'s Console output section for the full writeup and
-  `cpm/asm/examples/term_test.asm` for the permanent regression test. The
+  `asm/examples/term_test.asm` for the permanent regression test. The
   CDB debugger was also compiled successfully (`CDB.COM`, uncrunched from
   the real distribution's `CDEBUG.LBR`) but not made fully operational:
   it requires a binary `.CDB` symbol-file format that `L2 -d` doesn't
@@ -1010,7 +1010,7 @@ there surfaced and fixed several real dialect gaps, documented below.
   program validated before this one) never noticed. Fixed by mirroring
   A into L (H=0) once, generically, at the end of `check_cpm_bdos()`,
   skipping only the two functions (27, 31) that genuinely return a
-  16-bit pointer in HL instead of a status code. `cpm/asm/examples/
+  16-bit pointer in HL instead of a status code. `asm/examples/
   file_test.asm` check 8 is the permanent regression test (write/open/
   read/read-past-EOF via BDOS, asserting HL == A after each). With this
   fixed, `cdb target` runs a complete real debugging session end-to-end
@@ -1131,9 +1131,9 @@ any of these):
 - [x] **Automated regression check**: `make test` (`cpm/tests/run_tests.sh`)
   runs ZEXALL/ZEXDOC and fails if the output contains `ERROR`, an
   `Unimplemented opcode` line, or doesn't reach `Tests complete`; it also
-  assembles and runs every `cpm/asm/examples/*.asm` program and fails on any
+  assembles and runs every `asm/examples/*.asm` program and fails on any
   `FAIL` line (the `OK n`/`FAIL n` convention `selftest.asm`/
-  `gaps_test.asm` use) or unimplemented-opcode hit. `cpm/asm/examples/
+  `gaps_test.asm` use) or unimplemented-opcode hit. `asm/examples/
   gaps_test.asm` specifically covers the I/O-port and `RETI`/`RETN`/
   `LD A,I`-family additions above, since ZEXALL doesn't exercise any of
   them. `cpm/tests/test_interrupts.c` (`bin/z80-test-interrupts`, also

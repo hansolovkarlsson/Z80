@@ -1,7 +1,7 @@
 # ABC80 BASIC Reference
 
 The BASIC dialect built into the real ABC80's ROM — the language
-`bin/abc80` actually runs, distinct from `cpm/docs/ASSEMBLER.md`'s `z80asm`
+`bin/abc80` actually runs, distinct from `docs/ASSEMBLER.md`'s `z80asm`
 syntax (a completely different tool, targeting the CP/M side of this
 repo). This is a language reference, not a status log — for what this
 emulator does and doesn't yet support around BASIC's runtime environment

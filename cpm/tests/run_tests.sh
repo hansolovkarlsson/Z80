@@ -4,7 +4,8 @@
 # kinds of checks:
 #   - The ZEXALL/ZEXDOC exercisers: fail if the output contains an ERROR
 #     line, an unimplemented-opcode line, or never reaches "Tests complete".
-#   - Every asm/examples/*.asm program: assemble it, run it, fail if the
+#   - Every asm/examples/*.asm program (top-level asm/, not under cpm/ -
+#     it's a generic Z80 tool, see CLAUDE.md): assemble it, run it, fail if the
 #     output contains a FAIL line (the OK-n/FAIL-n convention used by
 #     selftest.asm/gaps_test.asm) or an unimplemented-opcode line.
 #   - bin/z80-test-interrupts: a direct C-level unit test (not a .asm
@@ -19,9 +20,12 @@ set -uo pipefail
 # ROOT is the true repo root (bin/ lives there) - two levels up from
 # this script's own cpm/tests/ location, not one, since this script
 # itself lives a level deeper than the top-level layout might suggest.
-# CWD is then set to cpm/ (not ROOT) so every
-# relative path below (asm/examples/*.asm, emu/zexall/...) keeps working
-# unchanged relative to where the actual CP/M subproject files live.
+# CWD is then set to cpm/ (not ROOT) so the emu/zexall/... relative path
+# below keeps working unchanged relative to where the actual CP/M
+# subproject files live. asm/examples/*.asm lives at the repo root
+# instead (a generic Z80 tool, not CP/M-specific - see CLAUDE.md), so
+# those references are built off $ROOT explicitly rather than relying
+# on this cd.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT/cpm"
 
@@ -107,7 +111,7 @@ check_term_test() {
     # own console output, so this checks the raw byte stream directly for
     # console_emit()'s legacy-terminal-protocol translation (ADM-3A/VT52,
     # see cpm.c's own comment) instead of delegating to check_asm_example.
-    local src="asm/examples/term_test.asm" name="term_test.asm"
+    local src="$ROOT/asm/examples/term_test.asm" name="term_test.asm"
     local com="$WORKDIR/$name.com"
 
     local asm_log
@@ -165,7 +169,7 @@ check_exerciser "ZEXALL" emu/zexall/ZEXALL-main/zexall.com
 check_exerciser "ZEXDOC" emu/zexall/ZEXALL-main/zexdoc.com
 check_c_unit_test "test_interrupts" "$TEST_INTERRUPTS"
 
-for src in asm/examples/*.asm; do
+for src in "$ROOT"/asm/examples/*.asm; do
     case "$(basename "$src")" in
         # Needs specific piped stdin to drive its BDOS console-input
         # checks (C_READ/C_RAWIO/C_READSTR) - see the .asm file's header

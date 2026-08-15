@@ -3,11 +3,11 @@
 ; reason the bare-metal CPUville TinyBASIC didn't work directly either.
 ; Logic is otherwise unchanged: BDOS function 9 (print string) for the
 ; prompt, function 10 (buffered console input) to read a line, matching
-; what cpm/emu/src/cpm.c already implements and cpm/asm/examples/console_test.asm
+; what cpm/emu/src/cpm.c already implements and asm/examples/console_test.asm
 ; already regression-tests - this is a fresh, independent exercise of the
 ; same BDOS functions from a different (user-supplied) source.
 ;
-;   bin/z80asm cpm/asm/test/user_prompt.asm -o user_prompt.com
+;   bin/z80asm asm/test/user_prompt.asm -o user_prompt.com
 ;   bin/z80 user_prompt.com
 
         ORG     100H

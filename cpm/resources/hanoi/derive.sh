@@ -3,7 +3,7 @@
 # (resources/turbopascal/TURBO.COM, already ANSI/Ctrl-H-configured by
 # that directory's own derive.sh) running under this project's own
 # emulator - there's no separate "assembler" step here the way
-# cpm/asm/examples/*.asm or the other resources/*/derive.sh scripts have;
+# asm/examples/*.asm or the other resources/*/derive.sh scripts have;
 # TURBO.COM *is* the build tool, the same role TINST.COM plays in
 # resources/turbopascal/derive.sh itself. Unlike sargon/tastybasic, the
 # real upstream source needs no dialect translation - hanoi-p.pas is

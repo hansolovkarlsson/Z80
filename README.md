@@ -1,8 +1,10 @@
 # Z80
 
 A Z80 CPU emulator written in C, built to run CP/M-80 programs.
-Everything CP/M-related below lives under `cpm/`; `bin/` (the build
-output) and `scripts/` (general-purpose tooling) stay at the repo root.
+CP/M-specific code lives under `cpm/`; the CPU core (`z80core/`), the
+assembler and disassembler (`asm/`, `disasm/`), their generic docs
+(`docs/`), `bin/` (the build output), and `scripts/` (general-purpose
+tooling) are genuinely CP/M-independent and stay at the repo root.
 (This repo previously also hosted a standalone Game Boy emulator as a
 separate, code-sharing-free subproject under `gameboy/` — it's since
 been split out into its own repository via `git subtree split`,
@@ -17,7 +19,7 @@ undocumented Z80 instruction set (table-driven opcode dispatch, all
 67/67 tests OK, 0 errors, 0 unimplemented opcodes, on both the
 documented-only (ZEXDOC) and documented+undocumented (ZEXALL) variants.
 
-A Z80 assembler (`cpm/asm/`) is in progress: a two-pass assembler covering the
+A Z80 assembler (`asm/`) is in progress: a two-pass assembler covering the
 full non-prefixed/`CB`/`ED`/`DD`/`FD` instruction set (including the
 undocumented half-index-register forms), `ORG`/`EQU`/`DB`/`DW`/`DS`
 directives, expression evaluation, conditional assembly
@@ -27,12 +29,12 @@ against the real target: `bin/z80asm` assembles the actual, unmodified
 through `bin/z80` passes all 67 tests, same as the original
 pre-built binaries.
 
-A disassembler (`cpm/disasm/`) covers the same instruction set in reverse:
+A disassembler (`disasm/`) covers the same instruction set in reverse:
 given a `.com`/binary, it prints a listing with auto-generated labels for
 jump/call targets. It's a straightforward linear decoder (no code/data
 separation yet — pointed at a data region, it'll decode those bytes as
 instructions too), but the decoding itself is solid: verified against
-`cpm/asm/examples/hello.asm`/`selftest.asm` (assemble → disassemble → matches
+`asm/examples/hello.asm`/`selftest.asm` (assemble → disassemble → matches
 the source exactly) and spot-checked against the real `zexall.com`.
 
 See [`cpm/docs/ROADMAP.md`](cpm/docs/ROADMAP.md) for the full picture: what's
@@ -63,7 +65,7 @@ that's also where `bin/z80`'s own CP/M disk-directory lookup
 Correctness is verified by running the ZEXALL/ZEXDOC exerciser and reading
 its console output: every opcode should report `OK`; a wrong flag or result
 shows up as an `ERROR` line naming the instruction. `make test` automates
-this (plus running every `cpm/asm/examples/*.asm` program) into a pass/fail
+this (plus running every `asm/examples/*.asm` program) into a pass/fail
 exit code. `bin/z80` takes the `.com` file to run as an argument
 (`bin/z80 -h`/`--help`, or no arguments at all, prints usage instead of
 running anything); `bin/z80 --ccp [ccp.com]` boots a CP/M shell instead
@@ -78,7 +80,7 @@ The assembler takes a source file and writes a raw binary (an `ORG 100h`
 source produces a CP/M `.com`-ready image):
 
 ```
-../bin/z80asm asm/examples/hello.asm -o hello.com
+../bin/z80asm ../asm/examples/hello.asm -o hello.com
 ../bin/z80 hello.com
 ```
 
@@ -92,19 +94,24 @@ how many bytes to decode):
 
 ## Project layout
 
-Everything CP/M-related lives under `cpm/`; `bin/` (the build output)
-and `scripts/` (general-purpose tooling) stay at the repo root.
+CP/M-specific code lives under `cpm/`; `z80core/`, `asm/`, `disasm/`,
+`docs/`, `bin/` (the build output), and `scripts/` (general-purpose
+tooling) stay at the repo root since none of them are CP/M-specific —
+see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
 
+- `z80core/` — the shared Z80 CPU core (`z80.c`/`z80.h` opcode dispatch,
+  `alu.c`/`alu.h` flag/arithmetic logic) — machine-agnostic, used by both
+  `bin/z80` (CP/M) and `bin/abc80`.
 - `cpm/emu/src/` — the emulator itself (`z80.c`/`z80.h` opcode dispatch,
   `alu.c`/`alu.h` flag/arithmetic logic, `cpm.c`/`cpm.h` minimal CP/M BDOS
   emulation, `main.c` the CP/M-style program loader/run loop).
 - `cpm/emu/zexall/ZEXALL-main/` — the ZEXALL/ZEXDOC instruction exerciser
   (third-party, GPLv2, by Frank D. Cringle via YAZE-AG — not this
   project's code, not meant to be edited).
-- `cpm/asm/src/` — the assembler (`symtab`, `expr`, `encode`, `assemble`,
-  `preprocess`, `main`); `cpm/asm/examples/` has example `.asm` programs, all
+- `asm/src/` — the assembler (`symtab`, `expr`, `encode`, `assemble`,
+  `preprocess`, `main`); `asm/examples/` has example `.asm` programs, all
   wired into `make test` (`cpm/tests/run_tests.sh`) as automated regression
-  checks. `cpm/asm/test/` is different: manual/interactive programs (e.g. a
+  checks. `asm/test/` is different: manual/interactive programs (e.g. a
   console-I/O test that needs a real keyboard) meant to be run and
   eyeballed by hand, not part of the automated suite.
 - `cpm/resources/tastybasic/`, `cpm/resources/sargon/`, `cpm/resources/adventure/`,
@@ -112,7 +119,7 @@ and `scripts/` (general-purpose tooling) stay at the repo root.
   programs (Tasty Basic, SARGON chess, Colossal Cave Adventure, Digital
   Research's own CCP shell, and Borland's Turbo Pascal 3.01A) tried
   against the emulator by hand for real-world validation (not part of
-  `make test`, same spirit as `cpm/asm/test/`) — see `cpm/docs/ROADMAP.md`'s
+  `make test`, same spirit as `asm/test/`) — see `cpm/docs/ROADMAP.md`'s
   "Real-world validation"/CCP entries for what that's found and fixed.
   Where source is available (`tastybasic/`, `sargon/`, `ccp/`),
   `upstream/` holds it unmodified and `derive.sh` documents/reproduces
@@ -127,20 +134,22 @@ and `scripts/` (general-purpose tooling) stay at the repo root.
   tables (via its own `TINST.COM` utility, run through this project's
   emulator) from the "Microbee VDU" profile it ships with to a real ANSI
   one.
-- `cpm/cpm_disk/` — every program above (and `cpm/asm/examples/`), pre-built
+- `cpm/cpm_disk/` — every program above (and `asm/examples/`), pre-built
   and ready to run: `../bin/z80 cpm_disk/<name>.com` from inside `cpm/`, or
   `../bin/z80 --ccp cpm_disk/ccp.com` to boot a real CP/M shell (`A>` prompt,
   `DIR`/`TYPE`/etc., run any program above by name) instead of a single
   program. See `cpm/cpm_disk/README.md`.
-- `cpm/disasm/src/` — the disassembler (`decode`, `main`); `cpm/disasm/examples/`
+- `disasm/src/` — the disassembler (`decode`, `main`); `disasm/examples/`
   has example output.
+- `docs/` — generic, non-CP/M-specific reference docs: a Z80 CPU
+  reference including undocumented opcodes
+  ([`Z80_REFERENCE.md`](docs/Z80_REFERENCE.md)) and the assembler syntax
+  reference ([`ASSEMBLER.md`](docs/ASSEMBLER.md)).
 - `cpm/docs/` — the CP/M-side project roadmap
-  ([`ROADMAP.md`](cpm/docs/ROADMAP.md)), a Z80 CPU reference including
-  undocumented opcodes ([`Z80_REFERENCE.md`](cpm/docs/Z80_REFERENCE.md)),
-  the assembler syntax reference ([`ASSEMBLER.md`](cpm/docs/ASSEMBLER.md)),
-  a CP/M 2.2 BDOS/BIOS reference ([`CPM_REFERENCE.md`](cpm/docs/CPM_REFERENCE.md))
-  for the Phase 3 work, and references for the real CP/M software this
-  emulator's been validated against: the CCP shell
+  ([`ROADMAP.md`](cpm/docs/ROADMAP.md)), a CP/M 2.2 BDOS/BIOS reference
+  ([`CPM_REFERENCE.md`](cpm/docs/CPM_REFERENCE.md)) for the Phase 3 work,
+  and references for the real CP/M software this emulator's been
+  validated against: the CCP shell
   ([`CCP_REFERENCE.md`](cpm/docs/CCP_REFERENCE.md)), BDS C
   ([`BDSC_REFERENCE.md`](cpm/docs/BDSC_REFERENCE.md)), Tasty Basic
   ([`TASTYBASIC_REFERENCE.md`](cpm/docs/TASTYBASIC_REFERENCE.md)), MBASIC

@@ -1,8 +1,8 @@
 # Z80 CPU Reference
 
 A reference for the Z80 instruction set as implemented by this project's
-emulator (`cpm/emu/src/`), assembler (`cpm/asm/src/`), and disassembler
-(`cpm/disasm/src/`), including the undocumented instructions and flag
+emulator (`cpm/emu/src/`), assembler (`asm/src/`), and disassembler
+(`disasm/src/`), including the undocumented instructions and flag
 behavior that real Z80 hardware exhibits and that `zexall`/`zexdoc`
 specifically test for. `bin/z80dasm` is a hands-on way to explore this
 instruction set against real machine code — see `cpm/docs/ROADMAP.md`'s
@@ -81,7 +81,7 @@ checks the other six). The rule is **not** uniform across instructions:
 Each category below is a link between "what the mnemonic table looks
 like" and where it lives in this codebase: the emulator's *decoder*
 (`z80core/z80.c`, dispatch built in `z80_init_tables()`) and the
-assembler's *encoder* (`cpm/asm/src/encode.c`, dispatched from
+assembler's *encoder* (`asm/src/encode.c`, dispatched from
 `encode_instruction()`) implement these symmetrically — if you're
 checking an exact opcode byte, both files are the authoritative source
 (this document rounds to the pattern level, not literal hex tables).
@@ -226,7 +226,7 @@ selection works for this double-prefixed form.
 ## Implementation status
 
 Nearly every instruction real Z80 hardware supports is executable by
-`z80core/z80.c` (verified by `zexall`/`zexdoc`, plus `cpm/asm/examples/
+`z80core/z80.c` (verified by `zexall`/`zexdoc`, plus `asm/examples/
 gaps_test.asm` for the instructions those exercisers don't touch).
 Interrupt delivery (`INT`/`NMI` from the host side, not an instruction at
 all but closely tied to `IM 0`/`1`/`2`/`DI`/`EI`/`RETI`/`RETN`) is

@@ -15,11 +15,23 @@ The shared Z80 core itself (`z80.c`/`alu.c`/their headers) lives in
 `z80core/` at the true repo root, not under either machine target's own
 directory — it's genuinely machine-agnostic (`z80_execute()`, not the
 CP/M-specific `z80_step()` covered below) and used by two independent
-targets, so it isn't owned by either one. `cpm/` holds the CP/M-specific
-emulator layer, assembler, disassembler, GTK launcher, sample disk, and
-third-party reference software/docs; `bin/` (the build output) and
-`scripts/` (general-purpose tooling) stay at the true repo root too.
-This repo previously also held a standalone Game Boy emulator as a
+targets, so it isn't owned by either one. `asm/` (the `z80asm`
+assembler) and `disasm/` (the `z80dasm` disassembler) live at the true
+repo root for the identical reason: neither has any real CP/M
+dependency (confirmed by inspection, not just asserted — their `src/`
+has no BDOS/CP/M-specific code), and `disasm/` in particular is already
+in active, independent use disassembling `abc80/`'s own ROM images (see
+`abc80/docs/ABC80_ROADMAP.md`), the same second-consumer fact that
+justified `z80core/`'s own move below. Their `examples/`/`test/`
+subdirectories do stay CP/M-flavored in *content* (real `.asm` programs
+using `BDOS: equ 5`/`CALL 5`/`org 100h`, run through `bin/z80`) since
+that's this repo's only available Z80 execution environment — that's
+not a reason to relocate the tool, just a fact about how its regression
+suite happens to be exercised. `cpm/` holds the CP/M-specific emulator
+layer, GTK launcher, sample disk, and third-party reference
+software/docs; `bin/` (the build output) and `scripts/` (general-purpose
+tooling) stay at the true repo root too. This repo previously also held
+a standalone Game Boy emulator as a
 separate, code-sharing-free subproject under `gameboy/`; it was split
 out into its own repository (via `git subtree split`, preserving its
 real commit history) once real end-to-end functionality made clear the
@@ -41,7 +53,7 @@ treated as a de facto shared-library location.) See
 layouts), and `abc80/docs/ABC80_BASIC_REFERENCE.md` for the BASIC
 language itself (commands, statements, functions, operators — the
 language `bin/abc80` actually runs, not the `z80asm` syntax
-`cpm/docs/ASSEMBLER.md` covers) — as of Milestone 8, it boots the real BASIC ROM images
+`docs/ASSEMBLER.md` covers) — as of Milestone 8, it boots the real BASIC ROM images
 (committed under `abc80/resources/rom/`) with working video, keyboard
 input (including genuine real-time interactive keyboard input and a live,
 real-time-paced screen via `bin/abc80 --interactive`, not just scripted/
@@ -51,20 +63,23 @@ default, optional `--ram32k`) memory map, and (as of Milestone 6) a
 `--disk` bypass supporting genuine floppy `SAVE`/`LOAD` round trips
 against real ABC80 disk images through the real, unmodified ABC-DOS ROM.
 
-Three reference docs live in `cpm/docs/` alongside the roadmap:
-`Z80_REFERENCE.md` (the Z80 instruction set, including undocumented
-opcodes/flag behavior, plus which of those this emulator can actually
-execute today), `ASSEMBLER.md` (the `z80asm` syntax — directives,
-expressions, macros), and `CPM_REFERENCE.md` (the CP/M 2.2 BDOS/BIOS
-call spec — function numbers, FCB layout, BIOS jump table — that Phase
-3's `cpm.c` work targets). This file (`CLAUDE.md`) instead covers *code*
+Two generic reference docs live in the top-level `docs/` (not
+CP/M-specific, so not under `cpm/docs/` — same reasoning as `asm/`/
+`disasm/` above, which they document): `Z80_REFERENCE.md` (the Z80
+instruction set, including undocumented opcodes/flag behavior, plus
+which of those this emulator can actually execute today) and
+`ASSEMBLER.md` (the `z80asm` syntax — directives, expressions, macros).
+`cpm/docs/CPM_REFERENCE.md` (the CP/M 2.2 BDOS/BIOS call spec — function
+numbers, FCB layout, BIOS jump table — that Phase 3's `cpm.c` work
+targets) stays in `cpm/docs/` alongside the roadmap, genuinely
+CP/M-specific. This file (`CLAUDE.md`) instead covers *code*
 architecture — how the dispatch/encoding is actually implemented, not
 the ISA, syntax, or OS spec itself.
 
 ## Build & Run
 
-The emulator lives in `cpm/emu/src/`, the assembler in `cpm/asm/src/`, the
-disassembler in `cpm/disasm/src/`; the Makefile builds all three into `bin/`
+The emulator lives in `cpm/emu/src/`, the assembler in `asm/src/`, the
+disassembler in `disasm/src/`; the Makefile builds all three into `bin/`
 at the repo root.
 
 ```
@@ -89,10 +104,10 @@ of the last full run, both `zexall.com` and `zexdoc.com` pass cleanly
 (`cpm/tests/run_tests.sh`) turns that "eyeball the output" check into an exit
 code: it runs both exercisers and fails on any `ERROR`/`Unimplemented
 opcode` line or a missing `Tests complete`, then assembles and runs every
-`cpm/asm/examples/*.asm` program and fails on any `FAIL` line (the `OK n`/
+`asm/examples/*.asm` program and fails on any `FAIL` line (the `OK n`/
 `FAIL n` convention `selftest.asm`/`gaps_test.asm` use). ZEXALL/ZEXDOC
 don't exercise I/O ports, `IM`, `RETI`/`RETN`, or `LD A,I`/`LD A,R`/`LD
-I,A`/`LD R,A` — `cpm/asm/examples/gaps_test.asm` is the only regression
+I,A`/`LD R,A` — `asm/examples/gaps_test.asm` is the only regression
 coverage for those.
 
 `bin/z80` takes the `.com` file to run as argv[1] (paths are resolved
@@ -157,7 +172,7 @@ section for how that works.
 ## Architecture
 
 (For the Z80 instruction set itself — mnemonics, addressing modes,
-undocumented opcodes/flags — see `cpm/docs/Z80_REFERENCE.md`. This section is
+undocumented opcodes/flags — see `docs/Z80_REFERENCE.md`. This section is
 about how the dispatch code is structured, not the ISA.)
 
 **Table-driven dispatch.** `z80_init_tables()` (in `z80core/z80.c`) populates
@@ -263,7 +278,7 @@ included" list) — CDB2's target-loading loop's compiled
 was left over from earlier in CDB2's own code, truncating every debugged
 program to its first 128 bytes; assembly-level callers checking `A`
 directly (every program validated before this one) never hit it.
-`cpm/asm/examples/file_test.asm` check 8 is the permanent regression test.
+`asm/examples/file_test.asm` check 8 is the permanent regression test.
 
 **BIOS emulation (`cpm.c`)**: `check_cpm_bios()` runs alongside
 `check_cpm_bdos()` and handles direct BIOS calls — some real software
@@ -381,7 +396,7 @@ control (or is otherwise a real, already-supported bare code like
 `ESC M`), so this translation is a pure superset of the old
 plain-passthrough behavior: an unrecognized byte after `ESC` (including
 `[`) is replayed through untouched, so any other program's real ANSI
-escape codes are unaffected. `cpm/asm/examples/term_test.asm` is the
+escape codes are unaffected. `asm/examples/term_test.asm` is the
 permanent regression test — unlike the file-I/O checks, there's no
 CP/M-visible way for a program to read back its own translated console
 output, so `cpm/tests/run_tests.sh`'s own dedicated check greps the raw byte
@@ -442,7 +457,7 @@ re-reads a just-written `.DBF`'s header via random I/O through an FCB it
 had already closed during `CREATE`, without reopening), not two separate
 bugs, and not a disk-space or DPB issue at all despite dBASE's own
 wording; both messages are gone with `find_or_reopen_file()` in place.
-`cpm/asm/examples/file_test.asm`'s check 6 is the regression test. Sequential
+`asm/examples/file_test.asm`'s check 6 is the regression test. Sequential
 `F_READ`/`F_WRITE` (functions 20/21) go through `find_or_reopen_file()`
 too, for the identical reason applied to a different BDOS function: found
 validating BDS C's own `CC.COM` on a source file large enough to need a
@@ -452,7 +467,7 @@ after the header and resuming the outer file's `F_READ` from its saved
 `EX`/`CR` with no intervening `F_OPEN`. Before this, that second
 `F_READ` failed with error 9 ("unopened FCB"), which `CC.COM` surfaced to
 the user as `Disk read error` partway through any file needing more than
-one `#include`. `cpm/asm/examples/file_test.asm`'s check 7 is the regression
+one `#include`. `asm/examples/file_test.asm`'s check 7 is the regression
 test.
 
 **A fake Disk Parameter Block** (`DPH_BASE`/`DPB_BASE`/`DIRBUF_BASE`/
@@ -488,7 +503,7 @@ and a second, separate guard inside `z80_step()` itself (also skipped in
 CCP mode — without that, `PC` would never advance off of `0x0000` at all,
 since `main.c` no longer breaks its loop there either).
 
-## Assembler (`cpm/asm/src/`)
+## Assembler (`asm/src/`)
 
 A conventional two-pass design, no lexer/token-stream stage — each source
 line is parsed directly as a string:
@@ -549,16 +564,16 @@ pure text substitution. One preprocessing-level wrinkle `REPT` introduces:
 `ENDM`, so capturing a macro body that contains a nested `REPT` block (as
 `zexall.mac`'s own `dss` macro does) needs `preprocess.c` to track that
 nesting explicitly — otherwise the inner block's `ENDM` would be mistaken
-for the end of the macro itself. See `cpm/docs/ASSEMBLER.md` for the syntax
+for the end of the macro itself. See `docs/ASSEMBLER.md` for the syntax
 this all produces/consumes, and `cpm/docs/ROADMAP.md` for exact project
 status — as of the last update, `bin/z80asm` assembles the real,
 unmodified ZSM4 sources `zexall.mac`/`zexdoc.mac` (not just the
 Perl-generated `zexall.z80`/`zexdoc.z80`) with zero errors, and the result
 runs cleanly through `bin/z80`.
 
-## Disassembler (`cpm/disasm/src/`)
+## Disassembler (`disasm/src/`)
 
-The inverse of `cpm/asm/src/encode.c`, in a separate binary rather than a
+The inverse of `asm/src/encode.c`, in a separate binary rather than a
 `z80asm` mode flag — reading is a different shape of problem than writing
 (no expression evaluator or symbol table, but does need to re-derive
 labels).
@@ -595,7 +610,7 @@ separation — fed a data region (e.g. embedded message strings), it
 decodes those bytes as instructions too, which is correct behavior for
 what linear disassembly *is*, not a bug, but does mean output quality
 depends on the input being (close to) all code, or on the caller using
-`-l` to bound the range. `cpm/docs/Z80_REFERENCE.md` documents the opcode
+`-l` to bound the range. `docs/Z80_REFERENCE.md` documents the opcode
 coverage in detail — this disassembler targets real Z80 machine code
 generally, not just this project's own emulator's current capability (the
 two are now aligned, since `IN`/`OUT`, `IM`, `RETI`/`RETN`, `LD A,I` etc.

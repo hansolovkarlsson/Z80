@@ -1,6 +1,6 @@
 # Assembler Reference (`z80asm`)
 
-Syntax reference for `bin/z80asm` (`cpm/asm/src/`). For what's implemented vs.
+Syntax reference for `bin/z80asm` (`asm/src/`). For what's implemented vs.
 not yet, and known limitations/trade-offs, see `cpm/docs/ROADMAP.md`'s Phase 2
 section — this document describes the syntax as it exists today without
 re-litigating that history.
@@ -97,7 +97,7 @@ since the symbol may be defined later in the source.
 | `ASEG` / `CSEG` / `DSEG` | No-ops — this is a single flat-image assembler; segment selection doesn't apply. Accepted so real-world sources that use them (as a habit from segmented/relocatable assemblers) don't need editing. |
 | `IF expr` / `ELSE` / `ENDIF` | Conditional assembly, up to 32 levels deep. Non-zero is true. Lines inside a false branch are fully skipped — no bytes emitted, no labels defined, no PC advance — but `IF`/`ELSE`/`ENDIF` themselves are still tracked so nesting stays correct. |
 | `ERROR 'message'` | Unconditionally fails assembly with `message` — typically used inside a macro's own self-check (`IF ... ERROR '...' ENDIF`, e.g. to catch a caller passing the wrong number of arguments). |
-| `REPT count` / `ENDM` | Repeats the enclosed lines `count` times. `count` can reference `$` (evaluated fresh for each pass, using that pass's real address at the `REPT` line) — the common use is padding to a target address, e.g. `REPT target-$` / `DB 'X'` / `ENDM` fills with `'X'` up to (not including) `target`. Works both at the top level and inside a `MACRO` body (the nesting is tracked correctly even though both `MACRO` and `REPT` close with the same `ENDM` keyword — see `cpm/asm/examples/rept_test.asm`). |
+| `REPT count` / `ENDM` | Repeats the enclosed lines `count` times. `count` can reference `$` (evaluated fresh for each pass, using that pass's real address at the `REPT` line) — the common use is padding to a target address, e.g. `REPT target-$` / `DB 'X'` / `ENDM` fills with `'X'` up to (not including) `target`. Works both at the top level and inside a `MACRO` body (the nesting is tracked correctly even though both `MACRO` and `REPT` close with the same `ENDM` keyword — see `asm/examples/rept_test.asm`). |
 
 ## Macros
 
@@ -167,7 +167,7 @@ works the same regardless of where you run `z80asm` from.
 | Immediate | any expression |
 | Condition codes | `NZ Z NC C PO PE P M` for `JP`/`CALL`/`RET`; only `NZ Z NC C` for `JR`/(n/a for `DJNZ`, which takes no condition) |
 
-See `cpm/docs/Z80_REFERENCE.md` for the full instruction set the encoder
+See `docs/Z80_REFERENCE.md` for the full instruction set the encoder
 supports, including the undocumented forms (`IXH`/`IXL`/`IYH`/`IYL`,
 `SLL`) and how they're encoded.
 

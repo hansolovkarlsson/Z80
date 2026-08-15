@@ -16,12 +16,12 @@ EMU_SRCS := $(wildcard $(EMU_SRC_DIR)/*.c)
 EMU_OBJS := $(EMU_SRCS:.c=.o) $(Z80CORE_OBJS)
 EMU_TARGET := $(BIN_DIR)/z80
 
-ASM_SRC_DIR := cpm/asm/src
+ASM_SRC_DIR := asm/src
 ASM_SRCS := $(wildcard $(ASM_SRC_DIR)/*.c)
 ASM_OBJS := $(ASM_SRCS:.c=.o)
 ASM_TARGET := $(BIN_DIR)/z80asm
 
-DASM_SRC_DIR := cpm/disasm/src
+DASM_SRC_DIR := disasm/src
 DASM_SRCS := $(wildcard $(DASM_SRC_DIR)/*.c)
 DASM_OBJS := $(DASM_SRCS:.c=.o)
 DASM_TARGET := $(BIN_DIR)/z80dasm

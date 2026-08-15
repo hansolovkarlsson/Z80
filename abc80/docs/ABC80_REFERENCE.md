@@ -3,7 +3,7 @@
 Technical reference for the real Luxor ABC80 hardware this machine target
 emulates: memory map, I/O ports, ROM/PROM inventory, and the per-subsystem
 register/address formulas this project's own code implements. This is the
-ABC80 counterpart to `cpm/docs/Z80_REFERENCE.md`/`CPM_REFERENCE.md` — a
+ABC80 counterpart to `docs/Z80_REFERENCE.md`/`CPM_REFERENCE.md` — a
 technical reference, not a status log. For milestone status, what's
 implemented vs. still missing, and the story behind each design decision
 (false starts, real bugs found and fixed, exact verification numbers), see

@@ -1,13 +1,13 @@
 # cpm_disk
 
 A ready-to-run collection of `.com` programs, built from this repo's own
-source (`cpm/asm/examples/`, `cpm/resources/tastybasic/`, `cpm/resources/sargon/`)
+source (`asm/examples/`, `cpm/resources/tastybasic/`, `cpm/resources/sargon/`)
 plus prebuilt third-party binaries (`cpm/resources/Mbasic.com`,
 `cpm/resources/adventure/`) that have no assembleable source. Every filename
 here fits CP/M's real 8.3 limit (8-character base name, 3-character
 extension) specifically so `DIR` at the CCP shell (see below) can list
 and run every single one of them — no name here is the same as its
-`cpm/asm/examples/`/`resources/` source's own filename for that reason. Run
+`asm/examples/`/`resources/` source's own filename for that reason. Run
 any of them from inside **`cpm/`** (`bin/` itself stays at the repo
 root - see `CLAUDE.md`'s top-level layout):
 
@@ -50,7 +50,7 @@ tracked.
 
 - `hello.com`, `selftest.com`, `macrotst.com`, `incltest.com`,
   `repttest.com`, `gapstest.com`, `console.com`, `filetest.com` — this
-  project's own `cpm/asm/examples/*.asm` regression-test programs (`hello`,
+  project's own `asm/examples/*.asm` regression-test programs (`hello`,
   `selftest`, `macro_test`, `include_test`, `rept_test`, `gaps_test`,
   `console_test`, `file_test` respectively), assembled with `bin/z80asm`.
   Most print `OK`/`FAIL` lines and exit; `console.com` and `filetest.com`
@@ -116,21 +116,21 @@ tracked.
   `cpm/resources/bdsc/examples/hello.c`/`fib.c` by `cpm/resources/bdsc/derive.sh`
   running the real `CC.COM`/`CLINK.COM` above as the build tool (named
   `bds*` here since plain `hello.com` is already taken by this project's
-  own `cpm/asm/examples/hello.asm`). `fib.c` exercises recursion, a loop,
+  own `asm/examples/hello.asm`). `fib.c` exercises recursion, a loop,
   and multi-argument `printf`, not just "does it boot."
 
 Regenerate the assembled ones (after any assembler/source change) with,
 again from inside `cpm/`:
 
 ```
-../bin/z80asm asm/examples/hello.asm -o cpm_disk/hello.com
-../bin/z80asm asm/examples/selftest.asm -o cpm_disk/selftest.com
-../bin/z80asm asm/examples/macro_test.asm -o cpm_disk/macrotst.com
-../bin/z80asm asm/examples/include_test.asm -o cpm_disk/incltest.com
-../bin/z80asm asm/examples/rept_test.asm -o cpm_disk/repttest.com
-../bin/z80asm asm/examples/gaps_test.asm -o cpm_disk/gapstest.com
-../bin/z80asm asm/examples/console_test.asm -o cpm_disk/console.com
-../bin/z80asm asm/examples/file_test.asm -o cpm_disk/filetest.com
+../bin/z80asm ../asm/examples/hello.asm -o cpm_disk/hello.com
+../bin/z80asm ../asm/examples/selftest.asm -o cpm_disk/selftest.com
+../bin/z80asm ../asm/examples/macro_test.asm -o cpm_disk/macrotst.com
+../bin/z80asm ../asm/examples/include_test.asm -o cpm_disk/incltest.com
+../bin/z80asm ../asm/examples/rept_test.asm -o cpm_disk/repttest.com
+../bin/z80asm ../asm/examples/gaps_test.asm -o cpm_disk/gapstest.com
+../bin/z80asm ../asm/examples/console_test.asm -o cpm_disk/console.com
+../bin/z80asm ../asm/examples/file_test.asm -o cpm_disk/filetest.com
 ../bin/z80asm resources/tastybasic/tastybasic_cpm.asm -o cpm_disk/tastybas.com
 ../bin/z80asm resources/sargon/sargon_cpm.asm -o cpm_disk/sargon.com
 ../bin/z80asm resources/ccp/ccp_cpm.asm -o cpm_disk/ccp.com

@@ -12,7 +12,7 @@
 ; works exactly this way over real disk blocks, and this demo shows the
 ; same "gaps read as empty" behavior falls out naturally here too.
 ;
-;   bin/z80asm cpm/asm/test/randomdemo.asm -o randomdemo.com
+;   bin/z80asm asm/test/randomdemo.asm -o randomdemo.com
 ;   bin/z80 randomdemo.com
 
 BDOS:   equ 5

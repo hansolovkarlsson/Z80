@@ -321,7 +321,7 @@ static int process_file(const char *filename, PPBuilder *out, MacroTable *mt, in
     // macro in zexall.mac, which is MACRO...ENDM wrapping a REPT...ENDM).
     // REPT/ENDM aren't otherwise interpreted here: they're captured
     // verbatim as body text and only actually expanded later, during real
-    // assembly (cpm/asm/src/main.c), since a REPT count can depend on $.
+    // assembly (asm/src/main.c), since a REPT count can depend on $.
     int macro_rept_depth = 0;
 
     while (fgets(raw, sizeof(raw), f)) {

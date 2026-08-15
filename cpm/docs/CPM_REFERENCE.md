@@ -376,7 +376,7 @@ uppercased, trailing spaces trimmed). Concretely, this means:
   drive, the same spirit as `BDOS_ENTRY`'s "plausible ~61KB of free
   memory" (see the zero-page section above).
 
-`cpm/asm/examples/file_test.asm` covers `F_MAKE`/`F_WRITE`/`F_CLOSE`/
+`asm/examples/file_test.asm` covers `F_MAKE`/`F_WRITE`/`F_CLOSE`/
 `F_RENAME`/`F_OPEN`/`F_READ`/`F_SFIRST`/`F_DELETE` end to end (create,
 rename, read back, wildcard-search, delete, confirm gone), plus
 `F_WRITERAND`/`F_READRAND` on a closed FCB with no intervening `F_OPEN`
