@@ -2268,6 +2268,25 @@ in default and once in `--amber`. The dialogs' own behavior and the
 resulting colors need the user's own hands-on look, the same as every
 other real GDK-rendering change in this milestone.
 
+### Sub-step: menu text stayed legible regardless of Border Color
+
+User-reported: picking a dark Border Color made the menu bar's own text
+illegible (dark text on a now-black menu background) - they asked
+"Does the menu have to follow the color of the border?" Root cause: the
+`.abc80-canvas-area` CSS class from the canvas-margin sub-step above was
+applied to `layout_box`, the outer container holding *both* `menu_bar`
+and `drawing_area` - `GtkPopoverMenuBar`'s own default styling doesn't
+give it a fully opaque background in at least one theme, so
+`layout_box`'s custom background painted in behind the menu bar too,
+fighting the menu's own text color (themed for a normal light/gray menu
+background, not whatever the user just picked for the ABC80 canvas).
+Fixed by scoping the CSS class to a new `canvas_wrapper` box holding
+*only* `drawing_area`, as `menu_bar`'s sibling rather than its cousin -
+`border_color` now can't reach anywhere near the menu bar's own
+rendering, regardless of what color it's set to. Verified via clean
+compilation and the same non-visual smoke test as every other sub-step
+here; the actual visual fix needs the user's own hands-on look.
+
 **Remaining open items**:
 - Live SN76477 audio, per this milestone's own earlier scoping decision
   - still out of scope.

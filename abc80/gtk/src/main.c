@@ -747,19 +747,31 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_widget_set_halign(app->drawing_area, GTK_ALIGN_CENTER);
     gtk_widget_set_valign(app->drawing_area, GTK_ALIGN_CENTER);
 
-    GtkWidget *layout_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_box_append(GTK_BOX(layout_box), menu_bar);
-    gtk_box_append(GTK_BOX(layout_box), app->drawing_area);
-    gtk_window_set_child(GTK_WINDOW(window), layout_box);
-
     // User-requested: the margin around the canvas (above) showed
     // through as the default GTK theme background - a different color
     // from the canvas itself, so it read as a visible border rather than
-    // blending in. Painting layout_box's own background makes the margin
-    // blend into (or, via the Colors menu, deliberately contrast with)
-    // the canvas, since menu_bar and drawing_area (both opaque) paint
-    // over their own allocated areas regardless - only the margin
-    // (unclaimed by any child) ever shows layout_box's own background.
+    // blending in. Painting a background behind drawing_area makes the
+    // margin blend into (or, via the Colors menu, deliberately contrast
+    // with) the canvas, since drawing_area's own opaque paint covers its
+    // own allocated area regardless - only the margin (unclaimed by
+    // drawing_area) ever shows this background at all.
+    //
+    // A real bug this had at first, user-reported: applying this CSS
+    // class to the *outer* box (containing both menu_bar and
+    // drawing_area) also painted it in behind the menu bar wherever the
+    // menu bar's own theme doesn't give it a fully opaque background of
+    // its own - GtkPopoverMenuBar's default styling in at least one
+    // theme doesn't - producing illegibly-low-contrast (dark-on-black)
+    // menu text, since the menu's text color is themed for a normal
+    // light/gray menu background, not whatever the user just picked for
+    // the ABC80 canvas. Fixed by scoping the CSS class to a dedicated
+    // canvas_wrapper box holding *only* drawing_area, as menu_bar's own
+    // sibling rather than its cousin - border_color now can't reach
+    // anywhere near the menu bar's own rendering, regardless of what
+    // color it's set to.
+    GtkWidget *canvas_wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_append(GTK_BOX(canvas_wrapper), app->drawing_area);
+
     // Kept on the AppState (not unref'd here) since Border Color's own
     // dialog needs to reload this exact provider's content later -
     // gtk_css_provider_load_from_string() on an already-registered
@@ -770,7 +782,12 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
                                                 GTK_STYLE_PROVIDER(app->canvas_css_provider),
                                                 GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     update_canvas_css(app);
-    gtk_widget_add_css_class(layout_box, "abc80-canvas-area");
+    gtk_widget_add_css_class(canvas_wrapper, "abc80-canvas-area");
+
+    GtkWidget *layout_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_box_append(GTK_BOX(layout_box), menu_bar);
+    gtk_box_append(GTK_BOX(layout_box), canvas_wrapper);
+    gtk_window_set_child(GTK_WINDOW(window), layout_box);
 
     GtkEventController *key_controller = gtk_event_controller_key_new();
     g_signal_connect(key_controller, "key-pressed", G_CALLBACK(on_key_pressed), app);

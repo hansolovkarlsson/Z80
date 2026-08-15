@@ -254,3 +254,17 @@ canvas-margin fix above introduced (in place, via
 `gtk_css_provider_load_from_string()` on the already-registered
 provider) rather than re-registering a new one each time the color
 changes.
+
+**A real bug this surfaced, user-reported**: picking a dark Border Color
+made the menu bar's own text illegible (dark text on a now-black menu
+background). Root cause: the `.abc80-canvas-area` CSS class was applied
+to `layout_box`, the outer container holding *both* `menu_bar` and
+`drawing_area` - `GtkPopoverMenuBar`'s own default styling doesn't give
+it a fully opaque background in at least one theme, so `layout_box`'s
+custom background painted in behind the menu bar too, fighting the
+menu's own text color (themed for a normal light/gray menu background,
+not whatever the user just picked for the ABC80 canvas). Fixed by
+scoping the CSS class to a new `canvas_wrapper` box holding *only*
+`drawing_area`, as `menu_bar`'s sibling rather than its cousin -
+`border_color` now can't reach anywhere near the menu bar's own
+rendering, regardless of what color it's set to.
