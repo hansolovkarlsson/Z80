@@ -141,8 +141,10 @@ successor, is well known for its amber CRT option, which the user liked;
 `#FFB000` (a commonly used amber-phosphor swatch matching most terminal
 emulators' own "amber" themes - no ABC800 hardware manual was available
 to source an exact CRT phosphor chromaticity, so this isn't asserted as
-that precise value). Background stays black either way. **Confirmed by
-the user, hands-on**: "it looks great."
+that precise value). **Confirmed by the user, hands-on**: "it looks
+great." (Superseded as the *only* way to get a non-default look by the
+Colors menu, further down this file - `--amber` now just seeds
+`text_color`'s starting value, freely repickable afterward.)
 
 **A note on how this window gets tested going forward**: automating
 `screencapture`/`osascript` against the user's real desktop (as earlier
@@ -164,12 +166,12 @@ the emulated picture at all, centered within the window
 also user-requested: that margin initially showed the default GTK theme
 background - a different color from the canvas's own black, so it read
 as a visible border rather than blending in. Fixed with a small
-`GtkCssProvider` (`.abc80-canvas-area { background-color: black; }`)
-applied to `layout_box`, the container `menu_bar`/`drawing_area` both sit
-in - both children are opaque and paint over their own allocated area
-regardless, so this only actually shows through in the margin itself.
-Always black, not conditional on `--amber`, since `draw_screen()` never
-changes the background, only the foreground palette.
+`GtkCssProvider` applied to `layout_box`, the container `menu_bar`/
+`drawing_area` both sit in - both children are opaque and paint over
+their own allocated area regardless, so this only actually shows through
+in the margin itself. (Originally a fixed `background-color: black`;
+now driven by `border_color`, independently choosable via the Colors
+menu - see further down this file.)
 
 **A File menu**: `Save Program…`/`Load Program…`/`Take Screenshot…`, a
 real in-window `GtkPopoverMenuBar` built from a `GMenu` model (not
@@ -235,3 +237,20 @@ real window - the same `on_window_destroy()` path a close-button click
 or `SIGTERM` already drives, so a pending `--quicksave` still flushes
 from Cmd-Q exactly like it does from every other exit path, rather than
 a second copy of that logic.
+
+**A Colors menu** - user-requested, after asking whether GTK had a
+built-in color-picker dialog: it does. `Text Color…`/`Canvas Background
+Color…`/`Border Color…` each open a real `GtkColorDialog` (GTK 4.10+,
+the same async-dialog family as `GtkFileDialog` above - a full palette
+grid plus custom RGB/hex entry, no custom picker UI built here) seeded
+with that setting's current value. `--amber` still works as a launch-
+time convenience, but now just sets `text_color`'s starting value - all
+three colors (`AppState.text_color`/`canvas_bg_color`/`border_color`,
+each a `GdkRGBA`) are freely repickable at runtime regardless of how the
+window was launched. `draw_screen()` reads `text_color`/`canvas_bg_color`
+directly instead of the old hardcoded white/black; `border_color` feeds
+`update_canvas_css()`, which reloads the same `GtkCssProvider` the
+canvas-margin fix above introduced (in place, via
+`gtk_css_provider_load_from_string()` on the already-registered
+provider) rather than re-registering a new one each time the color
+changes.

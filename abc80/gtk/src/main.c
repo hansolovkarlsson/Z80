@@ -68,21 +68,21 @@
 // and main.c has no header of its own to export it from.
 #define ABC80_BLINK_HZ 3.125
 
-// Opt-in amber-phosphor palette (`--amber`), not the real ABC80's own
-// monitor color - the base ABC80 shipped with a white/green-ish
-// monochrome display, and this project's own default rendering already
-// models that (plain white-on-black). The Luxor ABC800, ABC80's direct
-// successor, is well known for shipping an amber CRT option instead -
-// this exists purely as a look the user asked for, not a claim about
-// ABC80 hardware itself, so it's an explicit flag rather than a new
-// default. FFB000 is a commonly used amber-phosphor swatch (matching
-// most terminal emulators' own built-in "amber" themes) rather than a
-// value sourced from an ABC800 hardware manual - no primary source for
-// the exact CRT phosphor chromaticity was available to ground this
-// further.
-#define ABC80_GTK_AMBER_R (0xFF / 255.0)
-#define ABC80_GTK_AMBER_G (0xB0 / 255.0)
-#define ABC80_GTK_AMBER_B (0x00 / 255.0)
+// Text/background/border are all independently user-choosable at
+// runtime now (the Colors menu, see activate() below), so these are
+// just the startup defaults - real ABC80's own white-on-black, not
+// asserted as any particular hardware's exact phosphor chromaticity.
+// `--amber` (kept as a launch-time convenience alongside the menu, not
+// replaced by it) overrides just ABC80_GTK_DEFAULT_TEXT to this swatch -
+// not the real ABC80's own monitor color, but the Luxor ABC800's
+// (ABC80's direct successor) well-known amber CRT option, which the
+// user liked; FFB000 is a commonly used amber-phosphor value matching
+// most terminal emulators' own built-in "amber" themes, not sourced
+// from an ABC800 hardware manual (no primary source for the exact CRT
+// phosphor chromaticity was available).
+#define ABC80_GTK_DEFAULT_TEXT ((GdkRGBA){1.0, 1.0, 1.0, 1.0})
+#define ABC80_GTK_DEFAULT_BG ((GdkRGBA){0.0, 0.0, 0.0, 1.0})
+#define ABC80_GTK_AMBER_TEXT ((GdkRGBA){0xFF / 255.0, 0xB0 / 255.0, 0x00 / 255.0, 1.0})
 
 // Real pixel geometry - ABC80_CHARGEN_CHAR_WIDTH/_HEIGHT (chargen.h) times
 // the real 40x24 screen (video_timing.h's own ABC80_SCREEN_COLS/_ROWS
@@ -132,7 +132,10 @@ typedef struct {
     double last_render_sec;
     bool cursor_blink_phase;
     bool ram32k_enabled;
-    bool amber_mode;
+    GdkRGBA text_color;
+    GdkRGBA canvas_bg_color;
+    GdkRGBA border_color;
+    GtkCssProvider *canvas_css_provider; // backs border_color - see update_canvas_css()
     const char *quickload_path;
     bool quickload_done;
     const char *quicksave_path;
@@ -214,17 +217,13 @@ static void draw_screen(GtkDrawingArea *area, cairo_t *cr, int width, int height
     (void)area;
     AppState *app = user_data;
 
-    cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
+    cairo_set_source_rgb(cr, app->canvas_bg_color.red, app->canvas_bg_color.green, app->canvas_bg_color.blue);
     cairo_paint(cr);
 
     double sx = (double)width / ABC80_GTK_PIXEL_WIDTH;
     double sy = (double)height / ABC80_GTK_PIXEL_HEIGHT;
     cairo_scale(cr, sx, sy);
-    if (app->amber_mode) {
-        cairo_set_source_rgb(cr, ABC80_GTK_AMBER_R, ABC80_GTK_AMBER_G, ABC80_GTK_AMBER_B);
-    } else {
-        cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
-    }
+    cairo_set_source_rgb(cr, app->text_color.red, app->text_color.green, app->text_color.blue);
 
     const uint8_t *videoram = &app->ram[0x7C00];
     for (int row = 0; row < ABC80_GTK_ROWS; row++) {
@@ -600,6 +599,87 @@ static void on_take_screenshot(GSimpleAction *action, GVariant *parameter, gpoin
     gtk_file_dialog_save(dialog, GTK_WINDOW(app->window), NULL, on_screenshot_response, app);
 }
 
+// Colors menu (win.text-color/win.background-color/win.border-color,
+// see activate() below for the GMenu wiring) - user-requested: pick any
+// text/canvas-background/border color at runtime via GTK's own built-in
+// GtkColorDialog (the same async-dialog family as GtkFileDialog above,
+// GTK 4.10+), rather than being limited to the fixed white/amber choice
+// --amber offered. That flag still works as a launch-time convenience
+// (see main()'s own argument parsing), but now just seeds text_color's
+// initial value - all three colors are freely repickable afterward.
+
+// Regenerates layout_box's own CSS rule from the current border_color -
+// called once at startup and again every time the Border Color dialog
+// picks a new value. A GtkCssProvider's content can be reloaded in
+// place (gtk_css_provider_load_from_string() on the same, already-
+// registered provider), so this doesn't need to re-register a new
+// provider each time border_color changes.
+static void update_canvas_css(AppState *app) {
+    char css[160];
+    snprintf(css, sizeof(css), ".abc80-canvas-area { background-color: rgb(%d,%d,%d); }",
+             (int)(app->border_color.red * 255 + 0.5),
+             (int)(app->border_color.green * 255 + 0.5),
+             (int)(app->border_color.blue * 255 + 0.5));
+    gtk_css_provider_load_from_string(app->canvas_css_provider, css);
+}
+
+static void on_text_color_response(GObject *source, GAsyncResult *res, gpointer user_data) {
+    GtkColorDialog *dialog = GTK_COLOR_DIALOG(source);
+    AppState *app = user_data;
+    GdkRGBA *rgba = gtk_color_dialog_choose_rgba_finish(dialog, res, NULL);
+    if (!rgba) return;
+    app->text_color = *rgba;
+    gdk_rgba_free(rgba);
+    if (app->drawing_area) gtk_widget_queue_draw(app->drawing_area);
+}
+
+static void on_text_color(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+    (void)action;
+    (void)parameter;
+    AppState *app = user_data;
+    GtkColorDialog *dialog = gtk_color_dialog_new();
+    gtk_color_dialog_set_title(dialog, "Text Color");
+    gtk_color_dialog_choose_rgba(dialog, GTK_WINDOW(app->window), &app->text_color, NULL, on_text_color_response, app);
+}
+
+static void on_background_color_response(GObject *source, GAsyncResult *res, gpointer user_data) {
+    GtkColorDialog *dialog = GTK_COLOR_DIALOG(source);
+    AppState *app = user_data;
+    GdkRGBA *rgba = gtk_color_dialog_choose_rgba_finish(dialog, res, NULL);
+    if (!rgba) return;
+    app->canvas_bg_color = *rgba;
+    gdk_rgba_free(rgba);
+    if (app->drawing_area) gtk_widget_queue_draw(app->drawing_area);
+}
+
+static void on_background_color(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+    (void)action;
+    (void)parameter;
+    AppState *app = user_data;
+    GtkColorDialog *dialog = gtk_color_dialog_new();
+    gtk_color_dialog_set_title(dialog, "Canvas Background Color");
+    gtk_color_dialog_choose_rgba(dialog, GTK_WINDOW(app->window), &app->canvas_bg_color, NULL, on_background_color_response, app);
+}
+
+static void on_border_color_response(GObject *source, GAsyncResult *res, gpointer user_data) {
+    GtkColorDialog *dialog = GTK_COLOR_DIALOG(source);
+    AppState *app = user_data;
+    GdkRGBA *rgba = gtk_color_dialog_choose_rgba_finish(dialog, res, NULL);
+    if (!rgba) return;
+    app->border_color = *rgba;
+    gdk_rgba_free(rgba);
+    update_canvas_css(app);
+}
+
+static void on_border_color(GSimpleAction *action, GVariant *parameter, gpointer user_data) {
+    (void)action;
+    (void)parameter;
+    AppState *app = user_data;
+    GtkColorDialog *dialog = gtk_color_dialog_new();
+    gtk_color_dialog_set_title(dialog, "Border Color");
+    gtk_color_dialog_choose_rgba(dialog, GTK_WINDOW(app->window), &app->border_color, NULL, on_border_color_response, app);
+}
+
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
     AppState *app = user_data;
 
@@ -620,6 +700,9 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
         {"save-program", on_save_program, NULL, NULL, NULL, {0}},
         {"load-program", on_load_program, NULL, NULL, NULL, {0}},
         {"take-screenshot", on_take_screenshot, NULL, NULL, NULL, {0}},
+        {"text-color", on_text_color, NULL, NULL, NULL, {0}},
+        {"background-color", on_background_color, NULL, NULL, NULL, {0}},
+        {"border-color", on_border_color, NULL, NULL, NULL, {0}},
     };
     g_action_map_add_action_entries(G_ACTION_MAP(window), win_actions, G_N_ELEMENTS(win_actions), app);
 
@@ -636,10 +719,16 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     g_menu_append(file_menu, "Save Program…", "win.save-program");
     g_menu_append(file_menu, "Load Program…", "win.load-program");
     g_menu_append(file_menu, "Take Screenshot…", "win.take-screenshot");
+    GMenu *colors_menu = g_menu_new();
+    g_menu_append(colors_menu, "Text Color…", "win.text-color");
+    g_menu_append(colors_menu, "Canvas Background Color…", "win.background-color");
+    g_menu_append(colors_menu, "Border Color…", "win.border-color");
     GMenu *menubar_model = g_menu_new();
     g_menu_append_submenu(menubar_model, "File", G_MENU_MODEL(file_menu));
+    g_menu_append_submenu(menubar_model, "Colors", G_MENU_MODEL(colors_menu));
     GtkWidget *menu_bar = gtk_popover_menu_bar_new_from_model(G_MENU_MODEL(menubar_model));
     g_object_unref(file_menu);
+    g_object_unref(colors_menu);
     g_object_unref(menubar_model);
 
     app->drawing_area = gtk_drawing_area_new();
@@ -665,20 +754,22 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
 
     // User-requested: the margin around the canvas (above) showed
     // through as the default GTK theme background - a different color
-    // from draw_screen()'s own black, so it read as a visible border
-    // rather than blending in. Painting layout_box's own background
-    // black makes the margin invisible against the canvas, since
-    // menu_bar and drawing_area (both opaque) paint over their own
-    // allocated areas regardless - only the margin (unclaimed by any
-    // child) shows layout_box's background at all. Always black, not
-    // conditional on --amber: draw_screen() only ever changes the
-    // foreground color for the amber palette, never the background.
-    GtkCssProvider *css_provider = gtk_css_provider_new();
-    gtk_css_provider_load_from_string(css_provider, ".abc80-canvas-area { background-color: black; }");
+    // from the canvas itself, so it read as a visible border rather than
+    // blending in. Painting layout_box's own background makes the margin
+    // blend into (or, via the Colors menu, deliberately contrast with)
+    // the canvas, since menu_bar and drawing_area (both opaque) paint
+    // over their own allocated areas regardless - only the margin
+    // (unclaimed by any child) ever shows layout_box's own background.
+    // Kept on the AppState (not unref'd here) since Border Color's own
+    // dialog needs to reload this exact provider's content later -
+    // gtk_css_provider_load_from_string() on an already-registered
+    // provider updates it in place, no need to re-register a new one
+    // each time the color changes.
+    app->canvas_css_provider = gtk_css_provider_new();
     gtk_style_context_add_provider_for_display(gdk_display_get_default(),
-                                                GTK_STYLE_PROVIDER(css_provider),
+                                                GTK_STYLE_PROVIDER(app->canvas_css_provider),
                                                 GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    g_object_unref(css_provider);
+    update_canvas_css(app);
     gtk_widget_add_css_class(layout_box, "abc80-canvas-area");
 
     GtkEventController *key_controller = gtk_event_controller_key_new();
@@ -716,8 +807,10 @@ static void print_usage(const char *prog) {
     printf("                     see abc80/docs/ABC80_ROADMAP.md for how this bypass works.\n");
     printf("  --ram32k           Model the real 16KB RAM-expansion mod at 0x8000-0xBFFF\n");
     printf("                     (default: base 16K machine - that range floats)\n");
-    printf("  --amber            Amber-on-black palette (the Luxor ABC800's look, not\n");
-    printf("                     the base ABC80's own) instead of the default white-on-black\n");
+    printf("  --amber            Start with the Luxor ABC800's amber-on-black look (not\n");
+    printf("                     the base ABC80's own) instead of the default white-on-black -\n");
+    printf("                     text/background/border colors can all be changed afterward\n");
+    printf("                     from the Colors menu regardless of this flag\n");
     printf("  --quickload FILE   Inject a saved program into BASIC's program storage\n");
     printf("                     area once boot init has run (see cassette.h) - also\n");
     printf("                     available from the File menu as \"Load Program...\"\n");
@@ -760,10 +853,13 @@ int main(int argc, char *argv[]) {
     app.quickload_path = quickload_path;
     app.quickload_done = (quickload_path == NULL);
     app.quicksave_path = quicksave_path;
+    app.text_color = ABC80_GTK_DEFAULT_TEXT;
+    app.canvas_bg_color = ABC80_GTK_DEFAULT_BG;
+    app.border_color = ABC80_GTK_DEFAULT_BG; // matches canvas by default - see update_canvas_css()
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--ram32k") == 0) app.ram32k_enabled = true;
-        if (strcmp(argv[i], "--amber") == 0) app.amber_mode = true;
+        if (strcmp(argv[i], "--amber") == 0) app.text_color = ABC80_GTK_AMBER_TEXT;
     }
 
     for (size_t i = 0; i < NUM_ROM_IMAGES; i++) {

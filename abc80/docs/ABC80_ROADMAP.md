@@ -2240,6 +2240,34 @@ test as the prior sub-steps, run once in each palette (default and
 `--amber`) - the visual result itself needs the user's own hands-on
 look, same as every other real GDK-rendering change in this milestone.
 
+### Sub-step: a Colors menu (text/background/border, via GtkColorDialog)
+
+User asked whether GTK had a built-in color-picker dialog before
+requesting this - it does: `GtkColorDialog` (GTK 4.10+, confirmed
+present in the installed 4.22.4), the same async-dialog family as
+`GtkFileDialog` already in use for Save/Load/Screenshot, with a real
+palette grid plus custom RGB/hex entry built in, no custom picker UI
+needed. Added a `Colors` menu (`Text Color…`/`Canvas Background
+Color…`/`Border Color…`), each opening the dialog seeded with that
+setting's current value.
+
+Replaced the fixed `--amber` boolean with three `GdkRGBA` fields on
+`AppState` (`text_color`/`canvas_bg_color`/`border_color`) so all three
+are freely repickable at runtime rather than a fixed white/amber choice.
+`--amber` still works as a launch-time convenience, now just seeding
+`text_color`'s starting value. `draw_screen()` reads `text_color`/
+`canvas_bg_color` directly instead of the old hardcoded white/black
+constants; `border_color` feeds `update_canvas_css()`, which reloads the
+same `GtkCssProvider` the earlier canvas-margin fix introduced (in
+place, not re-registered) so the margin can independently blend with or
+contrast against the canvas.
+
+Verified via clean compilation (zero warnings on the first attempt) and
+the same non-visual smoke test as every other sub-step here, run once
+in default and once in `--amber`. The dialogs' own behavior and the
+resulting colors need the user's own hands-on look, the same as every
+other real GDK-rendering change in this milestone.
+
 **Remaining open items**:
 - Live SN76477 audio, per this milestone's own earlier scoping decision
   - still out of scope.
