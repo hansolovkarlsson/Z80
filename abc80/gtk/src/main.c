@@ -870,7 +870,7 @@ static void on_save_program(GSimpleAction *action, GVariant *parameter, gpointer
     AppState *app = user_data;
     GtkFileDialog *dialog = gtk_file_dialog_new();
     gtk_file_dialog_set_title(dialog, "Save Program");
-    gtk_file_dialog_set_initial_name(dialog, "program.cas");
+    gtk_file_dialog_set_initial_name(dialog, "program");
     set_program_file_filters(dialog);
     gtk_file_dialog_save(dialog, GTK_WINDOW(app->window), NULL, on_save_program_response, app);
 }
