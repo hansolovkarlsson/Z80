@@ -2445,6 +2445,77 @@ reasonably-sized program? does the picked format/extension behave as
 expected in the file dialog?) needs the user's own hands-on look, the
 same honest split as every other GTK-input change this session.
 
+### Sub-step: `--turbo N`, a command-line speedup flag
+
+User-requested, after confirming `bin/abc80-gtk`'s real-hardware pacing
+was working correctly rather than being slow by accident: the new
+`abc80/examples/graphics_demo.bas` (added the same session, see above -
+box border plus a `SIN`/`COS` circle) genuinely takes ~16-20 real
+seconds to finish drawing at real speed, confirmed by bisecting
+`bin/abc80`'s own batch-mode instruction cap against when the post-draw
+caption appears in its final render (47.5M T-states: not yet drawn; 58.5M
+T-states: drawn) - real 8-bit BASIC floating-point trig in a loop was
+genuinely this slow on the genuine 1978 hardware. Wanted as a real
+command-line flag, not a menu toggle - scoped via a written plan first
+(`~/.claude/plans/mellow-cooking-parrot.md`), confirming with the user
+which of two designs to build: a multiplier (`--turbo N`, chosen) versus
+an uncapped "as fast as the host can go" boolean flag (rejected - would
+blast a demo like this to its end state in well under a second on a fast
+host, defeating the point of watching it draw).
+
+**Implementation** (`abc80/gtk/src/main.c`): `on_timer_tick()`'s existing
+real-time pacing loop already computed `target_cycles = elapsed_real *
+ABC80_CLOCK_HZ` (2,995,200Hz, the real Z80 clock) every 5ms tick, plus a
+`max_cycles_this_tick` catch-up bound for stalled ticks - both are now
+multiplied by a new `app->turbo_multiplier` field (`1.0` default,
+i.e. today's behavior unchanged with no flag). Nothing else needed
+touching: the PIO interrupt period and every in-program BASIC/machine-
+code timing loop are already driven by `total_cycles` (real emulated
+T-states), so they speed up correctly right along with the CPU - exactly
+how a real, faster-clocked ABC80 would behave, not something turbo mode
+has to special-case. Cursor blink is already computed from `elapsed_real`
+directly, independent of `total_cycles` - correctly unaffected by turbo,
+since blink is a separate real hardware timer on the real board. The
+30fps redraw cap is unaffected too - turbo's visible effect is each
+redraw reflecting far more emulated progress, i.e. the picture visibly
+fast-forwarding, not a higher redraw rate.
+
+**Live audio is disabled whenever turbo is active** (`SDL_Init`/
+`SDL_OpenAudioDevice` skipped entirely, `--turbo`'s own `print_usage()`
+entry says so, plus a startup line saying so at launch) - a deliberate,
+documented tradeoff rather than shipping something that would sound
+broken and imply it's accurate. `live_sound_register` is only updated
+once per unchanged 5ms GTK tick, sampled by the audio thread at a real
+44.1kHz - already a real, accepted aliasing tradeoff at 1x speed (see
+Milestone 11's live-audio sub-step above). At a turbo multiplier, far
+more emulated tone changes land inside that same unchanged 5ms window,
+so most of a program's real sound events would get silently aliased
+away - materially worse than 1x, not a faithfully-sped-up sound. Muting
+says nothing rather than something misleading.
+
+`--turbo N` follows the file's existing argument-taking-flag pattern
+(`--disk FILE`/`--quickload FILE`/`--quicksave FILE`), parsed via
+`strtod()` with an endptr check - the first numeric flag in this file
+that needs real validation (every other flag here is a bare boolean), so
+it rejects anything unparseable or `<= 0` with a clear error plus
+`print_usage()`, rather than silently doing something undefined.
+
+**Verified via direct execution, not just written and assumed correct**:
+non-visual smoke test (no `Gtk-CRITICAL`/`GLib-CRITICAL`, clean
+`SIGTERM` exit) at `--turbo 1`, `--turbo 4`, and confirmed `--turbo 0`/
+`--turbo abc`/`--turbo -3` are all correctly rejected. Real pacing
+accuracy verified with a temporary `getenv`-gated debug hook in
+`on_timer_tick()` (added, exercised, then fully removed - the same
+discipline already used twice this session for headless `.bas`
+verification, confirmed via a clean `git diff` afterward showing no
+trace of it): measured real `total_cycles` growth per wall-clock second
+at `--turbo 1` (2,995,201 cycles/real-sec - matches `ABC80_CLOCK_HZ`
+almost exactly) versus `--turbo 5` (14,976,002 cycles/real-sec - exactly
+5.0000x the 1x rate, not approximately). `make abc80-gtk`/`make test`
+both clean. Real menu-click UX and whether the sped-up drawing actually
+*feels* right needs the user's own hands-on look, the same honest split
+as every other GTK-input/perceptual change this session.
+
 ## Memory map (grounded, not guessed)
 
 Cross-checked between MAME's current mainline driver

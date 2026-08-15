@@ -35,6 +35,7 @@ cd abc80
 ../bin/abc80-gtk resources/rom --ram32k
 ../bin/abc80-gtk resources/rom --quickload prog.cas --quicksave prog.cas
 ../bin/abc80-gtk resources/rom --amber
+../bin/abc80-gtk resources/rom --turbo 4
 ../bin/abc80-gtk --help
 ```
 
@@ -48,6 +49,8 @@ CLI does, so it flushes when the window closes instead (including via a
 real `SIGINT`/`SIGTERM` - `kill`, Ctrl-C in the launching terminal, or the
 host system stopping the process - which now drives a clean
 `gtk_window_destroy()` rather than dropping a pending save silently).
+`--turbo N` runs at N times real ABC80 speed instead of the default
+real-hardware pacing - see this file's own Turbo mode section below.
 
 ## Status: working - real pixel rendering and keyboard input confirmed
 
@@ -384,3 +387,35 @@ identically); and a line containing Swedish Å/Ä/Ö round-tripped correctly
 through real UTF-8 encoding/decoding. **Known, stated limitation**: a
 source line wider than 40 columns would wrap onto a second video row
 this doesn't capture - not silently mishandled, just not yet handled.
+
+### Turbo mode (`--turbo N`)
+
+The default pacing (`on_timer_tick()`) genuinely throttles execution to
+the real ABC80's own 2,995,200Hz Z80 clock - deliberate, and confirmed
+correct: `abc80/examples/graphics_demo.bas`'s box-and-circle drawing
+genuinely takes ~16-20 real seconds on real hardware, mostly slow 8-bit
+BASIC floating-point `SIN`/`COS` in a loop, not an emulator performance
+issue. `--turbo N` (e.g. `--turbo 4`) scales that pacing by N, so
+long-running programs like that one are watchable at a faster clip
+without giving up the real-speed default (no flag = unchanged). The PIO
+interrupt period and every in-program BASIC/machine-code timing loop are
+already driven by real emulated T-states, so they speed up correctly
+right along with the CPU - exactly how a real, faster-clocked ABC80
+would behave. Cursor blink and the 30fps redraw cap are unaffected -
+turbo makes each redraw show more emulated progress, not the screen
+update faster.
+
+**Live audio is disabled whenever turbo is active**, with a startup line
+saying so - live audio only samples its tone register once per 5ms GTK
+tick even at 1x speed (an already-accepted aliasing tradeoff), and a
+turbo multiplier would make far more of a program's real tone changes
+fall inside that same unchanged window and get silently dropped,
+producing sound that's misleadingly wrong rather than faithfully sped
+up. Muting is the honest choice.
+
+Verified via a temporary debug hook (added, exercised, then fully
+removed): real `total_cycles` growth per wall-clock second measured
+2,995,201 cycles/sec at `--turbo 1` (matching the real clock almost
+exactly) and 14,976,002 cycles/sec at `--turbo 5` - exactly 5.0000x, not
+approximately. Invalid values (`--turbo 0`, negative, or unparseable)
+are rejected with a clear error rather than doing something undefined.

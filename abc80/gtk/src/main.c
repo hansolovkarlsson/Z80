@@ -152,6 +152,7 @@ typedef struct {
     double last_render_sec;
     bool cursor_blink_phase;
     bool ram32k_enabled;
+    double turbo_multiplier; // 1.0 = real ABC80 speed (default) - see --turbo
     GdkRGBA text_color;
     GdkRGBA canvas_bg_color;
     GdkRGBA border_color;
@@ -441,14 +442,22 @@ static gboolean on_timer_tick(gpointer user_data) {
     clock_gettime(CLOCK_MONOTONIC, &now);
     double elapsed_real = (double)(now.tv_sec - app->run_start_time.tv_sec) +
                            (double)(now.tv_nsec - app->run_start_time.tv_nsec) / 1e9;
-    double target_cycles = elapsed_real * ABC80_CLOCK_HZ;
+    // turbo_multiplier scales both real-time-derived quantities below
+    // (1.0 = today's unchanged real-ABC80-speed pacing) - see --turbo.
+    // Everything downstream (the PIO interrupt period, any in-program
+    // BASIC/machine-code timing loop) is driven off total_cycles, so it
+    // naturally speeds up right along with the CPU, matching how a real,
+    // faster-clocked ABC80 would behave - no other change needed.
+    double target_cycles = elapsed_real * ABC80_CLOCK_HZ * app->turbo_multiplier;
 
     // Bounded per-tick batch: if the host stalled (a slow redraw, the
     // window being dragged, etc.), don't try to instantly replay however
     // much real time passed - cap the catch-up so one slow tick can't
     // freeze the UI trying to run millions of instructions at once. The
     // pacing loop naturally recovers over subsequent ticks instead.
-    uint64_t max_cycles_this_tick = (uint64_t)(ABC80_CLOCK_HZ * 0.25);
+    // Scaled by turbo_multiplier too, so it doesn't become a new
+    // bottleneck at high multipliers.
+    uint64_t max_cycles_this_tick = (uint64_t)(ABC80_CLOCK_HZ * 0.25 * app->turbo_multiplier);
     uint64_t stop_at = app->total_cycles + max_cycles_this_tick;
 
     while (app->total_cycles < (uint64_t)target_cycles && app->total_cycles < stop_at) {
@@ -1231,7 +1240,7 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
 // was not having a proper --help at all, unlike the CLI).
 static void print_usage(const char *prog) {
     printf("Usage:\n");
-    printf("  %s [rom_dir] [--disk FILE] [--ram32k] [--amber] [--quickload FILE] [--quicksave FILE]\n", prog);
+    printf("  %s [rom_dir] [--disk FILE] [--ram32k] [--amber] [--turbo N] [--quickload FILE] [--quicksave FILE]\n", prog);
     printf("\n");
     printf("  rom_dir            Directory containing the four ROM images\n");
     printf("                     (default: resources/rom - run from inside abc80/)\n");
@@ -1244,6 +1253,9 @@ static void print_usage(const char *prog) {
     printf("                     the base ABC80's own) instead of the default white-on-black -\n");
     printf("                     text/background/border colors can all be changed afterward\n");
     printf("                     from the Colors menu regardless of this flag\n");
+    printf("  --turbo N          Run at N times real ABC80 speed (e.g. --turbo 4) instead\n");
+    printf("                     of the default real-hardware pacing (N=1). Live audio is\n");
+    printf("                     disabled whenever N != 1 - see main.c's own comment for why.\n");
     printf("  --quickload FILE   Inject a saved program into BASIC's program storage\n");
     printf("                     area once boot init has run (see cassette.h) - also\n");
     printf("                     available from the File menu as \"Load Program...\"\n");
@@ -1257,6 +1269,7 @@ int main(int argc, char *argv[]) {
     const char *disk_path = NULL;
     const char *quickload_path = NULL;
     const char *quicksave_path = NULL;
+    double turbo_multiplier = 1.0;
     int arg_i = 1;
     if (arg_i < argc && argv[arg_i][0] != '-') {
         rom_dir = argv[arg_i++];
@@ -1271,6 +1284,15 @@ int main(int argc, char *argv[]) {
             quickload_path = argv[++arg_i];
         } else if (strcmp(argv[arg_i], "--quicksave") == 0 && arg_i + 1 < argc) {
             quicksave_path = argv[++arg_i];
+        } else if (strcmp(argv[arg_i], "--turbo") == 0 && arg_i + 1 < argc) {
+            const char *val = argv[++arg_i];
+            char *endptr = NULL;
+            turbo_multiplier = strtod(val, &endptr);
+            if (endptr == val || *endptr != '\0' || turbo_multiplier <= 0.0) {
+                fprintf(stderr, "--turbo requires a positive number, got '%s'\n\n", val);
+                print_usage(argv[0]);
+                return EXIT_FAILURE;
+            }
         } else if (strcmp(argv[arg_i], "--ram32k") == 0 || strcmp(argv[arg_i], "--amber") == 0) {
             // handled below, after AppState exists
         } else {
@@ -1286,6 +1308,7 @@ int main(int argc, char *argv[]) {
     app.quickload_path = quickload_path;
     app.quickload_done = (quickload_path == NULL);
     app.quicksave_path = quicksave_path;
+    app.turbo_multiplier = turbo_multiplier;
     app.text_color = ABC80_GTK_DEFAULT_TEXT;
     app.canvas_bg_color = ABC80_GTK_DEFAULT_BG;
     app.border_color = ABC80_GTK_DEFAULT_BG; // matches canvas by default - see update_canvas_css()
@@ -1342,7 +1365,21 @@ int main(int argc, char *argv[]) {
     // allowed_changes=0 requests the exact format (mono/16-bit/44100Hz,
     // matching sound.c's own WAV format) rather than risking SDL's own
     // sample-rate/format conversion path.
-    if (SDL_Init(SDL_INIT_AUDIO) != 0) {
+    //
+    // Skipped entirely under --turbo: live_sound_register is only
+    // updated once per ABC80_GTK_TIMER_INTERVAL_MS (5ms) tick, but the
+    // audio thread samples it at a real 44.1kHz - already a real,
+    // accepted aliasing tradeoff at 1x speed. At a turbo multiplier, far
+    // more emulated tone changes land inside that same unchanged 5ms
+    // window, so most of a program's real sound events would get
+    // silently aliased away - materially worse than 1x, not a
+    // faithfully-sped-up sound. Muting is the honest choice: it says
+    // nothing rather than something misleading.
+    if (app.turbo_multiplier != 1.0) {
+        printf("Turbo mode: running at %gx real ABC80 speed - live audio disabled\n"
+               "(sped-up register sampling would alias badly; see main.c's own comment)\n",
+               app.turbo_multiplier);
+    } else if (SDL_Init(SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "Warning: SDL_Init(SDL_INIT_AUDIO) failed: %s - continuing without audio\n", SDL_GetError());
     } else {
         SDL_AudioSpec want;
