@@ -176,7 +176,25 @@ quirks the emulator has to replicate).
 
 ## License
 
-This project's own code has no license file yet. The bundled ZEXALL/ZEXDOC
-exerciser under `cpm/emu/zexall/ZEXALL-main/` is third-party and licensed under
-the GPLv2 by its original author — see the `LICENSE` file in that
-directory.
+This project's own code — the emulator, assembler, disassembler, GTK
+front-ends, and their tests/docs — is MIT licensed; see [`LICENSE`](LICENSE).
+
+That covers only what's written here. The third-party material bundled for
+testing and reference keeps its own terms, which are not MIT and in several
+cases are more restrictive:
+
+- `cpm/emu/zexall/ZEXALL-main/` — the ZEXALL/ZEXDOC exerciser, GPLv2 by its
+  original author (Frank D. Cringle). See the `LICENSE` file in that
+  directory.
+- `cpm/resources/hanoi/upstream/`, `cpm/resources/queens/upstream/` — GPLv2;
+  `cpm/resources/tastybasic/upstream/`, `cpm/resources/tastybasic-main/` —
+  GPLv3. Each carries its own `LICENSE` file.
+- `cpm/resources/bdsc/` — the BDS C compiler, released to the public domain
+  by Leor Zolman. (The RED editor from the same distribution is separately
+  copyrighted and its source is deliberately *not* included here.)
+- The remaining commercial CP/M binaries bundled under `cpm/cpm_disk/` and
+  `cpm/resources/` (dBASE II, Turbo Pascal, MBASIC, SARGON) and the ABC80
+  ROM images under `abc80/resources/rom/` are copyrighted by their
+  respective owners, included here only as the real software this emulator
+  is validated against. No license to redistribute them is claimed or
+  granted.
