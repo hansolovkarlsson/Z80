@@ -40,6 +40,7 @@
 #include "render.h"
 #include "video_timing.h"
 #include "keyboard.h"
+#include "charset.h"
 #include "cassette.h"
 #include "sound.h"
 #include "disk.h"
@@ -227,9 +228,20 @@ static int poll_stdin_byte(void) {
 // specifically recognize (`CP 20h / JR C,L02BC`).
 #define ABC80_ESC_SEQUENCE_TIMEOUT_SEC 0.05
 
+// A host terminal sends Å/Ä/Ö/Ü/É (and lowercase) as 2-byte UTF-8
+// sequences (0xC2-0xDF lead byte, 0x80-0xBF continuation) - ABC80's whole
+// character set (charset.c) lives in the Latin-1 Supplement block, which
+// UTF-8 always encodes in exactly 2 bytes, so no 3-/4-byte lead bytes need
+// recognizing here. Mirrors the ESC/CSI state machine below: buffer the
+// lead byte and wait (same timeout) for its continuation, then decode and
+// look up the ABC80 byte via abc80_charset_byte_for_codepoint() - dropped
+// silently if the codepoint isn't in that table, matching this function's
+// existing precedent for any other unrecognized sequence.
 static int poll_keyboard_byte(void) {
     static enum { ESC_NONE, ESC_SEEN, ESC_BRACKET } esc_state = ESC_NONE;
     static struct timespec esc_started;
+    static int utf8_lead = -1;
+    static struct timespec utf8_started;
 
     if (esc_state != ESC_NONE) {
         struct timespec now;
@@ -242,12 +254,35 @@ static int poll_keyboard_byte(void) {
         }
     }
 
+    if (utf8_lead >= 0) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        double elapsed = (double)(now.tv_sec - utf8_started.tv_sec) +
+                          (double)(now.tv_nsec - utf8_started.tv_nsec) / 1e9;
+        if (elapsed > ABC80_ESC_SEQUENCE_TIMEOUT_SEC) {
+            utf8_lead = -1; // gave up - a lone/malformed lead byte
+        }
+    }
+
     int b = poll_stdin_byte();
 
     if (esc_state == ESC_NONE) {
+        if (utf8_lead >= 0) {
+            if (b < 0) return -1; // mid-sequence, still waiting
+            int lead = utf8_lead;
+            utf8_lead = -1;
+            if ((b & 0xC0) != 0x80) return -1; // not a valid continuation byte
+            uint32_t codepoint = ((uint32_t)(lead & 0x1F) << 6) | (uint32_t)(b & 0x3F);
+            return abc80_charset_byte_for_codepoint(codepoint);
+        }
         if (b == 0x1B) {
             esc_state = ESC_SEEN;
             clock_gettime(CLOCK_MONOTONIC, &esc_started);
+            return -1;
+        }
+        if (b >= 0xC2 && b <= 0xDF) {
+            utf8_lead = b;
+            clock_gettime(CLOCK_MONOTONIC, &utf8_started);
             return -1;
         }
         return b;

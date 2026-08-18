@@ -362,6 +362,16 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval,
             default:
                 if (keyval >= 0x20 && keyval < 0x7F) {
                     ascii = (int)keyval;
+                } else {
+                    // GDK keyvals equal Unicode codepoints outside the
+                    // 7-bit range too (Å/Ä/Ö/Ü/É and lowercase), so this
+                    // reuses the same ABC80-charset table charset.c
+                    // already grounds and decode_utf8_to_abc80() below
+                    // already relies on for .bas file loading.
+                    int mapped = abc80_charset_byte_for_codepoint((uint32_t)keyval);
+                    if (mapped >= 0) {
+                        ascii = mapped;
+                    }
                 }
                 break;
         }
@@ -690,22 +700,20 @@ static void inject_line(AppState *app, const char *text) {
     pump_steps(app, 30000);
 }
 
-// Reverse of abc80_charset_codepoint() (charset.h) for the nine real
-// Swedish-alphabet substitutions ABC80's TEXT-mode character set makes
-// over plain ASCII - needed so a .bas file containing e.g. Å/Ä/Ö
-// (whether round-tripped from this app's own Save, or typed by hand in
-// a text editor) re-types as the correct single ABC80 character byte on
-// Load, not two separate wrong ones. Anything else non-ASCII falls back
-// to '?' rather than silently corrupting the re-tokenization.
+// Thin wrapper around the shared abc80_charset_byte_for_codepoint()
+// (charset.h) - needed so a .bas file containing e.g. Å/Ä/Ö (whether
+// round-tripped from this app's own Save, or typed by hand in a text
+// editor) re-types as the correct single ABC80 character byte on Load,
+// not two separate wrong ones. Anything else non-ASCII falls back to '?'
+// rather than silently corrupting the re-tokenization - on_key_pressed()
+// above calls the shared function directly instead, since live keyboard
+// input wants "no keypress at all" for an unmapped character, not '?'.
 static uint8_t unicode_codepoint_to_abc80_char(uint32_t cp) {
-    switch (cp) {
-        case 0xC9: return 0x40; case 0xC4: return 0x5B; case 0xD6: return 0x5C;
-        case 0xC5: return 0x5D; case 0xDC: return 0x5E; case 0xE9: return 0x60;
-        case 0xE4: return 0x7B; case 0xF6: return 0x7C; case 0xE5: return 0x7D;
-        case 0xFC: return 0x7E;
-        default:
-            return (cp < 0x80) ? (uint8_t)cp : (uint8_t)'?';
+    int mapped = abc80_charset_byte_for_codepoint(cp);
+    if (mapped >= 0) {
+        return (uint8_t)mapped;
     }
+    return (cp < 0x80) ? (uint8_t)cp : (uint8_t)'?';
 }
 
 // Minimal UTF-8 decoder for exactly the range this file ever needs to

@@ -31,3 +31,20 @@ uint32_t abc80_charset_codepoint(uint8_t character) {
             return character; // plain ASCII range, unchanged
     }
 }
+
+int abc80_charset_byte_for_codepoint(uint32_t codepoint) {
+    switch (codepoint) {
+        case 0xC9: return 0x40; // É
+        case 0xC4: return 0x5B; // Ä
+        case 0xD6: return 0x5C; // Ö
+        case 0xC5: return 0x5D; // Å
+        case 0xDC: return 0x5E; // Ü
+        case 0xE9: return 0x60; // é
+        case 0xE4: return 0x7B; // ä
+        case 0xF6: return 0x7C; // ö
+        case 0xE5: return 0x7D; // å
+        case 0xFC: return 0x7E; // ü
+        default:
+            return -1;
+    }
+}

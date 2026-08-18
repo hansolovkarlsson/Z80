@@ -197,8 +197,13 @@ where a person can type something and see a response.
 - [x] **Map host keystrokes to the ABC80 input path** — non-blocking stdin
       polling (`select()`), plain ASCII passthrough (matching MAME's own
       simplification above) rather than the real Swedish scan-matrix
-      layout — typing a literal Å/Ä/Ö from a host keyboard isn't wired up
-      yet, a known gap, not a claim of completeness.
+      layout — typing a literal Å/Ä/Ö from a host keyboard wasn't wired up
+      at this point, a known gap, not a claim of completeness. **Update**:
+      closed by a later sub-step below ("Swedish character keyboard
+      mapping") — not by building a real scan-matrix model (see that
+      sub-step for why that framing was never actually the real gap), but
+      by decoding the host's UTF-8 keystrokes for Å/Ä/Ö/Ü/É (and lowercase)
+      into the correct ABC80 character-set byte.
 - [x] **Verified against real ROM execution, not just "it compiles"** —
       two genuine false starts along the way, both kept here rather than
       quietly fixed and forgotten, since each taught something real about
@@ -2709,6 +2714,63 @@ the fix only special-cases the single literal value `0x00` and none of
 those test sequences ever use it. `make test` and the usual non-visual
 GTK smoke test both clean.
 
+### Sub-step: Swedish character keyboard mapping (Å/Ä/Ö/Ü/É and lowercase)
+
+Milestone 3's own "known gap" note and this file's "Planned next steps"
+section both framed this as wiring up "the real Swedish scan-matrix
+layout." That framing turned out to be a misnomer once actually
+investigated: the ABC80's real keyboard scan-matrix PROM
+(`abc80-keyboard.bin`, N82S141) isn't dumped or documented anywhere in
+this repo, and MAME doesn't emulate it either — its `abc80_common()`
+machine config wires a generic host-ASCII-keyboard device straight to
+`kbd_w()`, the identical byte-plus-strobe forwarding
+`abc80_keyboard_press(uint8_t ascii)` already does (see Milestone 3 and
+`keyboard.c`'s own top comment). That's the correct, well-precedented
+simplification to keep, not a gap.
+
+The real gap was narrower: `abc80_keyboard_press()` takes a single 7-bit
+ASCII byte, and neither consumer converted a host Å/Ä/Ö/Ü/É keystroke
+into the correct ABC80 character-set byte for it first. In
+`bin/abc80-gtk`, `on_key_pressed()`'s fallback only accepted GDK keyvals
+in `[0x20, 0x7E]`, so these keys were silently dropped outright (GDK
+keyvals equal Unicode codepoints for the Latin-1 range, and Å/Ä/Ö/Ü/É's
+codepoints fall outside that window). In `bin/abc80 --interactive`, a
+real terminal sends these as 2-byte UTF-8 sequences, which
+`poll_keyboard_byte()` didn't decode at all — the two bytes would have
+arrived as two separate, wrong keystrokes instead.
+
+The target byte values needed no new research: `charset.c`'s
+`abc80_charset_codepoint()` already documents ABC80's real TEXT-mode
+character set (the Swedish/Finnish ISO 646 variant, SEN 850200 Annex B)
+byte↔Unicode mapping, and `bin/abc80-gtk` already had an independently
+written *reverse* table (`unicode_codepoint_to_abc80_char()`, used only
+by the `.bas` file-load path) with the identical 10 mappings. Added the
+inverse as a shared `abc80_charset_byte_for_codepoint()`
+(`charset.c`/`.h`) instead of a third copy, and wired both consumers
+through it:
+
+- `bin/abc80-gtk`'s `on_key_pressed()` now falls back to the shared
+  lookup for any keyval outside the plain-ASCII range; `.bas` loading's
+  `unicode_codepoint_to_abc80_char()` became a thin wrapper around the
+  same function (its own `'?'`-for-unmapped fallback behavior unchanged).
+- `bin/abc80 --interactive`'s `poll_keyboard_byte()` gained a second,
+  parallel state machine alongside its existing ESC/CSI arrow-key
+  recognizer — buffer a 2-byte UTF-8 lead byte (`0xC2`-`0xDF`), wait
+  (same timeout) for its continuation byte, decode the codepoint, and
+  look it up via the same shared function. Only 2-byte sequences needed
+  handling, since ABC80's entire character set lives in the Latin-1
+  Supplement block.
+
+**Verified against real ROM execution**: piping a UTF-8-encoded
+`PRINT "ÅÄÖ åäö"` into `bin/abc80` produced a final screen showing the
+ROM echoing that exact line as typed, then evaluating the string literal
+and printing it correctly on the next line — a genuine round trip through
+UTF-8 decode → ABC80 byte → keyboard press → ROM tokenizer → BASIC string
+evaluation → video RAM → back to UTF-8 for terminal display, not just a
+byte-level unit check. Re-ran the existing plain-ASCII (`PRINT 1+1`) and
+arrow-key (backspace-and-retype via `ESC [ D`) regression cases
+afterward and confirmed both unaffected.
+
 ## Memory map (grounded, not guessed)
 
 Cross-checked between MAME's current mainline driver
@@ -2791,11 +2853,6 @@ where the real detail lives:
 Concrete, scoped items identified as worth picking up next, beyond the
 "revisit only if something concrete needs it" gaps above:
 
-- **Swedish keyboard scan-matrix mapping**: host keystrokes are currently
-  plain ASCII passthrough (`select()`-based non-blocking stdin polling) —
-  typing a literal Å/Ä/Ö from a host keyboard isn't wired to the real
-  ABC80 scan matrix. See Milestone 3's own write-up for where this
-  passthrough simplification was first made and why.
 - **Floppy/DOS controller loose ends**: a few narrower items were left
   open by Milestone 6's floppy/DOS controller work even though `--disk`
   itself is fully working — the `B` register's unused bits (0-3, 7) are
