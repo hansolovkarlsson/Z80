@@ -770,20 +770,21 @@ READ/WRITE bodies), not assumed:
 | `D`,`E` (in) | The 16-bit block/record number - confirmed by tracing the actual bytes sent in the command packet, unmodified by the routine itself. |
 | `C`,`HL` (in) | Pushed on entry and restored unchanged before return - **not** used as a destination buffer address, despite that being the natural first guess. |
 | Destination buffer | Computed **internally**, not caller-supplied: `0xFD12` (a RAM cell, set to `0xF500` by DOS init) `+ (channel × 0x100)` - eight fixed, pre-allocated 256-byte buffers, one per channel. Copying from this fixed buffer to wherever BASIC actually wants the bytes happens at a higher level this project doesn't need to trace, per the strategic decision above. |
-| `A`, Carry (out) | Success: Carry clear, `A=0`. Failure: Carry set (`SCF`), via one of a couple of distinct error paths in `L608F` - specific error codes not yet enumerated. |
-| Transfer size | Strong circumstantial evidence of a full 256 bytes/block: the transfer-count register is loaded via a classic Z80 `LD B,0` / `DJNZ` idiom (0 wraps to 256 iterations) from a polled status byte, consistent with a real 256-byte sector, though not independently confirmed against a real disk image. |
+| `A`, Carry (out) | Success: Carry clear, `A=0`. Failure: Carry set (`SCF`), via one of a couple of distinct error paths in `L608F` - see the "closing the three remaining loose ends" sub-step further below for the full, now-characterized breakdown. |
+| Transfer size | Confirmed, not just circumstantial: `L6106`'s own real disassembly shows `AND 04h` zeroing `A` (hence `B`) right before `LD B,A` on its normal-completion path - the `LD B,0`/`DJNZ` 256-iteration idiom is the ROM's own deliberate logic, not an inference from indirect evidence. |
 
-**Still open, not yet resolved — the real remaining work**:
-- `B`'s other bits (0-3, 7) - only bits 4-6 (channel select) are decoded.
-- The exact error codes possible from the two failure paths in `L608F`
-  (Carry is set either way; the specific meaning of each path isn't
-  pinned down).
-- Independent confirmation of the 256-byte transfer size against a real
-  disk image, if one can be found/verified, rather than relying solely on
-  the `LD B,0`/`DJNZ` circumstantial evidence.
-- `UFD80V20.bin` (the alternate real DOS variant, also committed) hasn't
-  been examined at all yet - unknown whether it shares this same
-  low-level protocol/calling convention or differs.
+**Resolved** (originally "Still open, not yet resolved" - all four items
+below are now closed, each linked to where):
+- `B`'s other bits (0-3, 7) confirmed genuinely unused - see the "closing
+  the three remaining loose ends" sub-step further below.
+- `L608F`'s failure paths fully characterized (still not reproduced in
+  the emulator - a deliberate simplification, not an oversight) - same
+  sub-step.
+- 256-byte transfer size confirmed directly from the ROM's own
+  disassembly (table row above), not just circumstantially.
+- `UFD80V20.bin` examined (see this milestone's own dedicated sub-step
+  below) - not wired up, since `ABC-DOS` itself already works and a
+  second, more general driver isn't needed without a concrete reason.
 
 #### First implementation attempt — mechanism verified against a real disk, blocked on a direct-mode restriction
 
@@ -1486,14 +1487,88 @@ single-block case at all). `make test` unaffected, no code changes were
 needed - this was purely a verification exercise confirming the
 existing fix generalizes.
 
-**Remaining, smaller open items**:
-- Re-examine the still-open items from before the interleaving fix -
+**Remaining, smaller open items** (superseded - see the sub-step below,
+which closed all three):
+- ~~Re-examine the still-open items from before the interleaving fix -
   the exact `B` bits 0-3/7, independent transfer-size confirmation - now
   that real files load and save correctly, several may resolve quickly
-  or turn out moot.
-- Consider committing `disk003.img` (or a small, purpose-built test
+  or turn out moot.~~
+- ~~Consider committing `disk003.img` (or a small, purpose-built test
   image) into the repo now that it backs a real, working feature rather
-  than a research artifact - still an open decision, not yet made.
+  than a research artifact - still an open decision, not yet made.~~
+
+#### Sub-step: closing the three remaining loose ends
+
+Real, bounded reverse-engineering investigation, not a guaranteed code
+change going in - the honest outcome turned out to be "confirmed already
+correct, documented richly, no behavior change warranted" for two of the
+three items.
+
+**`B`'s bits 0-3/7 - confirmed genuinely unused, not just "not yet
+decoded."** Disassembled the real ABC-DOS ROM directly (using the
+just-shipped recursive-traversal `z80dasm` - sliced a temporary,
+untracked copy of the already-committed `resources/rom/ABCDOS80.bin`
+starting at each already-known real entry address's own file offset, so
+each slice's own byte 0 is that real address, avoiding the tool's
+deliberate single-entry-point limitation without touching its code) at
+`L6068`/`L606B`/`L607D`/`L608F` (read) and `L60A1`/`L60A4`/`L60B4`
+(write). `L6106` - the shared channel-decode routine both paths call -
+is confirmed to be the *only* place either routine ever reads the
+caller's original `B` (`LD A,B / AND 70h / RRCA x4`, i.e. exactly
+`abc80_disk_trap()`'s own `(cpu->b >> 4) & 0x07`); reading completely
+through both routines' real disassembled bodies found no other reference
+to it anywhere - not a drive-select check, not a retry flag, nothing.
+`disk.c`'s own comment updated from "not yet decoded" to state this
+directly, with the disassembly evidence behind it.
+
+**`L608F`'s two failure paths - real, richer behavior than this bypass
+models, characterized in full, deliberately not reproduced.** The real
+read and write paths turn out to differ from each other, and from what
+"two failure paths" undersold: both poll a live hardware status byte
+(port 0, cached at RAM `0xFD15`) against a 5-attempt retry counter (RAM
+`0xFD18`, initialized by `L60D2`), but
+
+- **Write** (`L60A1`'s inline failure handling at `0x60C1`-`0x60D1`):
+  cleanly bounded - `BIT 7,A` on the status byte returns immediately
+  (Carry set, `A` = the raw status byte) if set; if clear, retries up to
+  5 times (`DEC (HL)` against the counter, `JR NZ,L60A4`), and even once
+  retries are exhausted the return signature is identical (Carry set,
+  `A` = the same raw status byte) - one real failure signature.
+- **Read** (`L608F`): a genuinely different structure - if the polled
+  status byte is exactly `0`, returns immediately (Carry set, `A=0`, a
+  *different* signature than the bit-7-set case). Otherwise, if bit 7 is
+  clear, it retries (`JR Z,L606B`) **without ever checking whether the
+  retry counter has reached zero** - unlike the write path, this can loop
+  indefinitely on a persistently nonzero, bit-7-clear status rather than
+  eventually giving up. Only a nonzero status with bit 7 set produces the
+  final `SCF`/`RET` (Carry set, `A` = raw status byte).
+
+Deliberately not reproduced in `abc80_disk_trap()`: there's no real
+per-attempt hardware condition in this bypass for a retry to plausibly
+recover from (a host `fread`/`fwrite` failure here is either a genuine
+out-of-range block or a real disk-full condition - not transient), and
+distinguishing `A=0` from `A=`status-byte` from this bypass's own host-
+side failures would mean inventing a mapping onto the real ROM's status-
+port bit patterns with no principled way to derive it short of modeling
+port 0/1 hardware this bypass intentionally doesn't (`disk.c`'s comment
+now documents this finding and the reasoning in full). No real software
+failure has ever been observed from the current single `A=0x01` signal -
+matches this project's own precedent elsewhere (no SN76477 external-
+voltage-input modes, no real keyboard scan-matrix PROM) for a real,
+richer gap found and documented but not acted on absent a concrete
+failing case.
+
+**`disk003.img`: not committed - decided.** Unlike the ROM images (which
+got an explicit checksum/provenance table before being committed) or
+ZEXALL/ZEXDOC (explicitly GPLv2), `disk003.img` has no license statement
+anywhere - it's a third-party-authored disk image from abc80.net's
+archive. Re-downloaded it locally (untracked) for this investigation's
+own live sanity check (a `SAVE`/`LOAD DR0:` round trip against the real
+image, confirmed still clean, no regression) but it stays out of the
+repo. To reproduce: `https://www.abc80.net/archive/luxor/sw/disk_images/
+ABC80/160k/disk003.img` (163840 bytes, "System.diskett ABC80 Ver. 2.1"
+per that directory's own `index.txt`, same source already documented
+above in this section).
 
 #### Disk-full behavior confirmed - two real, distinct capacity limits, both handled correctly and safely
 
@@ -2850,18 +2925,10 @@ where the real detail lives:
 
 ## Planned next steps
 
-Concrete, scoped items identified as worth picking up next, beyond the
-"revisit only if something concrete needs it" gaps above:
-
-- **Floppy/DOS controller loose ends**: a few narrower items were left
-  open by Milestone 6's floppy/DOS controller work even though `--disk`
-  itself is fully working — the `B` register's unused bits (0-3, 7) are
-  still undecoded (only bits 4-6, channel select, are), the exact
-  error-code meanings from `L608F`'s two failure paths aren't pinned
-  down, and whether to commit `disk003.img` (or a smaller purpose-built
-  test image) now that it backs a real working feature, rather than just
-  a research artifact, is still an open decision. See Milestone 6's own
-  write-up for the full protocol derivation these build on.
+None currently — the last item tracked here (the floppy/DOS controller's
+remaining loose ends: `B`'s unused bits, `L608F`'s failure paths, the
+`disk003.img` commit decision) was closed out in Milestone 6's own
+"closing the three remaining loose ends" sub-step above.
 
 ## Sources consulted
 

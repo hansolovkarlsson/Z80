@@ -584,7 +584,11 @@ translations below are this project's own, not official.
   2.1"): <https://www.abc80.net/archive/luxor/sw/disk_images/ABC80/160k/> —
   source for the BASIC error-code table above and for the real directory/
   file layout this project's Milestone 6 disk research uses as ground
-  truth; not yet committed into this repo (see `ABC80_ROADMAP.md`).
+  truth; **decided not to commit it** into this repo — unlike the ROM
+  images (explicit checksum/provenance table before committing) or
+  ZEXALL/ZEXDOC (explicitly GPLv2), it has no license statement anywhere.
+  Re-download from the URL above if reproducing this project's own disk
+  research (see `ABC80_ROADMAP.md`'s Milestone 6 section).
 - This project's own tooling: `bin/z80dasm` (real ROM disassembly, used to
   find the keyboard poll loop and debounce-convergence address),
   `bin/abc80-chargen-dump`/`bin/abc80-video-timing-dump`/

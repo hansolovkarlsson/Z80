@@ -95,6 +95,16 @@ static bool abc80_disk_write_block(uint16_t block, const uint8_t *src) {
 }
 
 int abc80_disk_trap(Z80 *cpu, uint8_t *ram, bool is_read) {
+    // Confirmed, not just "not yet decoded": disassembling the real
+    // ABC-DOS ROM's own L6106 (`LD A,B / AND 70h / RRCA x4`, both
+    // L6068/read's and L60A1/write's shared channel-decode routine) shows
+    // this is the ONLY place either real code path ever reads the
+    // caller's original B - bits 0-3 and 7 are masked out by `AND 70h`
+    // and never referenced anywhere else in either routine (confirmed by
+    // reading through L606B/L607D/L608F for read and L60A4/L60B4/L60C1
+    // for write in full). See ABC80_ROADMAP.md's Milestone 6 section for
+    // the fuller writeup - this was a real, closed investigation, not an
+    // assumption.
     uint8_t channel = (uint8_t)((cpu->b >> 4) & 0x07);
     // Real ABC830-class ("mo") controller sector addressing is NOT a flat
     // 16-bit (D<<8)|E block number - it's packed as (D<<3) + (E>>5) +
@@ -123,6 +133,28 @@ int abc80_disk_trap(Z80 *cpu, uint8_t *ram, bool is_read) {
     uint16_t buf_base = (uint16_t)(ram[ABC80_DOS_BUFPTR_ADDR + 1] << 8);
     uint16_t buf_addr = (uint16_t)(buf_base + (uint16_t)channel * ABC80_DISK_BLOCK_SIZE);
 
+    // The real ROM's own failure handling (L608F for read, the inline
+    // equivalent at 0x60C1-0x60D1 for write - both disassembled directly
+    // from resources/rom/ABCDOS80.bin, see ABC80_ROADMAP.md's Milestone 6
+    // section) is genuinely richer than this bypass's single collapsed
+    // `ok` boolean: both real paths poll a live hardware status byte
+    // (port 0, cached at RAM 0xFD15) and a 5-attempt retry counter (RAM
+    // 0xFD18) before finally returning Carry set with either A=0 (read
+    // path only, when the polled status byte is exactly 0) or A=the raw
+    // status byte (both paths, when its bit 7 is set). Deliberately not
+    // reproduced here: there's no real per-attempt hardware condition in
+    // this bypass for a retry to plausibly recover from (a host
+    // fread/fwrite failure is either a genuine out-of-range block or a
+    // real disk-full condition, not a transient one), and doing so would
+    // mean inventing a mapping from "which host failure" to "which of the
+    // real ROM's status-port bit patterns" with no principled way to
+    // derive it short of modeling port 0/1 hardware this bypass
+    // intentionally doesn't. No real software failure has been observed
+    // from this simplified single A=0x01 signal - documented as a known,
+    // deliberate simplification, not solved, matching this project's own
+    // precedent elsewhere (e.g. no SN76477 external-voltage-input modes,
+    // no real keyboard scan-matrix PROM) for gaps found real but not
+    // acted on absent a concrete failing case.
     bool ok = is_read ? abc80_disk_read_block(block, &ram[buf_addr])
                        : abc80_disk_write_block(block, (const uint8_t *)&ram[buf_addr]);
 
