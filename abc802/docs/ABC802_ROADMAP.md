@@ -41,6 +41,30 @@ $ bin/abc802 --columns 80 --type "PRINT 6*7
 That is the real ROM's own banner, its own echo of the typed line, its
 own evaluation of the expression, and its own return to the prompt.
 
+A multi-line program is entered, stored and run correctly too, which
+exercises BASIC's program storage and control flow rather than just its
+immediate-mode evaluator:
+
+```
+$ bin/abc802 --columns 80 --cycles 400000000 --screen \
+      --type "10 FOR I=1 TO 5
+20 PRINT I;I*I
+30 NEXT I
+RUN
+"
+|ABC802
+|10 FOR I=1 TO 5
+|20 PRINT I;I*I
+|30 NEXT I
+|RUN
+| 1  1
+| 2  4
+| 3  9
+| 4  16
+| 5  25
+|ABC802
+```
+
 What that exercises: the 32K ROM image and its LRS/M1 memory overlay, the
 MC6845 register file, the Z80 CTC (including its real 93.75 Hz system
 tick and IM 2 vectoring to the ROM's own clock handler at `0x3A76`), the
