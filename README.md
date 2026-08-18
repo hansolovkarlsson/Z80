@@ -31,11 +31,15 @@ pre-built binaries.
 
 A disassembler (`disasm/`) covers the same instruction set in reverse:
 given a `.com`/binary, it prints a listing with auto-generated labels for
-jump/call targets. It's a straightforward linear decoder (no code/data
-separation yet — pointed at a data region, it'll decode those bytes as
-instructions too), but the decoding itself is solid: verified against
-`asm/examples/hello.asm`/`selftest.asm` (assemble → disassemble → matches
-the source exactly) and spot-checked against the real `zexall.com`.
+jump/call targets. It does real code/data separation: a worklist-driven
+recursive traversal follows jump/call/`RST` targets from the entry point
+rather than decoding straight through, so embedded strings and tables come
+out as labeled `DB` bytes instead of being mis-decoded as instructions.
+Verified against `asm/examples/hello.asm`/`selftest.asm` (assemble →
+disassemble → matches the source exactly) and spot-checked against the real
+`zexall.com`. The one standard limitation: code reachable *only* via an
+indirect/computed jump (`JP (HL)`/`(IX)`/`(IY)`) has no static target to
+follow, so it comes out as data unless something also reaches it directly.
 
 See [`cpm/docs/ROADMAP.md`](cpm/docs/ROADMAP.md) for the full picture: what's
 next, what's done, and known gaps (currently just interrupt delivery —
