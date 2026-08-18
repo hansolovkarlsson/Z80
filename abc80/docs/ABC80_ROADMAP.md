@@ -356,8 +356,16 @@ not SLF-swept) — the single most directly useful case for a BASIC-driven
 beep, and the case this project's own real-ROM test below happened to
 exercise. Every other register combination (noise, SLF, one-shot attack/
 decay envelopes, alternating polarity, SLF-swept warble) produces silence
-in this model rather than incorrect audio - documented as a known,
-deliberate gap, not silently approximated.
+in this model rather than incorrect audio - documented, at the time, as a
+known, deliberate gap, not silently approximated.
+
+**Update**: this deliberate gap was later closed. Milestone 11's "full
+SN76477 emulation (SLF, noise, one-shot, envelopes)" sub-step below
+implemented all of these remaining subsystems as real per-sample RC
+integrators (ported from MAME's own `sn76477.cpp` algorithm), so every
+register combination now produces real, verified audio rather than
+silence — see that sub-step for the implementation and verification
+detail.
 
 - [x] **The register bit layout** — ported from MAME's `abc80_state::
       csg_w()`, and the mixer/envelope mode meanings from `sn76477.cpp`'s
@@ -2753,10 +2761,11 @@ where the real detail lives:
   exact meaning of `B`'s unused bits is the one narrower item still
   open - also covered in that write-up.
   Cassette storage is a host-file bypass of BASIC's own program-storage
-  pointers, not real analog tape emulation, and sound only synthesizes a
-  single steady-tone case (no noise/SLF-warble/envelope shaping) rendered
-  to a WAV file rather than played live - see each milestone's own
-  write-up.
+  pointers, not real analog tape emulation. Sound was originally a single
+  steady-tone case only, but Milestone 11's "full SN76477 emulation"
+  sub-step closed that gap: SLF/noise/one-shot/envelope modes are all now
+  synthesized, and live audio (via GTK/SDL, not just `--wav` rendering) is
+  supported too — see that sub-step's own write-up.
 - **Cursor blink is now live** (Milestone 8) in `--interactive` mode,
   computed from real elapsed time against the real 3.125Hz rate MAME's own
   `m_blink_timer` uses. Default (non-`--interactive`) mode is still a
@@ -2776,6 +2785,26 @@ where the real detail lives:
   target (`CLAUDE.md`'s Architecture section) rather than a new abstraction
   introduced early. No milestone yet — revisit only if something concrete
   needs it, same standard `cpm/docs/ROADMAP.md` applies elsewhere.
+
+## Planned next steps
+
+Concrete, scoped items identified as worth picking up next, beyond the
+"revisit only if something concrete needs it" gaps above:
+
+- **Swedish keyboard scan-matrix mapping**: host keystrokes are currently
+  plain ASCII passthrough (`select()`-based non-blocking stdin polling) —
+  typing a literal Å/Ä/Ö from a host keyboard isn't wired to the real
+  ABC80 scan matrix. See Milestone 3's own write-up for where this
+  passthrough simplification was first made and why.
+- **Floppy/DOS controller loose ends**: a few narrower items were left
+  open by Milestone 6's floppy/DOS controller work even though `--disk`
+  itself is fully working — the `B` register's unused bits (0-3, 7) are
+  still undecoded (only bits 4-6, channel select, are), the exact
+  error-code meanings from `L608F`'s two failure paths aren't pinned
+  down, and whether to commit `disk003.img` (or a smaller purpose-built
+  test image) now that it backs a real working feature, rather than just
+  a research artifact, is still an open decision. See Milestone 6's own
+  write-up for the full protocol derivation these build on.
 
 ## Sources consulted
 

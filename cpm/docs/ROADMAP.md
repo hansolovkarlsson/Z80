@@ -281,6 +281,11 @@ there surfaced and fixed several real dialect gaps, documented below.
     `JP`/`CALL`/`JR` targets recursively instead of decoding straight
     through, stopping at unconditional jumps/`RET` the way real
     disassemblers avoid this.
+  - **Planned next step**: implement that recursive-traversal decoding
+    (follow `JP`/`CALL`/`JR` targets instead of decoding straight
+    through address by address, stopping at unconditional jumps/`RET`)
+    to give real code/data separation instead of today's purely linear
+    pass.
 
 ## Phase 3: CP/M BDOS/BIOS
 
