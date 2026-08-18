@@ -189,7 +189,7 @@ $(ABC80_GTK_SRC_DIR)/%.o: $(ABC80_GTK_SRC_DIR)/%.c
 run: emulator
 	./$(EMU_TARGET) cpm/emu/zexall/ZEXALL-main/zexall.com | less
 
-test: emulator assembler $(EMU_TEST_INTERRUPTS_TARGET)
+test: emulator assembler disassembler $(EMU_TEST_INTERRUPTS_TARGET)
 	./cpm/tests/run_tests.sh
 
 clean:

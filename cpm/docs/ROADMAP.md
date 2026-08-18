@@ -272,20 +272,52 @@ there surfaced and fixed several real dialect gaps, documented below.
     matches `zexall.z80`'s own source exactly (`LD HL,(6)` / `LD SP,HL` /
     ...), and CB/ED/`DD CB`-prefixed forms (`BIT`, `SBC HL`, `RRD`,
     indexed `RLC`, etc.) all decode to plausible output when they appear.
-  - **Known limitation, by design for this pass**: purely linear decoding
-    with no code/data separation. Fed a `.com` file's *data* region (e.g.
-    a message string), it decodes those bytes as if they were
-    instructions too - garbage, but not a bug, just what linear
-    disassembly does absent a heuristic (or user-supplied hints) for
-    where code ends and data begins. A future increment could follow
-    `JP`/`CALL`/`JR` targets recursively instead of decoding straight
-    through, stopping at unconditional jumps/`RET` the way real
-    disassemblers avoid this.
-  - **Planned next step**: implement that recursive-traversal decoding
-    (follow `JP`/`CALL`/`JR` targets instead of decoding straight
-    through address by address, stopping at unconditional jumps/`RET`)
-    to give real code/data separation instead of today's purely linear
-    pass.
+  - **Recursive-traversal decoding (real code/data separation) — done.**
+    Previously: purely linear decoding, no code/data separation - fed a
+    `.com` file's *data* region (e.g. a message string), it decoded those
+    bytes as if they were instructions too (garbage, not a bug, just what
+    linear disassembly does absent a heuristic for where code ends and
+    data begins). `disasm/src/decode.c` needed no changes at all -
+    `DecodedInsn` already returned everything needed (`has_ref`/
+    `ref_addr`/`ref_is_code`, tagging every jump/call/`RST` target as code
+    and every `(nn)` memory operand as data). The fix is confined to
+    `disasm/src/main.c`'s pass 1, now a worklist-driven reachability walk
+    seeded from `origin`: follows `ref_is_code` targets as real entry
+    points, records a `ref_is_code==0` target as a label without treating
+    it as one, and stops following the current thread at an unconditional
+    terminator (`JP nn`/`JR e`/`RET`/`JP (HL)`/`JP (IX)`/`JP (IY)`/`RETI`/
+    `RETN` - detected by peeking the raw opcode byte(s), the same pattern
+    `abc80/emu/src/step.c` already uses to predict control flow ahead of
+    execution, rather than adding a speculative field to `DecodedInsn`)
+    while still draining the rest of the worklist. Pass 2 stays a linear
+    walk over the same range - the only change is branching on whether an
+    address was actually reached as code (decode and print as before) or
+    not (print a single labeled `DB nnh` byte instead, using the same
+    hex-literal convention `decode.c`'s own unrecognized-opcode fallback
+    already uses).
+    Verified against `asm/examples/hello.asm` without the old `-l 0x34`
+    workaround (the code region matches byte-for-byte as before, and the
+    embedded message strings at `0x134` now correctly appear as
+    `Dxxxx:`-labeled `DB` bytes instead of needing to be dodged) - this is
+    now a real, scripted regression (`cpm/tests/run_tests.sh`'s
+    `check_disasm_example`, diffing against the regenerated
+    `disasm/examples/hello.dasm.txt`), closing the gap that this tool
+    previously had zero automated coverage at all. Also spot-checked
+    against `selftest.com` (no crash, correctly separates its embedded
+    `FAIL:` message strings) and the real `zexall.com`/`zexdoc.com`
+    (8KB+, runs in single-digit milliseconds, no hang; the `start:`
+    routine still decodes identically to the already-verified
+    `LD HL,(6)` / `LD SP,HL` / ... match, and its large embedded
+    test-vector tables now come out as `DB` data instead of garbage).
+  - **Known, standard limitation, not solved here**: code reachable only
+    via an indirect/computed jump (`JP (HL)`/`(IX)`/`(IY)` with no static
+    target - e.g. the same `JP (HL)`-based dispatch pattern this
+    project's own `CLAUDE.md` notes Tasty Basic uses for real) has no
+    address for the traversal above to follow, so it shows as `DB` data
+    unless also reachable via a direct `JP`/`CALL`/`JR`. This is a
+    standard, well-known limitation of any reachability-based
+    disassembler, not something specific to this implementation - no
+    heuristic for it is planned.
 
 ## Phase 3: CP/M BDOS/BIOS
 

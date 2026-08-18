@@ -58,6 +58,56 @@ static void label_name(char *buf, size_t n, uint16_t addr, int is_code) {
     snprintf(buf, n, "%s%04X", is_code ? "L" : "D", addr);
 }
 
+// Same "DB nnh" hex-literal convention decode.c's own hex8()/hex16()
+// already use (leading 0 if the first nibble would otherwise start with
+// a hex letter) - applied here for a whole byte at a time, for addresses
+// pass 1 below never reaches as code.
+static void format_data_byte(char *buf, size_t n, uint8_t v) {
+    if (((v >> 4) & 0xF) >= 0xA) snprintf(buf, n, "DB 0%02Xh", v);
+    else snprintf(buf, n, "DB %02Xh", v);
+}
+
+#define STATUS_UNVISITED  0
+#define STATUS_CODE_START 1
+#define STATUS_CODE_CONT  2
+
+static uint8_t status[IMAGE_SIZE];
+
+// Peeks the raw opcode byte(s) at addr to decide whether this instruction
+// unconditionally transfers control elsewhere, so the worklist-driven
+// traversal below knows not to also treat addr+length as reachable.
+// Mirrors an existing pattern in this codebase - abc80/emu/src/step.c
+// peeks raw opcode bytes ahead of execution to predict control flow for
+// the identical reason - rather than adding a speculative new field to
+// DecodedInsn for this one, narrow purpose. Conditional jumps/DJNZ/CALL/
+// RST are deliberately not terminators here: fall-through after them is
+// genuinely reachable, matching cpm/docs/ROADMAP.md's own "stopping at
+// unconditional jumps/RET" phrasing exactly.
+static int is_unconditional_terminator(const uint8_t *mem, uint16_t addr) {
+    uint8_t op = mem[addr];
+    if (op == 0xC3) return 1; // JP nn
+    if (op == 0x18) return 1; // JR e
+    if (op == 0xC9) return 1; // RET
+    if (op == 0xE9) return 1; // JP (HL)
+    if (op == 0xDD || op == 0xFD) return mem[(uint16_t)(addr + 1)] == 0xE9; // JP (IX)/JP (IY)
+    if (op == 0xED) {
+        uint8_t op2 = mem[(uint16_t)(addr + 1)];
+        return op2 == 0x4D || op2 == 0x45; // RETI / RETN
+    }
+    return 0;
+}
+
+#define WORKLIST_SIZE (2 * IMAGE_SIZE)
+static uint16_t worklist[WORKLIST_SIZE];
+static int worklist_top = 0;
+
+static void push_worklist(uint16_t addr, uint16_t origin, uint16_t end_addr) {
+    if (addr < origin || addr >= end_addr) return;
+    if (status[addr] != STATUS_UNVISITED) return;
+    if (worklist_top >= WORKLIST_SIZE) return; // can't happen: bounded by 2x decoded instructions
+    worklist[worklist_top++] = addr;
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "usage: %s <input.com> [-o origin] [-l length]\n", argv[0]);
@@ -96,19 +146,47 @@ int main(int argc, char *argv[]) {
     long end_len = (limit >= 0 && limit < file_len) ? limit : file_len;
     uint16_t end_addr = (uint16_t)(origin + end_len);
 
-    // Pass 1: linear decode, collecting jump/call targets and (nn)
-    // memory references that fall inside the loaded range as labels.
-    for (uint32_t addr = origin; addr < end_addr;) {
-        DecodedInsn d = decode_instruction(mem, (uint16_t)addr);
+    // Pass 1: worklist-driven reachability decode, starting from `origin`
+    // (the CP/M .com entry point / ROM reset vector - this tool's two
+    // real use cases both have exactly one natural entry point there).
+    // Follows JP/CALL/JR/RST targets (ref_is_code) as real code; a (nn)
+    // data reference still gets a label via add_label() but is never
+    // pushed as an entry point - this is the actual code/data separation.
+    // Stops following the current thread at an unconditional terminator
+    // (is_unconditional_terminator() above) but keeps draining the rest
+    // of the worklist, so other reachable branches still get decoded.
+    push_worklist(origin, origin, end_addr);
+    while (worklist_top > 0) {
+        uint16_t addr = worklist[--worklist_top];
+        if (status[addr] != STATUS_UNVISITED) continue; // already decoded via another path
+
+        DecodedInsn d = decode_instruction(mem, addr);
+        int len = d.length > 0 ? d.length : 1;
+
+        status[addr] = STATUS_CODE_START;
+        for (int i = 1; i < len; i++) {
+            uint16_t byte_addr = (uint16_t)(addr + i);
+            if (byte_addr >= origin && byte_addr < end_addr) status[byte_addr] = STATUS_CODE_CONT;
+        }
+
         if (d.has_ref && d.ref_addr >= origin && d.ref_addr < end_addr) {
             add_label(d.ref_addr, d.ref_is_code);
+            if (d.ref_is_code) push_worklist(d.ref_addr, origin, end_addr);
         }
-        addr += (uint32_t)(d.length > 0 ? d.length : 1);
+
+        if (!is_unconditional_terminator(mem, addr)) {
+            uint32_t fallthrough = (uint32_t)addr + (uint32_t)len;
+            if (fallthrough < IMAGE_SIZE) push_worklist((uint16_t)fallthrough, origin, end_addr);
+        }
     }
     qsort(labels, (size_t)nlabels, sizeof(Label), label_cmp);
 
-    // Pass 2: linear decode again, printing a label line whenever the
-    // current address was referenced in pass 1.
+    // Pass 2: linear walk over the same [origin, end_addr) range, same as
+    // before - the change is entirely in *what* gets printed at each
+    // address. A reachable instruction (status == CODE_START) decodes and
+    // prints exactly as before; anything else (never reached as code -
+    // true data, e.g. embedded strings) prints as a single labeled DB
+    // byte instead of being mis-decoded as an instruction.
     printf("        org %04Xh\n\n", origin);
     for (uint32_t addr = origin; addr < end_addr;) {
         int lidx = find_label((uint16_t)addr);
@@ -116,6 +194,14 @@ int main(int argc, char *argv[]) {
             char name[16];
             label_name(name, sizeof(name), labels[lidx].addr, labels[lidx].is_code);
             printf("%s:\n", name);
+        }
+
+        if (status[addr] != STATUS_CODE_START) {
+            char operand_line[32];
+            format_data_byte(operand_line, sizeof(operand_line), mem[addr]);
+            printf("        %-24s; %04X: %02X \n", operand_line, addr, mem[addr]);
+            addr += 1;
+            continue;
         }
 
         DecodedInsn d = decode_instruction(mem, (uint16_t)addr);

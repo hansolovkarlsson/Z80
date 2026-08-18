@@ -595,27 +595,38 @@ labels).
   pattern with no real decode (most of `0xED`'s space) falls back to `DB
   nnh` so the decoder never fails to make progress.
 - `main.c` — two-pass driver, mirroring the assembler's pass structure in
-  reverse: pass 1 linearly decodes the whole loaded image just to collect
-  every instruction's referenced address into a label table (`Lxxxx` for
-  code targets, `Dxxxx` for data); pass 2 decodes again and, per
-  instruction, substitutes a label name for the raw hex address in the
-  formatted text wherever pass 1 found one at that address (string search
-  for the hex literal `decode_instruction` already produced, not a
-  re-formatting step). A label definition line (`Lxxxx:`) is emitted
-  before any instruction whose address appears in the table.
+  reverse: pass 1 is a worklist-driven reachability walk, seeded from
+  `origin` (the CP/M `.com` entry point / ROM reset vector), that follows
+  `decode_instruction()`'s own `ref_is_code` jump/call/`RST` targets as
+  real code and every instruction's fall-through address (unless it's an
+  unconditional terminator — `JP nn`/`JR e`/`RET`/`JP (HL)`/`(IX)`/`(IY)`/
+  `RETI`/`RETN`, detected by peeking the raw opcode byte(s) directly,
+  the same pattern `abc80/emu/src/step.c` uses to predict control flow
+  ahead of execution), marking each reached address's status and
+  collecting every referenced address into a label table (`Lxxxx` for
+  code targets, `Dxxxx` for data — a data reference gets a label without
+  being treated as an entry point to follow). Pass 2 walks the same
+  address range linearly again and, per address, either decodes and
+  prints an instruction (if pass 1 actually reached it as code) or prints
+  a single labeled `DB nnh` byte (otherwise) — substituting a label name
+  for the raw hex address in an instruction's formatted text wherever
+  pass 1 found one there (string search for the hex literal
+  `decode_instruction` already produced, not a re-formatting step). A
+  label definition line (`Lxxxx:`/`Dxxxx:`) is emitted before any address
+  that appears in the table.
 
-**Known limitation** (see `cpm/docs/ROADMAP.md` for the fuller writeup): this
-is purely linear decoding, address by address, with no code/data
-separation — fed a data region (e.g. embedded message strings), it
-decodes those bytes as instructions too, which is correct behavior for
-what linear disassembly *is*, not a bug, but does mean output quality
-depends on the input being (close to) all code, or on the caller using
-`-l` to bound the range. `docs/Z80_REFERENCE.md` documents the opcode
-coverage in detail — this disassembler targets real Z80 machine code
-generally, not just this project's own emulator's current capability (the
-two are now aligned, since `IN`/`OUT`, `IM`, `RETI`/`RETN`, `LD A,I` etc.
-are implemented on the emulator side too, but that wasn't always true and
-isn't a given for any future gap).
+**Known, standard limitation** (see `cpm/docs/ROADMAP.md` for the fuller
+writeup): code reachable only via an indirect/computed jump (`JP (HL)`/
+`(IX)`/`(IY)` with no static target) has no address for pass 1's traversal
+to follow, so it comes out as `DB` data unless also reachable via a direct
+`JP`/`CALL`/`JR` — a standard limitation of any reachability-based
+disassembler, not something specific to this implementation.
+`docs/Z80_REFERENCE.md` documents the opcode coverage in detail — this
+disassembler targets real Z80 machine code generally, not just this
+project's own emulator's current capability (the two are now aligned,
+since `IN`/`OUT`, `IM`, `RETI`/`RETN`, `LD A,I` etc. are implemented on the
+emulator side too, but that wasn't always true and isn't a given for any
+future gap).
 
 ## GTK terminal (`cpm/gtk/src/`, work in progress)
 

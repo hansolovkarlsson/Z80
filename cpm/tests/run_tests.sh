@@ -12,6 +12,11 @@
 #     program - see cpm/tests/test_interrupts.c's own top comment for
 #     why interrupt acceptance specifically can't be tested that way),
 #     using the identical FAIL-line convention as the .asm checks above.
+#   - z80dasm's own regression: disassembles asm/examples/hello.asm and
+#     diffs the output against the committed disasm/examples/hello.dasm.txt
+#     fixture - the only automated coverage this tool has (previously
+#     spot-checked by eye only, see cpm/docs/ROADMAP.md's disassembler
+#     section).
 # Not a general framework - just enough to turn "did I break anything" into
 # an exit code instead of a manual read of console output.
 
@@ -31,6 +36,7 @@ cd "$ROOT/cpm"
 
 Z80="$ROOT/bin/z80"
 Z80ASM="$ROOT/bin/z80asm"
+Z80DASM="$ROOT/bin/z80dasm"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
@@ -139,6 +145,35 @@ check_term_test() {
     fi
 }
 
+check_disasm_example() {
+    local src="$ROOT/asm/examples/hello.asm" name="hello.asm"
+    local fixture="$ROOT/disasm/examples/hello.dasm.txt"
+    local com="$WORKDIR/$name.com"
+
+    local asm_log
+    if ! asm_log=$("$Z80ASM" "$src" -o "$com" 2>&1); then
+        echo "FAIL: z80dasm/$name failed to assemble"
+        echo "$asm_log" | sed 's/^/    /'
+        overall_status=1
+        return
+    fi
+
+    local actual expected
+    actual=$("$Z80DASM" "$com" 2>&1)
+    # The fixture's header is a `;`-prefixed provenance comment, same
+    # convention as a real assembler source file's own comments - strip
+    # it before comparing against the real tool's output.
+    expected=$(grep -v '^;' "$fixture")
+
+    if [ "$actual" == "$expected" ]; then
+        echo "PASS: z80dasm/$name"
+    else
+        echo "FAIL: z80dasm/$name output doesn't match $fixture"
+        diff <(echo "$expected") <(echo "$actual") | sed 's/^/    /'
+        overall_status=1
+    fi
+}
+
 check_c_unit_test() {
     local name="$1" binary="$2"
     local out
@@ -160,14 +195,15 @@ check_c_unit_test() {
 
 TEST_INTERRUPTS="$ROOT/bin/z80-test-interrupts"
 
-if [ ! -x "$Z80" ] || [ ! -x "$Z80ASM" ] || [ ! -x "$TEST_INTERRUPTS" ]; then
-    echo "tests/run_tests.sh: bin/z80, bin/z80asm, and bin/z80-test-interrupts must be built first (run 'make test')" >&2
+if [ ! -x "$Z80" ] || [ ! -x "$Z80ASM" ] || [ ! -x "$Z80DASM" ] || [ ! -x "$TEST_INTERRUPTS" ]; then
+    echo "tests/run_tests.sh: bin/z80, bin/z80asm, bin/z80dasm, and bin/z80-test-interrupts must be built first (run 'make test')" >&2
     exit 1
 fi
 
 check_exerciser "ZEXALL" emu/zexall/ZEXALL-main/zexall.com
 check_exerciser "ZEXDOC" emu/zexall/ZEXALL-main/zexdoc.com
 check_c_unit_test "test_interrupts" "$TEST_INTERRUPTS"
+check_disasm_example
 
 for src in "$ROOT"/asm/examples/*.asm; do
     case "$(basename "$src")" in

@@ -1,15 +1,16 @@
-; Output of `z80dasm hello.com -l 0x34`, where hello.com is
-; asm/examples/hello.asm assembled by z80asm. Matches hello.asm's real
-; instruction stream exactly, including auto-generated labels (L010D for
-; the DJNZ loop target, L0129 for the JP NZ target).
+; Output of `z80dasm hello.com`, where hello.com is asm/examples/hello.asm
+; assembled by z80asm. Matches hello.asm's real instruction stream exactly,
+; including auto-generated labels (L010D for the DJNZ loop target, L0129
+; for the JP NZ target).
 ;
-; Limited to the 0x34-byte code region (up to but not including the
-; embedded message strings at 0x134) deliberately: this disassembler does
-; straightforward linear decoding with no code/data separation, so
-; feeding it the message text too would (correctly, expectedly) produce
-; garbage - ASCII bytes decoded as if they were opcodes. See
-; cpm/docs/ROADMAP.md's disassembler section for that trade-off.
-
+; Unlike the version of this fixture originally checked in, this is the
+; FULL file - no `-l LENGTH` bound is needed anymore. z80dasm now does
+; recursive-traversal decoding: it follows JP/CALL/JR/RST targets from the
+; org address instead of decoding straight through, so the embedded
+; message strings starting at 0x134 (never reached as code - only ever
+; loaded into DE as a data pointer for BDOS function 9) come out as
+; correctly labeled DB bytes instead of being mis-decoded as instructions.
+; See cpm/docs/ROADMAP.md's disassembler section for the fuller writeup.
         org 0100h
 
         LD DE,0134h             ; 0100: 11 34 01 
@@ -36,3 +37,50 @@ L0129:
         LD C,09h                ; 012C: 0E 09 
         CALL 0005h              ; 012E: CD 05 00 
         JP 0000h                ; 0131: C3 00 00 
+        DB 48h                  ; 0134: 48 
+        DB 65h                  ; 0135: 65 
+        DB 6Ch                  ; 0136: 6C 
+        DB 6Ch                  ; 0137: 6C 
+        DB 6Fh                  ; 0138: 6F 
+        DB 20h                  ; 0139: 20 
+        DB 66h                  ; 013A: 66 
+        DB 72h                  ; 013B: 72 
+        DB 6Fh                  ; 013C: 6F 
+        DB 6Dh                  ; 013D: 6D 
+        DB 20h                  ; 013E: 20 
+        DB 7Ah                  ; 013F: 7A 
+        DB 38h                  ; 0140: 38 
+        DB 30h                  ; 0141: 30 
+        DB 61h                  ; 0142: 61 
+        DB 73h                  ; 0143: 73 
+        DB 6Dh                  ; 0144: 6D 
+        DB 21h                  ; 0145: 21 
+        DB 24h                  ; 0146: 24 
+        DB 0Dh                  ; 0147: 0D 
+        DB 0Ah                  ; 0148: 0A 
+        DB 24h                  ; 0149: 24 
+        DB 46h                  ; 014A: 46 
+        DB 41h                  ; 014B: 41 
+        DB 49h                  ; 014C: 49 
+        DB 4Ch                  ; 014D: 4C 
+        DB 3Ah                  ; 014E: 3A 
+        DB 20h                  ; 014F: 20 
+        DB 6Ch                  ; 0150: 6C 
+        DB 6Fh                  ; 0151: 6F 
+        DB 6Fh                  ; 0152: 6F 
+        DB 70h                  ; 0153: 70 
+        DB 20h                  ; 0154: 20 
+        DB 63h                  ; 0155: 63 
+        DB 6Fh                  ; 0156: 6F 
+        DB 75h                  ; 0157: 75 
+        DB 6Eh                  ; 0158: 6E 
+        DB 74h                  ; 0159: 74 
+        DB 65h                  ; 015A: 65 
+        DB 72h                  ; 015B: 72 
+        DB 20h                  ; 015C: 20 
+        DB 77h                  ; 015D: 77 
+        DB 72h                  ; 015E: 72 
+        DB 6Fh                  ; 015F: 6F 
+        DB 6Eh                  ; 0160: 6E 
+        DB 67h                  ; 0161: 67 
+        DB 24h                  ; 0162: 24 
