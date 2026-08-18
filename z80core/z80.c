@@ -36,14 +36,24 @@ uint8_t z80_read_byte(Z80 *cpu, uint16_t address) {
 }
 
 void z80_write_byte(Z80 *cpu, uint16_t address, uint8_t value) {
+    if (cpu->bus_write_hook && cpu->bus_write_hook(cpu, address, value)) {
+        return;
+    }
     cpu->memory[address] = value;
 }
 
 uint8_t z80_io_in(Z80 *cpu, uint8_t port) {
-    return cpu->io_ports[port];
+    uint8_t value = cpu->io_ports[port];
+    if (cpu->io_in_hook) {
+        value = cpu->io_in_hook(cpu, port, value);
+    }
+    return value;
 }
 
 void z80_io_out(Z80 *cpu, uint8_t port, uint8_t value) {
+    if (cpu->io_out_hook && cpu->io_out_hook(cpu, port, value)) {
+        return;
+    }
     cpu->io_ports[port] = value;
 }
 
@@ -647,6 +657,19 @@ int z80_op_prefix_ed(Z80 *cpu, uint8_t *ram) {
         case 0xB1: return z80_alu_block_search(cpu,  1, true);    // CPIR
         case 0xA9: return z80_alu_block_search(cpu, -1, false);   // CPD
         case 0xB9: return z80_alu_block_search(cpu, -1, true);    // CPDR
+
+        // Block I/O. Real ROM code drives peripheral chips with these -
+        // the ABC802's boot ROM configures its DART and CTC via OTIR/OUTI
+        // - so they are not an exotic corner: they were simply invisible
+        // to ZEXALL, which exercises no I/O at all.
+        case 0xA2: return z80_alu_block_in(cpu,  1, false);       // INI
+        case 0xB2: return z80_alu_block_in(cpu,  1, true);        // INIR
+        case 0xAA: return z80_alu_block_in(cpu, -1, false);       // IND
+        case 0xBA: return z80_alu_block_in(cpu, -1, true);        // INDR
+        case 0xA3: return z80_alu_block_out(cpu,  1, false);      // OUTI
+        case 0xB3: return z80_alu_block_out(cpu,  1, true);       // OTIR
+        case 0xAB: return z80_alu_block_out(cpu, -1, false);      // OUTD
+        case 0xBB: return z80_alu_block_out(cpu, -1, true);       // OTDR
 
         // --- BCD Digit Rotates ---
         case 0x6F: { // RLD

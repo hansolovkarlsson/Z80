@@ -105,7 +105,7 @@ see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
 
 - `z80core/` — the shared Z80 CPU core (`z80.c`/`z80.h` opcode dispatch,
   `alu.c`/`alu.h` flag/arithmetic logic) — machine-agnostic, used by both
-  `bin/z80` (CP/M) and `bin/abc80`.
+  `bin/z80` (CP/M), `bin/abc80`, and `bin/abc802`.
 - `cpm/emu/src/` — the emulator itself (`z80.c`/`z80.h` opcode dispatch,
   `alu.c`/`alu.h` flag/arithmetic logic, `cpm.c`/`cpm.h` minimal CP/M BDOS
   emulation, `main.c` the CP/M-style program loader/run loop).
@@ -159,6 +159,17 @@ see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
   ([`TASTYBASIC_REFERENCE.md`](cpm/docs/TASTYBASIC_REFERENCE.md)), MBASIC
   ([`MBASIC_REFERENCE.md`](cpm/docs/MBASIC_REFERENCE.md)), and Turbo Pascal
   ([`TURBOPASCAL_REFERENCE.md`](cpm/docs/TURBOPASCAL_REFERENCE.md)).
+- `abc80/` — the Luxor ABC80 machine target (`make abc80`): boots the real
+  1978 BASIC ROM with video, keyboard, cassette, sound, a periodic PIO
+  interrupt, and floppy support, plus an opt-in GTK4 front-end
+  (`make abc80-gtk`). See
+  [`ABC80_ROADMAP.md`](abc80/docs/ABC80_ROADMAP.md).
+- `abc802/` — the Luxor ABC802 machine target (`make abc802`): boots the
+  real 1983 BASIC II ROM to a working prompt — MC6845 CRTC, Z80
+  CTC/DART/SIO on an IM 2 daisy chain, the M1-decoded character-RAM
+  overlay, and a serial keyboard. See
+  [`ABC802_ROADMAP.md`](abc802/docs/ABC802_ROADMAP.md) and
+  [`ABC802_REFERENCE.md`](abc802/docs/ABC802_REFERENCE.md).
 - `cpm/gtk/` — an opt-in (`make gtk`) thin GTK4 launcher for `bin/z80`,
   attached to a pty with a `VteTerminal` doing the real terminal
   interpretation. See `cpm/gtk/README.md`.
@@ -194,7 +205,7 @@ cases are more restrictive:
   copyrighted and its source is deliberately *not* included here.)
 - The remaining commercial CP/M binaries bundled under `cpm/cpm_disk/` and
   `cpm/resources/` (dBASE II, Turbo Pascal, MBASIC, SARGON) and the ABC80
-  ROM images under `abc80/resources/rom/` are copyrighted by their
+  ROM images under `abc80/resources/rom/` and `abc802/resources/rom/` are copyrighted by their
   respective owners, included here only as the real software this emulator
   is validated against. No license to redistribute them is claimed or
   granted.

@@ -438,6 +438,76 @@ int z80_alu_block_search(Z80 *cpu, int increment, bool repeat) {
 }
 
 /*
+ * Block I/O
+ *
+ * INI/INIR/IND/INDR and OUTI/OTIR/OUTD/OTDR: transfer one byte between a
+ * port and (HL), step HL, and decrement B - the counter here is the 8-bit
+ * B alone, not the 16-bit BC the LDIR/CPIR group uses.
+ *
+ * These went unimplemented until the real Luxor ABC802 boot ROM turned out
+ * to drive its Z80 DART and CTC through OTIR/OUTI (abc802/emu/src/ports.c).
+ * ZEXALL/ZEXDOC cannot catch that: they do not exercise I/O at all - the
+ * same blind spot asm/examples/gaps_test.asm exists to cover for IN/OUT,
+ * IM, RETI/RETN and the LD A,I family.
+ *
+ * Flag behavior beyond Z and N is only partly defined by Zilog's own
+ * documentation. The remaining bits follow the widely-reproduced
+ * "undocumented Z80" description: the carry/half-carry pair is computed
+ * from the transferred byte plus a register that differs between the IN
+ * and OUT forms (C+/-1 for IN, L for OUT), and P/V comes from the parity
+ * of that sum's low three bits XOR'd with B.
+ */
+
+static int block_io_common(Z80 *cpu, uint8_t byte, uint16_t flag_addend,
+                           bool repeat) {
+    cpu->b--;
+
+    uint8_t flags = 0;
+    if (cpu->b & 0x80) flags |= FLAG_S;
+    if (cpu->b == 0)   flags |= FLAG_Z;
+    if (cpu->b & 0x08) flags |= FLAG_X;
+    if (cpu->b & 0x20) flags |= FLAG_Y;
+    if (byte & 0x80)   flags |= FLAG_N;
+
+    unsigned sum = (unsigned)byte + (unsigned)flag_addend;
+    if (sum > 0xFF) flags |= (FLAG_C | FLAG_H);
+
+    uint8_t parity_src = (uint8_t)((sum & 0x07) ^ cpu->b);
+    uint8_t bits = parity_src;
+    bits ^= bits >> 4;
+    bits ^= bits >> 2;
+    bits ^= bits >> 1;
+    if (!(bits & 1)) flags |= FLAG_PV;
+
+    cpu->f = flags;
+
+    if (repeat && cpu->b != 0) {
+        cpu->pc -= 2; // rewind to the 0xED prefix to loop
+        return 21;
+    }
+    return 16;
+}
+
+int z80_alu_block_in(Z80 *cpu, int increment, bool repeat) {
+    uint8_t byte = z80_io_in(cpu, cpu->c);
+    z80_write_byte(cpu, cpu->hl, byte);
+    cpu->hl += increment;
+    return block_io_common(cpu, byte, (uint16_t)((cpu->c + increment) & 0xFF), repeat);
+}
+
+int z80_alu_block_out(Z80 *cpu, int increment, bool repeat) {
+    uint8_t byte = z80_read_byte(cpu, cpu->hl);
+    // B is decremented *before* the port write on real hardware, which
+    // matters because the port address' high half is B - a machine
+    // decoding more than the low 8 bits would see the decremented value.
+    // This core's z80_io_out() takes only the low 8 bits, so the ordering
+    // is not observable here; the write is kept first for clarity.
+    z80_io_out(cpu, cpu->c, byte);
+    cpu->hl += increment;
+    return block_io_common(cpu, byte, (uint16_t)cpu->l, repeat);
+}
+
+/*
  * IX/IY
  */
 

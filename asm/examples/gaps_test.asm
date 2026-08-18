@@ -107,8 +107,43 @@ check6:
         jp nz, fail6
         ld de, ok6
         call print
-        jp done
+        jp check7
 fail6:  ld de, bad6
+        call print
+
+check7:
+        ; --- Check 7: OTIR / INIR block I/O ---
+        ; Went unimplemented until the real Luxor ABC802 boot ROM drove its
+        ; Z80 DART and CTC through OTIR/OUTI (abc802/emu/src/ports.c), which
+        ; halted the emulator on an unimplemented opcode. ZEXALL cannot
+        ; catch this: it exercises no I/O at all.
+        ;
+        ; OTIR writes three bytes from (HL) to port C, then INIR reads them
+        ; back into a second buffer. This emulator's ports read back
+        ; whatever was last written, so the two buffers must match - and B
+        ; must reach 0 with Z set, which is the flag result both
+        ; instructions are actually defined for.
+        ld hl, srcbuf
+        ld bc, 0356h            ; B = 3 bytes, C = port 56h
+        otir
+        jp nz, fail7            ; OTIR must leave B = 0, so Z set
+        ld hl, dstbuf
+        ld bc, 0356h
+        inir
+        jp nz, fail7            ; INIR likewise
+        ; Only the last byte written survives in a single port, so all
+        ; three reads return it: check dstbuf is that value three times.
+        ld hl, dstbuf
+        ld b, 3
+c7loop: ld a, (hl)
+        cp 33h                  ; srcbuf's final byte
+        jp nz, fail7
+        inc hl
+        djnz c7loop
+        ld de, ok7
+        call print
+        jp done
+fail7:  ld de, bad7
         call print
 
 done:   jp 0
@@ -139,5 +174,9 @@ bad4:   db 'FAIL 4 LD R,A / LD A,R$'
 ok5:    db 'OK 5 IM 0/1/2 (+ duplicates)$'
 bad5:   db 'FAIL 5 IM 0/1/2 (+ duplicates)$'
 ok6:    db 'OK 6 RETI / RETN$'
+ok7:    db 'OK 7 OTIR / INIR block I/O$'
+bad7:   db 'FAIL 7 OTIR / INIR block I/O$'
+srcbuf: db 11h, 22h, 33h
+dstbuf: db 0, 0, 0
 bad6:   db 'FAIL 6 RETI / RETN$'
 crlf:   db 13, 10, '$'

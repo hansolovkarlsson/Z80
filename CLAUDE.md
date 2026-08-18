@@ -63,6 +63,65 @@ default, optional `--ram32k`) memory map, and (as of Milestone 6) a
 `--disk` bypass supporting genuine floppy `SAVE`/`LOAD` round trips
 against real ABC80 disk images through the real, unmodified ABC-DOS ROM.
 
+`abc802/` is a *third* machine target - the Luxor ABC802 (1983), a later
+member of the ABC800 family - added on exactly the terms `abc80/`
+established: it links the same `z80core/z80.o`/`alu.o` rather than
+duplicating them. It is not an ABC80 variant but a genuinely different
+machine: a programmable MC6845 CRTC instead of fixed video timing, three
+Z80 peripheral chips (CTC/SIO/DART) on an IM 2 daisy chain instead of a
+single periodic PIO interrupt, a 32K ROM that *overlays* the low half of
+a full 64K of RAM, and a serial keyboard rather than a scanned matrix.
+See `abc802/docs/ABC802_ROADMAP.md` for status and known gaps and
+`abc802/docs/ABC802_REFERENCE.md` for the hardware reference. As of
+Milestone 1 it boots the real, unmodified BASIC II ROM images (committed
+under `abc802/resources/rom/`, every one verified byte-for-byte against
+MAME's published CRC32 *and* SHA1) to a working prompt: `bin/abc802
+--columns 80 --type "PRINT 6*7"` renders the ROM's own sign-on banner,
+its echo of the typed line, and its answer, `42`.
+
+Two ABC802-specific implementation facts are worth knowing before
+touching that target, because neither is guessable from a memory map.
+First, **the character RAM at `0x7800-0x7FFF` is decoded by the M1
+line**, not by a bank register: an opcode fetch there reads ROM while a
+data read reads character RAM, and the ROM genuinely has code in that
+window (its keyboard-input routines). `abc802/emu/src/memory.c`
+reproduces this *without* touching the shared core, because z80core's
+`fetch_byte()` indexes the flat `ram` array directly and deliberately
+bypasses `bus_read_hook` - so the currently-selected 32K is kept
+physically resident in that array (as both other targets already do with
+their ROM) and `abc802_note_instruction_fetch()` is called from the step
+loop with each instruction's own PC, which is exactly the information
+MAME's `m1_r` latches, at the same granularity. Routing `fetch_byte()`
+through `z80_read_byte()` instead was considered and rejected: it would
+change the instruction-fetch path of a core two working targets already
+depend on, in particular ABC80's floating-bus hook. Second, **the I/O
+port mirrors are load-bearing** - the real boot ROM writes the CTC's
+interrupt vector to port `0x64`, not `0x60`, so decoding only the
+literal documented ranges silently drops it.
+
+Three additions to the shared core came out of that work, all additive
+with NULL/zero defaults so CP/M and ABC80 are unaffected:
+`bus_write_hook` (the symmetric counterpart to the existing
+`bus_read_hook`, needed because ABC802's ROM and RAM genuinely coexist at
+the same addresses, so a stray write is real corruption rather than the
+harmlessly-ignored store ABC80's read-only hook could tolerate), and
+`io_in_hook`/`io_out_hook` (ABC802's ports are real chips whose reads
+depend on internal state, not on what was last written to a
+256-entry array). The **block I/O instruction group**
+(`INI`/`INIR`/`IND`/`INDR`, `OUTI`/`OTIR`/`OUTD`/`OTDR`, in
+`z80core/alu.c`) was also genuinely missing until the ABC802 ROM drove
+its DART and CTC through `OTIR`/`OUTI` - ZEXALL/ZEXDOC exercise no I/O at
+all and could never have caught it, the same blind spot
+`asm/examples/gaps_test.asm` exists to cover; its check 7 is the
+permanent regression test.
+
+The Makefile now tracks header dependencies (`-MMD -MP` plus a trailing
+`-include`). This is not housekeeping: adding fields to `struct Z80` left
+every already-built object compiled against the old, smaller struct while
+`z80.o` used the new one, so `Z80 cpu = {0}` under-allocated and *every*
+CP/M program silently produced no output at all - a failure a plain
+`make clean` hides, which is exactly what makes it worth tracking.
+
 Two generic reference docs live in the top-level `docs/` (not
 CP/M-specific, so not under `cpm/docs/` — same reasoning as `asm/`/
 `disasm/` above, which they document): `Z80_REFERENCE.md` (the Z80

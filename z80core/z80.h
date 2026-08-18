@@ -95,6 +95,29 @@ typedef struct Z80 {
     // symmetric write-hook this project has no actual use for yet.
     uint8_t (*bus_read_hook)(struct Z80 *cpu, uint16_t address, uint8_t stored_value);
 
+    // Optional per-machine memory-write override, the symmetric
+    // counterpart to bus_read_hook. Returns 1 if it fully handled the
+    // write (the flat array is then left untouched), 0 to let the normal
+    // store proceed. NULL by default, so CP/M and ABC80 - neither of
+    // which needs one - behave exactly as before. bus_read_hook's own
+    // comment above explains why ABC80 deliberately did *not* need this:
+    // a hook that forces every read to a fixed value makes an unwanted
+    // write harmless on its own. The ABC802 is the concrete case where
+    // that reasoning stops holding: its ROM and RAM genuinely coexist at
+    // the same addresses, so a write landing in the wrong one is a real
+    // corruption, not a harmlessly-ignored store.
+    int (*bus_write_hook)(struct Z80 *cpu, uint16_t address, uint8_t value);
+
+    // Optional per-machine I/O port overrides. Without these, IN returns
+    // whatever the last OUT stored in io_ports[] (see above) - fine for a
+    // machine with no modeled devices, useless for one whose ports are
+    // real chips whose reads depend on internal state rather than on what
+    // was last written there. io_in_hook returns the value to deliver;
+    // io_out_hook returns 1 if it handled the write, 0 to fall through to
+    // the io_ports[] store. Both NULL by default.
+    uint8_t (*io_in_hook)(struct Z80 *cpu, uint8_t port, uint8_t stored_value);
+    int (*io_out_hook)(struct Z80 *cpu, uint8_t port, uint8_t value);
+
 } Z80;
 
 

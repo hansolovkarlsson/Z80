@@ -41,6 +41,9 @@ uint8_t z80_alu_srl(Z80 *cpu, uint8_t val);
 // EB
 int z80_alu_block_transfer(Z80 *cpu, int increment, bool repeat);
 int z80_alu_block_search(Z80 *cpu, int increment, bool repeat);
+// Block I/O: INI/INIR/IND/INDR and OUTI/OTIR/OUTD/OTDR
+int z80_alu_block_in(Z80 *cpu, int increment, bool repeat);
+int z80_alu_block_out(Z80 *cpu, int increment, bool repeat);
 // IX/IY
 void z80_alu_add16_idx(Z80 *cpu, uint16_t *index_reg, uint16_t val);
 
