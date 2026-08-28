@@ -1075,3 +1075,93 @@ there surfaced and fixed several real dialect gaps, documented below.
   Kirkland, Jr.`) from Zolman's public-domain BDS C compiler, the same
   situation as RED above, so - like RED - neither its source nor the
   compiled `CDB.COM`/`CDB2.OVL`/`L2.COM` are committed to this repo.
+
+
+---
+
+## Core gaps closed after Phase 1 (moved out of the roadmap)
+
+These five sat in `ROADMAP.md`'s "Known gaps" section as checked-off
+boxes long after they were finished — the same drift the machine targets'
+roadmaps had. Moved here verbatim; nothing has been rewritten.
+
+They share a theme worth stating once: **ZEXALL and ZEXDOC exercise none
+of them.** The exercisers test instruction results and flags, and have
+nothing to say about I/O ports, interrupt modes, interrupt delivery, or
+`RETI`/`RETN`. `asm/examples/gaps_test.asm` and
+`cpm/tests/test_interrupts.c` exist precisely to cover what the oracle
+cannot, which is also how the shared core's missing block-I/O opcodes
+survived until an ABC802 ROM drove them — see
+[`../../docs/postmortems/2026-08-28-block-io-opcodes-missing.md`](../../docs/postmortems/2026-08-28-block-io-opcodes-missing.md).
+
+- [x] **I/O ports**: `IN r,(n)`/`IN r,(C)`/`OUT (n),A`/`OUT (C),r` are now
+  implemented (`z80core/z80.c`'s `z80_op_prefix_ed`, plus `0xD3`/`0xDB` in
+  `main_opcode_table`), backed by a real `cpu->io_ports[256]` array
+  (`z80_io_in`/`z80_io_out` in `z80.c`/`z80.h`) — no actual devices are
+  attached, but `IN` now reads back whatever the last `OUT` to that port
+  wrote instead of being a silent no-op, which is enough for round-trip
+  correctness. The undocumented `IN (C)` (flags-only, discards the result)
+  and `OUT (C),0` forms are also handled.
+- [x] **`RETI`/`RETN`/`LD A,I`/`LD A,R`/`LD I,A`/`LD R,A`**: implemented in
+  `z80_op_prefix_ed`, including the undocumented `RETN` duplicate encodings
+  (`0x55`/`0x5D`/`0x65`/`0x6D`/`0x75`/`0x7D`). `RETN` restores
+  `iff1 := iff2`; `LD A,I`/`LD A,R` set `P/V` from `iff2` (S/Z/X/Y from the
+  result, H/N cleared, C unaffected) — matches documented Z80 behavior, but
+  note the real hardware has a race condition where `P/V` can read wrong if
+  an interrupt lands during the instruction; not modeled here since there's
+  no interrupt delivery yet (see below).
+- [x] **`IM 0`/`1`/`2`**: implemented (`cpu->im` is now set), including the
+  undocumented duplicate encodings. No interrupt-delivery mechanism
+  consumes `cpu->im`/`iff1`/`iff2` yet — see below.
+- [x] **Interrupt delivery**: implemented (`z80_step()`/`z80_service_int()`/
+  `z80_service_nmi()` in `z80.c`), grounded against the Zilog Z80 CPU User
+  Manual (UM008011-0816)'s "Interrupt Response" section rather than
+  guessed. `z80_request_int(cpu, data)`/`z80_request_nmi(cpu)`/
+  `z80_clear_int(cpu)` are the host-side API a real device would call
+  (mirroring asserting an actual `INT`/`NMI` line) — sampled at
+  instruction boundaries, gated correctly by `iff1` (`INT` only; `NMI` is
+  genuinely non-maskable) and by `ei_delay` (a new `Z80` field: the
+  documented one-instruction delay after `EI`, extended here to `NMI` too
+  since the manual only states it for `INT` but the internal sample-inhibit
+  circuit isn't gated by `IFF` at all — every serious independent
+  reference/emulator agrees). `IM 1` (13 T-states) and `IM 2` (19
+  T-states, vector-table lookup with the device byte's low bit correctly
+  forced to 0) match the manual's own explicit numbers exactly; `NMI` (11
+  T-states, fixes `PC` to `0x0066`, clears only `IFF1`) is the
+  well-established number every reference converges on where the manual
+  itself only describes the mechanism, not a stated total. `IM 0` supports
+  only a single-byte `RST` device vector — the real-world norm the manual
+  itself calls out ("often this response is a restart instruction") and
+  the only case safely dispatchable without a full "instruction fetched
+  from the device, not memory" bus model (several opcode handlers,
+  `z80_op_rst_dispatch` included, re-derive their own opcode via
+  `z80_read_byte(cpu, cpu->pc - 1)` rather than being passed it directly,
+  which would silently read the wrong byte for a generic dispatch); a
+  non-`RST` `IM 0` vector is a documented, deliberate gap (returns `-1`,
+  the same "unimplemented" signal a genuinely unrecognized opcode gives),
+  not a guess. `HALT` needed no new code at all — its existing "just
+  decrement `PC` back to itself and keep re-fetching" implementation
+  already breaks out correctly the moment an accepted interrupt
+  overwrites `PC`, matching the manual's own description ("the CPU
+  functions as if it had recycled a restart instruction" from the halt
+  address). No host-side interrupt-raising device exists yet (no
+  timer/keyboard chip is modeled) — `cpm/tests/test_interrupts.c` (see
+  below) is presently this mechanism's only caller, by direct C-level
+  unit test rather than a real device or CP/M program, since no
+  CP/M-executable instruction can raise an interrupt against itself.
+- [x] **Automated regression check**: `make test` (`cpm/tests/run_tests.sh`)
+  runs ZEXALL/ZEXDOC and fails if the output contains `ERROR`, an
+  `Unimplemented opcode` line, or doesn't reach `Tests complete`; it also
+  assembles and runs every `asm/examples/*.asm` program and fails on any
+  `FAIL` line (the `OK n`/`FAIL n` convention `selftest.asm`/
+  `gaps_test.asm` use) or unimplemented-opcode hit. `asm/examples/
+  gaps_test.asm` specifically covers the I/O-port and `RETI`/`RETN`/
+  `LD A,I`-family additions above, since ZEXALL doesn't exercise any of
+  them. `cpm/tests/test_interrupts.c` (`bin/z80-test-interrupts`, also
+  wired into `run_tests.sh`) is the direct C-level equivalent for
+  interrupt delivery specifically — the one regression check in this
+  project that isn't a `.asm` program, for the reason given above: 27
+  checks covering `IM 0`/`1`/`2` timing/vectoring, `NMI` vs. `INT`
+  masking and priority, `IFF1`/`IFF2` semantics (including `RETN`'s
+  restore), the `EI`-delay window, `HALT` interaction, and
+  `z80_clear_int()`.

@@ -41,10 +41,17 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 
 Real, understood, and deliberately not solved yet — not oversights.
 
-- **The GTK window has no Load/Save and no color picker**, both of which
-  `bin/abc80-gtk` has. Load/Save has nothing to wire to until this target
-  gets a cassette or disk path at all; the amber phosphor is fixed at the
+- **The GTK window has no disk dialog and no color picker**, both of
+  which `bin/abc80-gtk` has an equivalent of. `--disk` attaches images at
+  launch and BASIC's `SAVE`/`LOAD` work against them, but there is no
+  in-window way to swap a disk; the amber phosphor is fixed at the
   machine's real value. See `../gtk/README.md`.
+- **Neither GTK app is in `make test`.** They are opt-in builds requiring
+  `gtk4`, which the default build deliberately does not depend on, so the
+  suites cover only what `make abc802` produces. `bin/abc802-gtk` is at
+  least checkable without a desktop — its `--screenshot` renders through
+  the identical `draw_screen()` the live window uses — so a suite gated on
+  the binary existing would be straightforward if it ever seems worth it.
 - **The line editor has no cursor movement, and that is the hardware.**
   Left arrow maps to backspace and Right does nothing, because a full
   sweep of every control code (Milestone 8) established the editor's whole

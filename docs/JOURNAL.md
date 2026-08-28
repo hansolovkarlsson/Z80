@@ -24,9 +24,9 @@ targets had ever been verified by lived in a hand-run matrix retyped each
 session — which is how the previous entry's change got signed off, and it
 would not have survived to the next one.
 
-`abc80/tests/run_tests.sh` (16 checks) and `abc802/tests/run_tests.sh`
+`abc80/tests/run_tests.sh` (17 checks) and `abc802/tests/run_tests.sh`
 (14) are that matrix, kept, with shared reporting in
-`scripts/testlib.sh`. `make test` now runs all three suites: 46 checks,
+`scripts/testlib.sh`. `make test` now runs all three suites: 47 checks,
 under two minutes including a clean build.
 
 ### The stance
@@ -51,12 +51,12 @@ the sound port, an ABC802 DIP-switch default flipped, the ABC830
 interleave disabled, the mosaic-font address bit changed.
 
 Four were caught. **The port-decode check passed with its subject entirely
-broken.** It looked for `" 42"` in the output and found it — in
-`OUT 6,42`, the command line the ROM had echoed back to the screen. What
-BASIC actually printed was `255`. Every check on these targets reads a
-screen containing the typed input as well as the answer, so substring
-matching on a result is structurally unsafe here; the numeric checks now
-extract result lines and compare them positionally.
+broken** — it was asserting on its own input. Full write-up in
+[a postmortem](postmortems/2026-08-29-test-matched-the-echoed-input.md),
+because the lesson generalizes to every check on these targets: the
+machine is driven by typing at it and read by looking at video RAM, and
+video RAM contains the echoed input, so input and output share one
+buffer.
 
 Rerunning the sweep found two more checks that were weak rather than
 wrong — `disk-boot` asserted only the absence of an error, and the
@@ -64,8 +64,9 @@ UFD-DOS check asserted a "file not found" that a completely dead card
 also produces. Both now assert on the card's own `ABCBUS_TRACE=1` output,
 so they fail when the bus stops carrying anything.
 
-That is the argument for mutation testing in one session: the suite went
-in green, and three of its checks were not testing what their names said.
+Of seventeen checks written that afternoon, three were not testing what
+their names claimed, and the suite reported green throughout. A check is
+finished when it has been seen to fail for the right reason.
 
 ### An aside on measuring
 
@@ -76,10 +77,27 @@ minute per check spent on nothing, and measuring the minimum took two
 commands. Worth remembering next time a number gets carried across
 sessions because it worked once.
 
+### A false alarm worth recording
+
+Twenty minutes went into suspecting the SN76477 was broken, because
+`OUT 6,255` from BASIC rendered silence and so did `OUT 6,0`. Both are
+correct. `0xFF` disables the chip and inhibits the mixer; `0x00` selects
+an envelope mode that produces nothing without a trigger. `0x40` — the
+value the demo tool itself uses — gives a clean tone. The bit layout was
+in `sound.c`'s own header comment the whole time, and the near-miss was
+writing the phantom up as a known gap in the roadmap.
+
+It turned into the seventeenth check. `sound-register-from-basic` drives
+the register through the CPU rather than calling the model directly, which
+covers `step.c`'s decoding of BASIC's compiled `ED`-prefixed `OUT` — a
+path nothing else touched. Breaking that decode now fails it.
+
 ### Also found
 
-The ABC80 emulator runs at about 1.7M instructions/sec, which is slow for
-`-O2` and worth looking at some day; nothing depends on it yet. And
+The ABC80 emulator runs at about 1.7M instructions/sec, several times
+slower than the ABC802 on the same shared core. Nothing depends on it, but
+it is most of why one suite takes 20 seconds and the other 3; recorded as
+a Performance note in the ABC80 roadmap rather than chased. And
 `bin/abc80-video-timing-dump` already spoke PASS/FAIL and set an exit code
 of its own — it had simply never been run automatically. It is now.
 

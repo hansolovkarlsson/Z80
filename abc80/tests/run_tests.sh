@@ -201,6 +201,39 @@ else
 fi
 tl_end "$out"
 
+# The same sound model reached the way real software reaches it: BASIC's
+# compiled OUT is the ED-prefixed register-indirect form, which step.c has
+# to recognize by decoding the instruction ahead of executing it. Nothing
+# else here exercises that path, and the demo above bypasses the CPU
+# entirely. 0x40 is the register value the demo itself uses - enabled,
+# mixer=VCO, envelope=Mixer Only.
+#
+# Note for anyone extending this: most register values are legitimately
+# silent. 0xFF disables the chip and inhibits the mixer; 0x00 selects
+# envelope mode VCO, which produces nothing without a trigger. Silence
+# here means the test picked a bad value far more often than it means the
+# emulator broke.
+run_basic $CAP $'OUT 6,64\r' --wav "$WORKDIR/basic-tone.wav" > /dev/null
+tl_begin "sound-register-from-basic"
+if [ ! -s "$WORKDIR/basic-tone.wav" ]; then
+    tl_note "no WAV was rendered"
+else
+    peak=$(python3 - "$WORKDIR/basic-tone.wav" <<'PY'
+import array, sys
+d = open(sys.argv[1], 'rb').read()
+body = d[44:]
+body = body[:len(body) - len(body) % 2]
+a = array.array('h')
+a.frombytes(body)
+print(max(abs(x) for x in a) if a else 0)
+PY
+)
+    if [ "$peak" -eq 0 ]; then
+        tl_note "the sound register written by BASIC produced silence; step.c's OUT detection is the likely suspect"
+    fi
+fi
+tl_end
+
 # --- Floppy, on real media --------------------------------------------
 
 DISK003="${ABC80_TEST_DISKS:-}/disk003.img"

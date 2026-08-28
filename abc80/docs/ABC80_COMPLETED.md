@@ -3027,12 +3027,12 @@ real port decode, the ROM's own `INP` implementation, and the CPU's I/O
 path; a C-level call to the same function exercises none of them. That
 technique came from the ABC802's SIO work and transfers cleanly.
 
-Sixteen checks: boot and arithmetic, the Swedish charset round trip
+Seventeen checks: boot and arithmetic, the Swedish charset round trip
 (UTF-8 in on the keyboard and back out of video RAM), both memory-map
 configurations, the floating bus, the ABC-bus/sound port decode boundary,
 a cassette round trip across two processes, the video-timing PROMs, a
-chargen fixture diff, the SN76477 tone measured by zero crossings, and
-five floppy checks.
+chargen fixture diff, the SN76477 tone measured by zero crossings, the
+same register driven from BASIC through the CPU, and five floppy checks.
 
 ### Skips are not passes
 
@@ -3054,15 +3054,15 @@ were injected and each had to be caught:
 | ABC802 configuration DIP switch default flipped | `sio-idle-status`, `sio-channel-reset` |
 | ABC830 sector interleave disabled | `disk-lib-directory` |
 | Mosaic-font address bit changed | `chargen-attributes` |
+| `step.c`'s sound-port mask changed | `sound-register-from-basic` |
 
 The sweep paid for itself immediately. **The port-decode check passed with
-its subject entirely broken.** It asserted that `" 42"` appeared in the
-output, and it did — in `OUT 6,42`, the command line the ROM had echoed to
-the screen. The value BASIC actually printed was `255`. Every check here
-reads a screen that contains the typed input as well as the answer, so
-substring matching on a result is structurally unsafe on this target; the
-numeric checks now extract result lines with `sed` and compare them
-positionally.
+its subject entirely broken** — it was asserting on its own input, because
+video RAM holds the ROM's echo of the typed line as well as the answer.
+That has its own postmortem
+([`docs/postmortems/2026-08-29-test-matched-the-echoed-input.md`](../../docs/postmortems/2026-08-29-test-matched-the-echoed-input.md)),
+since the trap applies to every check on these targets. The numeric checks
+now extract result lines with `sed` and compare them positionally.
 
 Two other checks were weak rather than wrong, and were strengthened the
 same way. `disk-boot` asserted only that no error appeared, and
@@ -3072,9 +3072,26 @@ completely dead card also produces. Both now assert on the card's own
 UFD-DOS issued at least twenty of them — so they fail when the bus stops
 carrying anything.
 
+### A false alarm that became the seventeenth check
+
+Twenty minutes went into suspecting the SN76477 was broken, because
+`OUT 6,255` from BASIC rendered silence — and so did `OUT 6,0`. Both are
+correct: `0xFF` disables the chip and inhibits the mixer, and `0x00`
+selects an envelope mode that produces nothing without a trigger. `0x40`,
+the value `sound_demo.c` itself uses, gives a clean tone. The bit layout
+was in `sound.c`'s own header comment the whole time, and the near-miss
+was writing the phantom up as a known gap.
+
+What came out of it is real coverage. `sound-register-from-basic` drives
+the register through the CPU rather than calling the model directly, so it
+exercises `step.c`'s decoding of BASIC's compiled `ED`-prefixed `OUT` —
+which nothing else touched, and which fails the check when broken. Its
+comment records that most register values are legitimately silent, so the
+next person to extend it suspects their test value first.
+
 ### Cost
 
-Sixteen checks in about 20 seconds; `make test` end to end is under two
+Seventeen checks in about 20 seconds; `make test` end to end is under two
 minutes including a clean build. Getting there meant measuring rather than
 guessing the instruction caps: the hand-run matrix used values up to
 120,000,000 where 3,000,000 does, because they had been copied forward

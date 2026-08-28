@@ -23,6 +23,7 @@ Each one answers the same four questions:
 
 | Date | Postmortem | One-line lesson |
 |---|---|---|
+| 2026-08-29 | [The test that matched its own input](2026-08-29-test-matched-the-echoed-input.md) | A check is finished when it has been seen to fail for the right reason, not when it passes |
 | 2026-08-28 | [A status bit invented from one ROM](2026-08-28-status-bit-invented-from-one-rom.md) | A field the only consumer never reads cannot be validated by any test — only by a second consumer |
 | 2026-08-28 | [The boot screen cannot validate the feature](2026-08-28-boot-screen-cannot-validate.md) | A test whose input never exercises the code proves nothing, however real the input is |
 | 2026-08-28 | [`--type` fed raw UTF-8 bytes](2026-08-28-type-raw-utf8-bytes.md) | Two paths doing "the same" thing will disagree unless one of them calls the other |

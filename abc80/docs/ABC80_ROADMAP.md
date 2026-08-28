@@ -31,7 +31,7 @@ ends and the hardware facts each one had to establish — live in
 | 10 | Left/right arrow keys | mapped from the ROM's own line editor, by disassembly |
 | 11 | A real GTK window | `bin/abc80-gtk`, Cairo framebuffer with live SN76477 audio |
 | 12 | Retiring the PC-address trap | a real ABC-bus card (`abcbus/disk.c`, shared with the ABC802) replaces the DOS-ROM trap |
-| 13 | An automated regression suite | `abc80/tests/run_tests.sh`, 16 checks, part of `make test` |
+| 13 | An automated regression suite | `abc80/tests/run_tests.sh`, 17 checks, part of `make test` |
 
 ## Memory map (grounded, not guessed)
 
@@ -63,61 +63,48 @@ The ABCbus ports are a real device, reached through the CPU core's
 `io_in_hook`/`io_out_hook` (installed by `abc80/emu/src/abcbus.c`); every
 other port is the core's flat `io_ports[]` array as before.
 
-## Known gaps / near-term technical debt
+## Known gaps / not modeled
 
-Every milestone is complete, so this section is now where the remaining
-work actually lives — a quick-scan summary of what is *not* modeled, with
-the finished write-ups it refers back to in
-[`ABC80_COMPLETED.md`](ABC80_COMPLETED.md):
+Only what is *absent* belongs here. Every milestone is complete, and the
+narrative of what each one established lives in
+[`ABC80_COMPLETED.md`](ABC80_COMPLETED.md) rather than being recited
+again as a list of things that are no longer missing.
 
-- Video generation (Milestone 2), keyboard input (Milestone 3), cassette
-  quickload/quicksave (Milestone 4), a scoped SN76477 tone model
-  (Milestone 5), RAM expansion / floating-bus fidelity (Milestone 6's first
-  sub-step), the real periodic PIO interrupt (Milestone 7), real
-  interactive keyboard input with a live, real-time-paced screen including
-  a genuine Ctrl-C break to BASIC and real left/right arrow keys
-  (Milestones 8-10, `bin/abc80 --interactive`) are done. Floppy/DOS
-  support is done too, and **is now a real ABC-bus card rather than a
-  bypass** (Milestone 12): `--disk` fits the shared synthetic controller
-  in `abcbus/disk.c` and the DOS ROM's own protocol code executes for
-  real, which retired the PC-address trap on `0x6068`/`0x60A1` that
-  Milestone 6 built. `SAVE`/`LOAD` round trips are byte-identical to what
-  the trap produced; the real `LIB` utility's directory listing, which
-  failed under the trap, now works; and `UFD-DOS` (the alternate real DOS
-  ROM, `UFD80V20.bin`, examined during Milestone 6 and left unwired
-  because a trap cannot serve a second DOS) drives the same card
-  correctly via `--dos-rom`. Disk-full behavior (both the
-  directory-capacity and block-space-exhaustion cases) is confirmed
-  correct and safe. The exact meaning of `B`'s unused bits was a
-  trap-era question and no longer arises — the ROM's own code reads
-  those registers now.
-  Cassette storage is a host-file bypass of BASIC's own program-storage
-  pointers, not real analog tape emulation. Sound was originally a single
-  steady-tone case only, but Milestone 11's "full SN76477 emulation"
-  sub-step closed that gap: SLF/noise/one-shot/envelope modes are all now
-  synthesized, and live audio (via GTK/SDL, not just `--wav` rendering) is
-  supported too — see that sub-step's own write-up.
-- **Cursor blink is now live** (Milestone 8) in `--interactive` mode,
-  computed from real elapsed time against the real 3.125Hz rate MAME's own
-  `m_blink_timer` uses. Default (non-`--interactive`) mode is still a
-  one-shot end-of-run snapshot with `blink_phase=1` hardcoded, unchanged -
-  a deliberate difference between the two modes' purposes, not a gap.
-- **Real Ctrl-C break now reaches BASIC** (Milestone 9, closing the gap
-  Milestone 8 left open) - see that milestone's own write-up in
-  `ABC80_COMPLETED.md`.
-- **Memory-map fidelity for `0x4000`-`0xBFFF`**: fixed by Milestone 6's RAM
-  expansion sub-step (see `ABC80_COMPLETED.md`) — `0x4000`-`0x7BFF` and, by default,
-  `0x8000`-`0xBFFF` now correctly float (fixed `0xFF` reads, matching MAME's
-  own no-card `abcbus_slot_device` behavior) instead of being ordinary flat
-  RAM, except for `0x6000`-`0x6FFF` when `--disk` is active (the real DOS
-  ROM, either of the two committed images). `0x8000`-`0xBFFF` still has no
-  real printer/IEC ROM card content — out of scope, no milestone currently
-  targets those cards.
-- **ROM write-protection**: `0x0000`-`0x3FFF` is writable in this model,
-  matching this repo's existing flat-memory-model precedent for the CP/M
-  target (`CLAUDE.md`'s Architecture section) rather than a new abstraction
-  introduced early. No milestone yet — revisit only if something concrete
-  needs it, same standard `cpm/docs/ROADMAP.md` applies elsewhere.
+- **Cassette is a host-file bypass**, not analog tape.
+  `--quickload`/`--quicksave` read and write BASIC's own program-storage
+  pointers directly; no signal is modulated, and real `.wav` tape audio
+  cannot be loaded. Adequate for moving programs in and out, and unlikely
+  to be worth more unless something needs real tape timing.
+- **One floppy drive.** The shared card supports eight units and ABC-DOS
+  scans all of them at boot, but `--disk` takes a single image. See
+  Planned next steps.
+- **No printer or IEC-bus ROM card.** `0x8000`-`0xBFFF` floats; only the
+  DOS card at `0x6000` is modeled, and only because `--disk` loads a real
+  image into it. No ROM image for the others is committed.
+- **ROM is writable.** `0x0000`-`0x3FFF` accepts stores, matching this
+  repo's flat-memory-model precedent for the CP/M target rather than
+  introducing an abstraction early. Revisit only if something concrete
+  needs it.
+- **The GTK app has no automated coverage.** `bin/abc80-gtk` shares
+  `abc80_step()` and the ABC-bus glue with the CLI, so the logic under it
+  is tested; what is not tested is the window itself. Unlike
+  `bin/abc802-gtk` it has no headless `--screenshot` mode, so the only
+  check available is a launch-and-terminate smoke test that opens a real
+  window — deliberately not in `make test`. Giving it the ABC802's
+  `--screenshot` treatment would make it testable.
+- **Non-interactive cursor blink is a fixed snapshot.** The end-of-run
+  render hardcodes `blink_phase=1`; only `--interactive` computes it from
+  elapsed time. A deliberate difference between the two modes' purposes.
+
+### Performance
+
+`bin/abc80` runs at roughly **1.7M instructions/sec** (`-O2`, Apple
+silicon), several times slower than `bin/abc802` on the same shared core.
+Nothing depends on it — the machine is a 3 MHz Z80 and `--interactive`
+paces itself comfortably — but it sets the cost of the regression suite
+(about 20 seconds, against the ABC802's 3) and would matter to anything
+wanting to run long workloads. Not investigated; the per-instruction
+video-timing work is the obvious first suspect.
 
 ## Testing
 
@@ -126,8 +113,9 @@ the finished write-ups it refers back to in
 Swedish charset round trip, both memory-map configurations, the
 floating bus, the ABC-bus/sound port decode boundary, a cassette
 `--quicksave`/`--quickload` round trip across two processes, the video
-timing PROMs, a chargen fixture diff, and the SN76477 tone measured by
-zero crossings. Five floppy checks — boot, the card's status byte read
+timing PROMs, a chargen fixture diff, the SN76477 tone measured by zero
+crossings, and that same register driven from BASIC through the CPU (the
+only coverage `step.c`'s `OUT`-instruction decoding has). Five floppy checks — boot, the card's status byte read
 from BASIC, the real `LIB` directory listing, a `SAVE`/`LOAD` round trip,
 and UFD-DOS over the same card — need `ABC80_TEST_DISKS` pointed at a
 directory holding `disk003.img`, and skip loudly without it.
@@ -143,11 +131,19 @@ None committed. Candidates, in rough order of how much they would add:
   mostly CLI plumbing. Testable: two distinct real images exist in the
   abc80.net archive set this project already uses (`disk001.img` and
   `disk003.img`; `disk002.img` is byte-identical to `disk001.img`).
+- **A headless `--screenshot` for `bin/abc80-gtk`**, copying what
+  `bin/abc802-gtk` does: render one frame through the identical
+  `draw_screen()` the live window uses, against an offscreen surface, with
+  no `GtkApplication` created. That is what makes the ABC802's window
+  checkable without a desktop, and it would let the GTK app join
+  `make test` instead of relying on a smoke test that steals focus.
 - **A UFD-DOS-formatted disk image.** `--dos-rom UFD80V20.bin` drives the
   card correctly (Milestone 12) but has only ever been pointed at
   ABC-DOS media, which it reads fine and then correctly reports has no
   startup file on it. Real UFD-DOS media would turn that from "the bus
   works" into "the DOS works".
+- **Emulator throughput**, if anything ever needs it — see Performance
+  above.
 - **Printer/IEC ROM cards** in the rest of the expansion range — no image
   committed, no milestone.
 
