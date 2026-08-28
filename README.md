@@ -180,7 +180,9 @@ see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
   (`make abc802-gtk`). See
   [`ABC802_ROADMAP.md`](abc802/docs/ABC802_ROADMAP.md) for what is left,
   [`ABC802_COMPLETED.md`](abc802/docs/ABC802_COMPLETED.md) for the
-  finished milestones, and
+  finished milestones,
+  [`ABC802_FLOPPY_SCOPING.md`](abc802/docs/ABC802_FLOPPY_SCOPING.md) for
+  the costed options on disk support, and
   [`ABC802_REFERENCE.md`](abc802/docs/ABC802_REFERENCE.md) for the
   hardware.
 - `cpm/gtk/` — an opt-in (`make gtk`) thin GTK4 launcher for `bin/z80`,

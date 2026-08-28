@@ -84,10 +84,16 @@ None committed. Milestones 2-4 closed the items that previously stood
 here. The remaining candidates, roughly in order of how much they would
 add:
 
-1. **ABC-bus floppy support**, reusing the ABC80 target's existing,
-   disassembly-grounded understanding of the same drives. The largest
-   remaining piece of unmodeled hardware, and the one that would let this
-   machine load and save real programs.
+1. **ABC-bus floppy support** — the largest remaining piece of unmodeled
+   hardware, and the one that would let this machine load and save real
+   programs. **Scoped out in detail** in
+   [`ABC802_FLOPPY_SCOPING.md`](ABC802_FLOPPY_SCOPING.md): the controller
+   turns out to be a complete second computer (its own Z80, DMA and
+   FD1793), the ABC80 target's PC-trap bypass does *not* transfer because
+   this DOS ROM has no sector-level routine to intercept, but the bus
+   command protocol is documented and confirmed to match this ROM in three
+   independent details. Recommendation there is a synthetic ABC-bus
+   controller in four verifiable sub-steps.
 2. **The ROM's line editor**, disassembled the way the ABC80's was, to
    settle what its cursor keys actually want and close the arrow-key gap
    above.
