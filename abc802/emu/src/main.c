@@ -309,7 +309,10 @@ int main(int argc, char **argv) {
     if (disk_path && !abc802_disk_attach(0, disk_path)) return 1;
 
     printf("ABC802: loaded 32K ROM from '%s' (DOS ROM '%s')\n", rom_dir, dos_rom);
-    if (disk_path) printf("ABC-bus: ABC830 floppy, drive 0 = '%s'\n", disk_path);
+    if (disk_path) {
+        printf("ABC-bus: %s floppy controller, drive 0 = '%s'\n",
+               abc802_disk_type_name(), disk_path);
+    }
 
     if (interactive) {
         abc802_console_init();

@@ -85,18 +85,35 @@ typedef struct {
     const char *name;
 } DriveType;
 
-// 40 tracks x 1 side x 16 sectors x 256 bytes = 160KB, which is exactly
-// the size of the real dumped images in the abc80.net archive.
+// ABC830 ("mo"): 40 tracks x 1 side x 16 sectors x 256 bytes = 160KB,
+// exactly the size of the real dumped images in the abc80.net archive.
 //
-// The interleave is this project's own empirically verified finding from
+// Its interleave is this project's own empirically verified finding from
 // ABC80's Milestone 6 (factor 7, mask 15), *not* abc80sim's - that
 // implementation ships with interleave compiled out. Both cannot be right
-// for the same media, and the value used here is the one this repository
-// has actually confirmed against a real disk image, where every directory
-// entry resolved to a consistent file header with it applied and to
-// garbage without. See ABC802_FLOPPY_SCOPING.md's risk list.
+// for the same media, and this one is now confirmed twice: on ABC80,
+// where every directory entry resolved to a consistent file header with
+// it and to garbage without, and again here, where disabling it stops
+// real media booting at all.
 static const DriveType DRIVE_MO = {ABC802_SEL_MO, 1, 40 * 1 * 16, 7, 15, "mo"};
 
+// ABC832/834 ("mf"): 80 tracks x 2 sides x 16 sectors = 640KB, and the
+// ABC802's own native drive. Four sectors per cluster rather than one,
+// which changes how a command header's sector address is decoded.
+//
+// Interleave: none. That is not an assumption carried over from
+// abc80sim - it was tested the same way the ABC830's was, by booting real
+// 640KB media both ways. Identity works and factor 7 does not, which is
+// the opposite result to the ABC830 and precisely why neither drive's
+// value could be inferred from the other. A mask of 0 makes the mapping
+// in file_offset() an identity, so no special case is needed.
+static const DriveType DRIVE_MF = {ABC802_SEL_MF, 4, 80 * 2 * 16, 0, 0, "mf"};
+
+// Which controller is fitted. Chosen from the attached image's size
+// rather than a flag: the two formats differ by a factor of four, a real
+// dump is always exactly one of those sizes, and asking the user to
+// restate something the file already says is a good way to collect bug
+// reports about the wrong geometry.
 static const DriveType *drive_type = &DRIVE_MO;
 
 static FILE *units[NUM_UNITS];
@@ -122,6 +139,16 @@ void abc802_disk_reset(void) {
     memset(k, 0, sizeof(k));
 }
 
+// Pick the controller type from the image size. Returns NULL for a size
+// that matches no known drive, which is nearly always a truncated
+// download or the wrong file entirely - worth refusing loudly rather than
+// serving garbage sectors from.
+static const DriveType *drive_type_for_size(long size) {
+    if (size == (long)DRIVE_MO.sectors * SECTOR_SIZE) return &DRIVE_MO;
+    if (size == (long)DRIVE_MF.sectors * SECTOR_SIZE) return &DRIVE_MF;
+    return NULL;
+}
+
 bool abc802_disk_attach(int unit, const char *path) {
     if (unit < 0 || unit >= NUM_UNITS) return false;
     // r+b: the controller must be able to write back. A read-only image
@@ -135,12 +162,40 @@ bool abc802_disk_attach(int unit, const char *path) {
             return false;
         }
     }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        fprintf(stderr, "Cannot determine size of disk image '%s'\n", path);
+        return false;
+    }
+    long size = ftell(f);
+    const DriveType *type = drive_type_for_size(size);
+    if (!type) {
+        fclose(f);
+        fprintf(stderr,
+                "Disk image '%s' is %ld bytes, which is neither an ABC830 "
+                "(%ld) nor an ABC832/834 (%ld) image\n",
+                path, size, (long)DRIVE_MO.sectors * SECTOR_SIZE,
+                (long)DRIVE_MF.sectors * SECTOR_SIZE);
+        return false;
+    }
+    // A second image must match the first: one controller is fitted, and
+    // its drives are all of its own type.
+    if (card_present && type != drive_type) {
+        fclose(f);
+        fprintf(stderr, "Disk image '%s' is a %s image, but a %s controller "
+                        "is already fitted\n", path, type->name, drive_type->name);
+        return false;
+    }
+    drive_type = type;
+
     if (units[unit]) fclose(units[unit]);
     units[unit] = f;
     card_present = true;
     abc802_disk_reset();
     return true;
 }
+
+const char *abc802_disk_type_name(void) { return drive_type->name; }
 
 void abc802_disk_close(void) {
     for (int i = 0; i < NUM_UNITS; i++) {

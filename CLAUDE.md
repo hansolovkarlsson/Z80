@@ -130,7 +130,17 @@ correctly as no card fitted; an idle controller is `0x81`. And **the
 sector interleave (factor 7) is required**, now proven by experiment on
 this machine as well as ABC80: with it disabled, real media stops booting
 entirely. That settles a contradiction with abc80sim, which ships with
-interleave compiled out. `--type-at N` exists for disk work specifically:
+interleave compiled out. Milestone 6 adds the 640KB ABC832/834 (`MF`) drive alongside the 160KB
+ABC830 (`MO`), with the controller type chosen from the image's size
+rather than a flag. **The two drives interleave in opposite directions** —
+`MO` needs factor 7 and `MF` needs none, each established by booting real
+media both ways — so interleave cannot be inferred for the `SF`/`HD` types
+if those are ever added. Note the trap: both formats keep their directory
+at sector 16, which reads correctly under *either* mapping because
+track-boundary sectors map to themselves, so a readable hex dump proves
+nothing and only booting settles it.
+
+`--type-at N` exists for disk work specifically:
 the ROM reports the keyboard ready long before a booting program is
 listening, and discards anything typed meanwhile.
 

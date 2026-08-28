@@ -17,6 +17,61 @@ in an entry here.
 
 ---
 
+## 2026-08-28 (later still) — ABC802 Milestone 6: the 640K drive
+
+Small follow-on to Milestone 5, and it produced one fact worth more than
+the feature.
+
+`--disk` now takes 640KB ABC832/834 images as well as 160KB ABC830 ones —
+the ABC802's own native drive rather than the ABC80-era one it inherited.
+Which controller is fitted comes from the image's size rather than a flag:
+the formats differ by a factor of four, a real dump is always exactly one
+of the two, and making the user restate what the file already says is a
+good way to collect bug reports about the wrong geometry.
+
+### The two drives interleave differently, in opposite directions
+
+| Drive | Identity | Interleave 7 |
+|---|---|---|
+| ABC830 (160K) | does not boot | **boots** |
+| ABC832/834 (640K) | **boots** | does not boot |
+
+Both settled by booting real media both ways. Had either been assumed from
+the other, that drive would have been silently broken, and the symptom is
+"the disk does nothing" with no error to trace.
+
+I nearly shipped this one badly. I wrote the code comment asserting the
+identity result *before running the test* — reasoning from abc80sim's
+table, which gives `MF` no interleave parameters. The reasoning happened
+to be right, which is exactly what makes it a bad habit: a comment that
+says "this was tested" when it has not been is worse than no comment,
+because the next person has no way to tell the two apart. Caught it on
+reread, tested both directions, and only then let the claim stand.
+
+The trap underneath is the same one ABC80's Milestone 6 recorded: both
+images have their directory at sector 16, and **sector 16 reads correctly
+under either mapping**, because track-boundary sectors map to themselves.
+So being able to see filenames in a hex dump proves nothing about
+interleave. Only booting does. Worth knowing before anyone adds the `SF`
+or `HD` types.
+
+### A postmortem paying off twice
+
+The `ADMINISTRATION 800` screen this milestone boots is the first time
+*real* software has exercised Milestone 3's row-attribute decode — its
+title bar is inverse-video and its rules are Row Graphic mosaics. That
+path is precisely the one [the boot-screen
+postmortem](postmortems/2026-08-28-boot-screen-cannot-validate.md) pointed
+out the ROM's own boot screen could never test, and which had until now
+only ever been driven by a synthetic screen built for the purpose. It
+renders correctly, on 1983 output that knew nothing about this emulator.
+
+Nothing was done to make that happen; it fell out of a milestone about
+disk geometry. But it is the check the synthetic test was standing in for,
+and it is worth recording that the stand-in turned out to be honest.
+
+---
+
 ## 2026-08-28 (later) — ABC802 Milestone 5: the ABC-bus floppy, scoped then built
 
 Scoped the work first, on the suspicion it would be intricate. It was —

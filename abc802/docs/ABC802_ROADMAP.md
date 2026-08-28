@@ -21,7 +21,7 @@ that machine's documentation thins out.
 
 ## Completed work
 
-Milestones 1-5 are done. Their full write-ups — including what each one
+Milestones 1-6 are done. Their full write-ups — including what each one
 found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 
 | # | Milestone | Outcome |
@@ -31,6 +31,7 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 | 3 | Pixel rendering from the character ROM | `--screenshot` writes a real 480x240 PNG in the machine's own amber; all three row attributes decoded |
 | 4 | A GTK window | `bin/abc802-gtk`, a Cairo framebuffer sharing the same decode and the same `abc802_step()` |
 | 5 | ABC-bus floppy support | `--disk` boots real 160KB ABC830 images and round-trips `SAVE`/`LOAD`, via a synthetic bus controller |
+| 6 | The ABC832/834 640K drive | the ABC802's own native drive; controller type auto-detected from image size |
 
 ## Known gaps
 
@@ -66,12 +67,16 @@ Real, understood, and deliberately not solved yet — not oversights.
 - **The SIO is a stub.** Reads report "transmit buffer empty, no receive
   data" so ROM polling loops exit. Nothing is attached to either channel,
   so the RS-232 ports and cassette do not work.
-- **Only one ABC-bus card, of one drive type.** Milestone 5 added a
-  synthetic ABC830 (`MO`, 160KB) floppy controller, and only drive 0 has
-  an image. The ROM also scans for `MF` (ABC832/834, 640KB), `SF` (8-inch)
-  and `HD` (hard disk), and `emu/src/disk.c`'s geometry table is shaped to
-  take them — but their sector geometry is unverified, and the archive's
-  640K images have not been tried. No printer or RTC card either.
+- **Two drive types, one card, one drive.** `MO` (ABC830, 160KB) and `MF`
+  (ABC832/834, 640KB) both work; the ROM also scans for `SF` (8-inch) and
+  `HD` (hard disk), which `emu/src/disk.c`'s geometry table is shaped to
+  take but which have no verified geometry and no test media here. Only
+  drive 0 gets an image — the controller supports eight units and the ROM
+  addresses `MO1:`/`MF1:`, but there is no way to attach a second. No
+  printer or RTC card either.
+  **Note for whoever adds `SF`/`HD`:** interleave cannot be inferred. The
+  two working drives need *opposite* settings, and a directory sector is
+  readable under either mapping, so only booting real media settles it.
 - **The controller card itself is not emulated.** A real ABC830 is a
   complete second computer (its own Z80, Z80 DMA, FD1793 and firmware);
   what exists here models the *protocol* it speaks, not the card. Software
@@ -88,15 +93,13 @@ Real, understood, and deliberately not solved yet — not oversights.
 
 ## Planned next steps
 
-None committed. Milestones 2-5 closed the items that previously stood
+None committed. Milestones 2-6 closed the items that previously stood
 here. The remaining candidates, roughly in order of how much they would
 add:
 
-1. **More drive types on the existing controller** — `MF` (640KB) is the
-   ABC802's own native drive and the archive has real images for it. The
-   geometry table in `emu/src/disk.c` is already shaped for it; what is
-   missing is verified geometry and a real image to check against. Much
-   smaller than Milestone 5 was, and the same four gates apply.
+1. **A second drive** (`MO1:`/`MF1:`). The controller already tracks eight
+   units and the ROM addresses them; only the command line cannot attach
+   one. Small, and it is what real two-drive software expects.
 2. **The ROM's line editor**, disassembled the way the ABC80's was, to
    settle what its cursor keys actually want and close the arrow-key gap
    above.

@@ -36,14 +36,20 @@
 #define ABC802_SEL_MO 0x2D  // ABC830 - 160K floppy
 #define ABC802_SEL_SF 0x2E  // 8-inch floppy
 
-// Attach `path` as the image for drive `unit` (0-7) of the ABC830-class
-// floppy controller, enabling the card. Returns false if the file cannot
-// be opened. With no image attached the card is absent entirely and every
+// Attach `path` as the image for drive `unit` (0-7), enabling the card.
+// Which controller is fitted - ABC830 (160KB) or ABC832/834 (640KB) - is
+// decided by the image's size, so a second image must be of the same
+// type. Returns false if the file cannot be opened or is not a
+// recognized size. With no image attached the card is absent entirely and every
 // bus read floats high, which is the ROM's own "no card fitted" signal.
 bool abc802_disk_attach(int unit, const char *path);
 
 // True once at least one image is attached, i.e. the card is present.
 bool abc802_disk_present(void);
+
+// Short name of the controller the attached image selected ("mo" for a
+// 160KB ABC830, "mf" for a 640KB ABC832/834), for startup reporting.
+const char *abc802_disk_type_name(void);
 
 // Release any attached images.
 void abc802_disk_close(void);

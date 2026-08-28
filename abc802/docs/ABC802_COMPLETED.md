@@ -424,3 +424,66 @@ on a second machine and a different DOS ROM.
   showing someone else's Luxor game menu with one line of mine in it. The
   round trip was genuinely correct, but nothing about that output
   demonstrated it. Redone with `NEW` first.
+
+## Milestone 6: the ABC832/834 640K drive — done
+
+`--disk` now takes 640KB images as well as 160KB ones, so the ABC802's own
+native drive works and not just the ABC80-era one it inherited.
+
+```
+$ bin/abc802 --columns 80 --disk mf001.img --screen
+ABC-bus: mf floppy controller, drive 0 = 'mf001.img'
+| ADMINISTRATION 800   * företagsnamn saknas! *          2000-00-00 00.00.00 |
+|              Datum  (ååmmdd) : ______                                      |
+|              Tid    (ttmmss) : 000000                                      |
+```
+
+That is a real Swedish business application booting off a real 640KB dump
+from the abc80.net ABC800 archive, asking for the date and time.
+
+**Which controller is fitted is decided by the image's size**, not by a
+flag. The two formats differ by a factor of four, a real dump is always
+exactly one of the two sizes, and asking the user to restate something the
+file already says is a good way to collect bug reports about the wrong
+geometry. A size matching neither is refused with both expected sizes
+named, since that is nearly always a truncated download.
+
+Verified: both 640KB images boot or reach a prompt, a `SAVE`/`LOAD` round
+trip across separate process runs works on `MF0:` (which exercises the
+four-sectors-per-cluster address arithmetic, different from the ABC830's),
+the 160KB path is unchanged, and a truncated image is rejected.
+
+### The two drives interleave differently, and neither predicts the other
+
+The ABC830 needs sector interleave factor 7. **The ABC832/834 needs
+none** — and this was established the same way, by booting real media both
+ways rather than by carrying the other drive's value across:
+
+| Drive | Identity | Interleave 7 |
+|---|---|---|
+| ABC830 (160K) | does not boot | **boots** |
+| ABC832/834 (640K) | **boots** | does not boot |
+
+Exactly opposite results. Had either value been assumed from the other,
+that drive would have been silently broken — and the failure looks like
+"the disk does nothing", with no error to trace.
+
+There is a trap worth naming here for whoever adds the `SF` or `HD` types
+next. Both images have their directory at sector 16, and sector 16 reads
+correctly under *either* mapping, because track-boundary sectors map to
+themselves. So "I can see the filenames in a hex dump" proves nothing
+about interleave. Only booting does. This is the same trap ABC80's
+Milestone 6 documented, met again on different media.
+
+### A cross-milestone check that came for free
+
+The `ADMINISTRATION 800` screen is the first time **real** software has
+exercised Milestone 3's row-attribute decode. Its title bar is
+inverse-video and its rules are Row Graphic mosaic characters — the
+attribute path that, per
+[the boot-screen postmortem](../../docs/postmortems/2026-08-28-boot-screen-cannot-validate.md),
+the ROM's own boot screen could never have tested and which until now had
+only ever been driven by `bin/abc802-chargen-dump`'s synthetic screen. It
+renders correctly, on real 1983 output that knew nothing about this
+emulator.
+
