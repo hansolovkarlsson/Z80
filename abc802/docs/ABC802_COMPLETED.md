@@ -487,3 +487,57 @@ only ever been driven by `bin/abc802-chargen-dump`'s synthetic screen. It
 renders correctly, on real 1983 output that knew nothing about this
 emulator.
 
+## Milestone 7: a second drive — done
+
+`--disk` is repeatable. Images take drives 0, 1, … in the order given, or
+a drive can be pinned explicitly with a `N:` prefix:
+
+```
+$ bin/abc802 --disk system.img --disk games.img      # drives 0 and 1
+$ bin/abc802 --disk 1:games.img                      # drive 1 only
+ABC-bus: mf floppy controller, 2 drives attached
+```
+
+The controller already tracked eight units and the ROM already addresses
+them as `MO1:`/`MF1:`; the only thing missing was a way to attach one. No
+second flag was invented for it — repeating the existing one is what
+two-drive software expects and keeps every single-`--disk` invocation
+working unchanged.
+
+### Verified, with a negative control
+
+Saving to the second drive touches only the second drive:
+
+```
+$ md5 d0.img d1.img          -> df2b6449…  df2b6449…   (identical copies)
+$ bin/abc802 --disk d0.img --disk d1.img --type 'NEW / 10 PRINT "DRIVE ONE" / SAVE "MF1:D1TEST"'
+$ md5 d0.img d1.img          -> df2b6449…  4933f5aa…   (only drive 1 changed)
+```
+
+and reading it back in a separate process finds it on drive 1 and **not**
+on drive 0:
+
+```
+LOAD "MF1:D1TEST"
+LIST
+10 PRINT "DRIVE ONE"
+RUN
+DRIVE ONE
+LOAD "MF0:D1TEST"
+Error 21.
+```
+
+That last line is the point of the test. A round trip that only ever reads
+back what it wrote cannot distinguish "the drives are independent" from
+"the unit number is ignored and everything lands on drive 0" — both give a
+successful load. The failing read on `MF0:` is what rules the second one
+out.
+
+Also checked: pinning with `1:` attaches drive 1 with no drive 0; two
+images of the same type work; and mixing types is refused, since one
+controller is fitted and its drives are all of its own kind —
+
+```
+Disk image 'mf001.img' is a mf image, but a mo controller is already fitted
+```
+

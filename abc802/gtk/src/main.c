@@ -392,7 +392,8 @@ typedef struct {
     AppState *app;
     const char *rom_dir;
     const char *dos_rom;
-    const char *disk_path;
+    const char *disk_paths[8];
+    int disk_count;
     int columns;
 } StartupOptions;
 
@@ -409,7 +410,9 @@ static bool machine_init(AppState *app, const StartupOptions *opts) {
     abc802_memory_attach(&app->cpu);
     abc802_ports_attach(&app->cpu);
     abc802_set_config(opts->columns == 80, true);
-    if (opts->disk_path && !abc802_disk_attach(0, opts->disk_path)) return false;
+    for (int d = 0; d < opts->disk_count; d++) {
+        if (!abc802_disk_attach_arg(opts->disk_paths[d])) return false;
+    }
     return true;
 }
 
@@ -481,7 +484,8 @@ static void print_usage(const char *prog) {
     printf("Options:\n");
     printf("  --rom-dir DIR      ROM directory (default: %s)\n", DEFAULT_ROM_DIR);
     printf("  --dos-rom FILE     DOS/option ROM (default: %s)\n", DEFAULT_DOS_ROM);
-    printf("  --disk FILE        attach FILE as an ABC830 floppy image (drive 0)\n");
+    printf("  --disk FILE        attach FILE as a floppy image (160K = ABC830,\n");
+    printf("                     640K = ABC832/834). Repeat for drives 0, 1, ...\n");
     printf("  --columns 40|80    characters per line (default 40, as on MAME)\n");
     printf("  --screenshot FILE  headless: run, render one frame to FILE, exit.\n");
     printf("                     Opens no window - this is how changes to the\n");
@@ -494,7 +498,7 @@ static void print_usage(const char *prog) {
 
 int main(int argc, char *argv[]) {
     static AppState app;
-    StartupOptions opts = {&app, DEFAULT_ROM_DIR, DEFAULT_DOS_ROM, NULL, 40};
+    StartupOptions opts = {&app, DEFAULT_ROM_DIR, DEFAULT_DOS_ROM, {NULL}, 0, 40};
     const char *screenshot_path = NULL;
     const char *type_text = NULL;
     long long screenshot_cycles = 20000000;
@@ -511,7 +515,8 @@ int main(int argc, char *argv[]) {
         } else if (!strcmp(argv[i], "--dos-rom") && i + 1 < argc) {
             opts.dos_rom = argv[++i];
         } else if (!strcmp(argv[i], "--disk") && i + 1 < argc) {
-            opts.disk_path = argv[++i];
+            if (opts.disk_count < 8) opts.disk_paths[opts.disk_count++] = argv[++i];
+            else { fprintf(stderr, "Too many --disk arguments\n"); return 1; }
         } else if (!strcmp(argv[i], "--columns") && i + 1 < argc) {
             opts.columns = atoi(argv[++i]);
             if (opts.columns != 40 && opts.columns != 80) {

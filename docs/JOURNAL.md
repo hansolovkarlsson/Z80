@@ -17,6 +17,35 @@ in an entry here.
 
 ---
 
+## 2026-08-28 (end of day) — ABC802 Milestone 7: a second drive
+
+Short one. `--disk` is now repeatable, so images take drives 0, 1, … in
+order, with a `N:` prefix to pin one. The controller had tracked eight
+units since Milestone 5 and the ROM has always addressed them as
+`MO1:`/`MF1:`; the only missing piece was a way to attach one. No new flag
+— repeating the existing one is what two-drive software expects and leaves
+every single-`--disk` invocation working untouched.
+
+The part worth recording is the **negative control**. The obvious test is
+to save to drive 1 and load it back, and that passes — but it passes just
+as happily if the unit number is being ignored entirely and everything
+lands on drive 0. A round trip cannot tell those apart. What distinguishes
+them is the read that must *fail*: `LOAD "MF0:D1TEST"` returning
+`Error 21`, plus the two images' checksums showing only drive 1 changed.
+
+That is the same lesson as [the boot-screen
+postmortem](postmortems/2026-08-28-boot-screen-cannot-validate.md) wearing
+different clothes. There the question was "would this output change if the
+code were broken?" Here it is "would this test still pass if the feature
+did nothing?" — and for a plain round trip on a two-drive system, the
+answer is yes. Both are the same discipline: a passing check is only worth
+what its counterfactual is.
+
+Three sessions running now, that habit has caught something. It seems to
+be the highest-value thing this project's write-ups have produced.
+
+---
+
 ## 2026-08-28 (later still) — ABC802 Milestone 6: the 640K drive
 
 Small follow-on to Milestone 5, and it produced one fact worth more than

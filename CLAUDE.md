@@ -140,6 +140,10 @@ at sector 16, which reads correctly under *either* mapping because
 track-boundary sectors map to themselves, so a readable hex dump proves
 nothing and only booting settles it.
 
+Milestone 7 makes `--disk` repeatable (drives 0, 1, …, or `N:FILE` to pin
+one), so `MO1:`/`MF1:` work; all drives must share one type, since one
+controller is modeled.
+
 `--type-at N` exists for disk work specifically:
 the ROM reports the keyboard ready long before a booting program is
 listening, and discards anything typed meanwhile.

@@ -222,9 +222,12 @@ static void usage(const char *argv0) {
     printf("                   continuously redrawn screen; Ctrl-C reaches BASIC,\n");
     printf("                   Ctrl-\\ exits. Runs at real ABC802 speed, uncapped\n");
     printf("                   unless --cycles is given explicitly.\n");
-    printf("  --disk FILE      attach FILE as an ABC830 floppy image on the\n");
-    printf("                   ABC-bus (drive 0). Without it no expansion card\n");
-    printf("                   is fitted and the ROM's scan finds nothing.\n");
+    printf("  --disk FILE      attach FILE as a floppy image on the ABC-bus.\n");
+    printf("                   160K selects an ABC830, 640K an ABC832/834.\n");
+    printf("                   Repeat for more drives: images take drives 0,\n");
+    printf("                   1, ... in order, or pin one with \"1:FILE\".\n");
+    printf("                   Without it no card is fitted and the ROM's\n");
+    printf("                   scan finds nothing.\n");
     printf("  --columns 40|80  characters per line (DIP S3, default 40 as on MAME)\n");
     printf("  -h, --help       this message\n");
     printf("\nEnvironment:\n");
@@ -239,7 +242,8 @@ int main(int argc, char **argv) {
     int show_profile = 0;
     const char *type_text = NULL;
     const char *screenshot_path = NULL;
-    const char *disk_path = NULL;
+    const char *disk_paths[8];
+    int disk_count = 0;
     long long type_at = 0;
     int columns = 40;
     bool interactive = false;
@@ -261,7 +265,8 @@ int main(int argc, char **argv) {
         } else if (!strcmp(argv[i], "--screenshot") && i + 1 < argc) {
             screenshot_path = argv[++i];
         } else if (!strcmp(argv[i], "--disk") && i + 1 < argc) {
-            disk_path = argv[++i];
+            if (disk_count < 8) disk_paths[disk_count++] = argv[++i];
+            else { fprintf(stderr, "Too many --disk arguments\n"); return 1; }
         } else if (!strcmp(argv[i], "--type-at") && i + 1 < argc) {
             type_at = atoll(argv[++i]);
         } else if (!strcmp(argv[i], "--profile")) {
@@ -306,12 +311,15 @@ int main(int argc, char **argv) {
     abc802_ports_attach(&cpu);
     abc802_set_config(columns == 80, true);
 
-    if (disk_path && !abc802_disk_attach(0, disk_path)) return 1;
+    for (int d = 0; d < disk_count; d++) {
+        if (!abc802_disk_attach_arg(disk_paths[d])) return 1;
+    }
 
     printf("ABC802: loaded 32K ROM from '%s' (DOS ROM '%s')\n", rom_dir, dos_rom);
-    if (disk_path) {
-        printf("ABC-bus: %s floppy controller, drive 0 = '%s'\n",
-               abc802_disk_type_name(), disk_path);
+    if (disk_count > 0) {
+        printf("ABC-bus: %s floppy controller, %d drive%s attached\n",
+               abc802_disk_type_name(), abc802_disk_attached_count(),
+               abc802_disk_attached_count() == 1 ? "" : "s");
     }
 
     if (interactive) {

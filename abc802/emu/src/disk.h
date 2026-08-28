@@ -44,6 +44,17 @@
 // bus read floats high, which is the ROM's own "no card fitted" signal.
 bool abc802_disk_attach(int unit, const char *path);
 
+// Attach one --disk argument. An explicit unit may be given as a "N:"
+// prefix ("1:games.img"); otherwise images are assigned to drives in the
+// order they appear on the command line, so two plain --disk arguments
+// become drives 0 and 1. Returns false on any failure, having already
+// reported why.
+bool abc802_disk_attach_arg(const char *arg);
+
+// How many drives currently have an image, i.e. the next unit a bare
+// --disk argument would take.
+int abc802_disk_attached_count(void);
+
 // True once at least one image is attached, i.e. the card is present.
 bool abc802_disk_present(void);
 

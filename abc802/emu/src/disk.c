@@ -197,6 +197,30 @@ bool abc802_disk_attach(int unit, const char *path) {
 
 const char *abc802_disk_type_name(void) { return drive_type->name; }
 
+int abc802_disk_attached_count(void) {
+    int n = 0;
+    for (int i = 0; i < NUM_UNITS; i++) {
+        if (units[i]) n++;
+    }
+    return n;
+}
+
+bool abc802_disk_attach_arg(const char *arg) {
+    // "N:path" pins the drive; a bare path takes the next free one, so
+    // two plain --disk arguments land on drives 0 and 1 - which is what
+    // two-drive software (and the ROM's own MO1:/MF1: device names)
+    // expects, without inventing a second flag for it.
+    if (arg[0] >= '0' && arg[0] <= '7' && arg[1] == ':' && arg[2] != '\0') {
+        return abc802_disk_attach(arg[0] - '0', arg + 2);
+    }
+    int unit = abc802_disk_attached_count();
+    if (unit >= NUM_UNITS) {
+        fprintf(stderr, "Too many disk images: the controller has %d drives\n", NUM_UNITS);
+        return false;
+    }
+    return abc802_disk_attach(unit, arg);
+}
+
 void abc802_disk_close(void) {
     for (int i = 0; i < NUM_UNITS; i++) {
         if (units[i]) fclose(units[i]);
