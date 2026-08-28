@@ -62,7 +62,7 @@ ABC80_TARGET := $(BIN_DIR)/abc80
 # bin/abc80 above - z80core/z80.o and alu.o are linked directly rather than
 # rebuilt. Opt-in only (never part of `all`), same as `abc80`.
 ABC802_SRC_DIR := abc802/emu/src
-ABC802_OBJS := $(ABC802_SRC_DIR)/main.o $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/render.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/png.o $(ABC802_SRC_DIR)/step.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC802_OBJS := $(ABC802_SRC_DIR)/main.o $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/render.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/png.o $(ABC802_SRC_DIR)/step.o $(ABC802_SRC_DIR)/disk.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
 ABC802_TARGET := $(BIN_DIR)/abc802
 
 # bin/abc80-chargen-dump: the chargen.c decode-verification tool (see its
@@ -145,7 +145,7 @@ GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 # of `all`/`test`.
 ABC802_GTK_SRC_DIR := abc802/gtk/src
 ABC802_GTK_SRCS := $(wildcard $(ABC802_GTK_SRC_DIR)/*.c)
-ABC802_GTK_OBJS := $(ABC802_GTK_SRCS:.c=.o) $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/render.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/step.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC802_GTK_OBJS := $(ABC802_GTK_SRCS:.c=.o) $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/render.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/step.o $(ABC802_SRC_DIR)/disk.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
 ABC802_GTK_TARGET := $(BIN_DIR)/abc802-gtk
 ABC802_GTK_PKGS := gtk4
 ABC802_GTK_CFLAGS := $(shell pkg-config --cflags $(ABC802_GTK_PKGS) 2>/dev/null)

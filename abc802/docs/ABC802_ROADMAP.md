@@ -21,7 +21,7 @@ that machine's documentation thins out.
 
 ## Completed work
 
-Milestones 1-4 are done. Their full write-ups — including what each one
+Milestones 1-5 are done. Their full write-ups — including what each one
 found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 
 | # | Milestone | Outcome |
@@ -30,6 +30,7 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 | 2 | Live interactive keyboard and screen | `--interactive`: raw-terminal input, real 3 MHz pacing, a live screen, a ROM-driven cursor blink |
 | 3 | Pixel rendering from the character ROM | `--screenshot` writes a real 480x240 PNG in the machine's own amber; all three row attributes decoded |
 | 4 | A GTK window | `bin/abc802-gtk`, a Cairo framebuffer sharing the same decode and the same `abc802_step()` |
+| 5 | ABC-bus floppy support | `--disk` boots real 160KB ABC830 images and round-trips `SAVE`/`LOAD`, via a synthetic bus controller |
 
 ## Known gaps
 
@@ -65,11 +66,18 @@ Real, understood, and deliberately not solved yet — not oversights.
 - **The SIO is a stub.** Reads report "transmit buffer empty, no receive
   data" so ROM polling loops exit. Nothing is attached to either channel,
   so the RS-232 ports and cassette do not work.
-- **No ABC-bus card.** Every ABC-bus read returns `0xFF`, so the ROM's
-  controller scan finds nothing and no disk is available. The ABC802 uses
-  the same bus and the same ABC830/832/834-class drives the ABC80 target
-  already talks to, so `abc80/emu/src/disk.c`'s protocol work is the
-  obvious starting point if this is picked up.
+- **Only one ABC-bus card, of one drive type.** Milestone 5 added a
+  synthetic ABC830 (`MO`, 160KB) floppy controller, and only drive 0 has
+  an image. The ROM also scans for `MF` (ABC832/834, 640KB), `SF` (8-inch)
+  and `HD` (hard disk), and `emu/src/disk.c`'s geometry table is shaped to
+  take them — but their sector geometry is unverified, and the archive's
+  640K images have not been tried. No printer or RTC card either.
+- **The controller card itself is not emulated.** A real ABC830 is a
+  complete second computer (its own Z80, Z80 DMA, FD1793 and firmware);
+  what exists here models the *protocol* it speaks, not the card. Software
+  driving the controller below the DOS layer, or copy-protected media,
+  would need the real thing — see `ABC802_FLOPPY_SCOPING.md`'s option C,
+  which the current design deliberately does not foreclose.
 - **The "pling" speaker strobe is decoded but silent.** No audio.
 - **The DART/SIO/CTC are modeled only as far as the boot path needs.**
   Baud-rate generation, transmit interrupts, and the SIO's own vectors
@@ -80,25 +88,24 @@ Real, understood, and deliberately not solved yet — not oversights.
 
 ## Planned next steps
 
-None committed. Milestones 2-4 closed the items that previously stood
+None committed. Milestones 2-5 closed the items that previously stood
 here. The remaining candidates, roughly in order of how much they would
 add:
 
-1. **ABC-bus floppy support** — the largest remaining piece of unmodeled
-   hardware, and the one that would let this machine load and save real
-   programs. **Scoped out in detail** in
-   [`ABC802_FLOPPY_SCOPING.md`](ABC802_FLOPPY_SCOPING.md): the controller
-   turns out to be a complete second computer (its own Z80, DMA and
-   FD1793), the ABC80 target's PC-trap bypass does *not* transfer because
-   this DOS ROM has no sector-level routine to intercept, but the bus
-   command protocol is documented and confirmed to match this ROM in three
-   independent details. Recommendation there is a synthetic ABC-bus
-   controller in four verifiable sub-steps.
+1. **More drive types on the existing controller** — `MF` (640KB) is the
+   ABC802's own native drive and the archive has real images for it. The
+   geometry table in `emu/src/disk.c` is already shaped for it; what is
+   missing is verified geometry and a real image to check against. Much
+   smaller than Milestone 5 was, and the same four gates apply.
 2. **The ROM's line editor**, disassembled the way the ABC80's was, to
    settle what its cursor keys actually want and close the arrow-key gap
    above.
 3. **The SIO**, currently a stub, which is what the RS-232 ports and
    cassette would need.
+4. **Retiring the ABC80 target's PC-trap bypass** in favour of the same
+   synthetic controller, now that one exists and is verified. That target
+   uses the identical bus and drives, and its trap is a known shortcut —
+   this would close it rather than leave two mechanisms for one job.
 
 ## Sources consulted
 
@@ -114,6 +121,22 @@ add:
 - MAME's `rgb_t::amber()` — `src/lib/util/palette.h`, which defines the
   amber phosphor this machine's screen is configured with as
   `(247, 170, 0)`. Used verbatim by `--screenshot` rather than guessed at.
+- Real ABC800-family floppy images: <https://www.abc80.net/archive/luxor/sw/disk_images/ABC800/>
+  (`160k/` holds the ABC830-format images Milestone 5 was verified
+  against — `disk001.img` boots ORD 800, `disk003.img` boots PROMMIS).
+  **Not committed to this repo**, following the same decision ABC80's
+  Milestone 6 made about its own `disk003.img`: they are third-party
+  software dumps, and the emulator takes a path to one rather than
+  shipping it.
+- `sasq64/abc80sim` (`src/disk.c`, `src/abcio.c`) — the synthetic ABC-bus
+  controller whose command protocol Milestone 5 reimplements, after
+  confirming three of its details against this machine's own DOS ROM.
+  Note its interleave is compiled *out*, which this project's own
+  experiments contradict; see that milestone's write-up.
+- MAME `src/devices/bus/abcbus/lux21046.cpp` — the real controller card's
+  machine configuration (its own Z80, Z80 DMA and FD1793), which is what
+  established that emulating the card itself is a much larger job than
+  modeling the protocol it speaks.
 - The committed ROM images themselves (`../resources/rom/`), used as the
   independent cross-check on every fact taken from MAME above: the
   attribute-code inventory, the two font halves and exactly which codes

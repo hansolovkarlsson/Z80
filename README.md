@@ -176,7 +176,8 @@ see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
   real 1983 BASIC II ROM — MC6845 CRTC, Z80 CTC/DART/SIO on an IM 2 daisy
   chain, the M1-decoded character-RAM overlay, and a serial keyboard —
   with a live `--interactive` session, real pixel rendering from the
-  character ROM (`--screenshot`), and an opt-in GTK4 front-end
+  character ROM (`--screenshot`), ABC-bus floppy support booting real
+  1980s disk images (`--disk`), and an opt-in GTK4 front-end
   (`make abc802-gtk`). See
   [`ABC802_ROADMAP.md`](abc802/docs/ABC802_ROADMAP.md) for what is left,
   [`ABC802_COMPLETED.md`](abc802/docs/ABC802_COMPLETED.md) for the

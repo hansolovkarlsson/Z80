@@ -332,3 +332,95 @@ Fixed with one shared `abc802_utf8_to_chars()` (`render.c`, next to the
 charset table it uses) now called by both `bin/abc802`'s `--type` and
 `bin/abc802-gtk`'s — the pre-existing CLI defect included, since it was
 the same bug.
+
+## Milestone 5: ABC-bus floppy support — done
+
+`bin/abc802 --disk FILE` and `bin/abc802-gtk --disk FILE` attach a real
+160KB ABC830 floppy image on the ABC-bus. The machine boots from it and
+runs real ABC800-family software, and BASIC can `SAVE` and `LOAD`
+programs.
+
+Built as the **synthetic ABC-bus controller** that
+`ABC802_FLOPPY_SCOPING.md` recommended: `emu/src/disk.c` models the six
+bus ports and the controller's command state machine, serving 256-byte
+sectors from an image file. It is a device model, not a PC-address trap
+like the ABC80 target's — anything that talks to the bus correctly works,
+including code paths nobody thought to intercept.
+
+### Verified, at each of the scoping document's own four gates
+
+**Gate 1 — the ROM's controller scan finds a device.** Previously the scan
+probed selects `0x24`/`0x2C`/`0x2D`/`0x2E` twelve times each and read
+`0xFF` every time. Now:
+
+```
+[out] 01 <- 2D      ; select the ABC830
+[in ] 01 -> 81      ; idle + ready  (was FF = no card)
+[out] 02 <- AD      ; C1 pulse
+[out] 00 <- 03      ; command header: READ SECTOR + SECTOR TO HOST
+```
+
+**Gate 2 — reading real media.** Three real images from the abc80.net
+ABC800 archive boot and run: `disk001` starts *ORD 800 Version 2.4*
+("Ordbehandling med ABC 800", a word processor), `disk003` starts
+*PROMMIS Ver 6.2*, an EPROM programmer with full Swedish text, and
+`disk002` runs a Luxor game-menu program.
+
+That the software genuinely came off the disk was checked rather than
+assumed: the string `ORD 800` appears at sector 57 of the image and in
+**none of the six committed ROM images**, and with no `--disk` the machine
+still boots to the plain `ABC802` BASIC prompt.
+
+**Gate 3 — the write path, across separate process runs.**
+
+```
+$ bin/abc802 --disk rt.img --type 'NEW / 10 PRINT "DISK ROUND TRIP OK" / 20 PRINT 6*7 / SAVE "MO0:RT"'
+$ bin/abc802 --disk rt.img --type 'NEW / LOAD "MO0:RT" / LIST / RUN'
+LOAD "MO0:RT"
+LIST
+10 PRINT "DISK ROUND TRIP OK"
+20 PRINT 6*7
+RUN
+DISK ROUND TRIP OK
+ 42
+```
+
+**Gate 4 — interleave, settled by experiment.** The scoping document
+recorded a genuine contradiction: this project verified ABC830 media is
+sector-interleaved (factor 7) during ABC80's Milestone 6, while abc80sim
+ships with interleave compiled *out*. Both cannot be right for the same
+media. Rebuilding with the interleave disabled and changing nothing else,
+the same image **stops booting entirely** and the machine falls back to
+the bare BASIC prompt. With factor 7 it boots. The contradiction is
+resolved in favour of this repository's own earlier finding, now confirmed
+on a second machine and a different DOS ROM.
+
+### Things this milestone found the hard way
+
+- **A status of `0xFF` or `0x00` means "no device", and that is load-
+  bearing.** The ROM's poll loop at `0x6196` does `IN A,(01h)` then
+  `INC A / JR Z` and `DEC A / JR Z` — either value aborts the poll
+  immediately. This is exactly why the previous "every ABC-bus read
+  returns `0xFF`" behavior read as *no card fitted*, correctly and by
+  accident. An idle, ready controller must report `0x81`: bit 7 for
+  "ready for a command header" (what `L616F` waits on) and bit 0 for
+  "ready to move a byte" (what the `INI`/`OUTI` loops at `0x612D`/`0x6140`
+  test with `RRCA / JP NC`).
+- **`LIB` does not exist on this machine, and the error was right.**
+  Typing it returns `Error 220`, which looked like a controller failure.
+  It is not: the DOS ROM's own command table at `0x6F80` contains exactly
+  four entries — `BYE`, `KILL`, `NAME`, `AS`. Its device-name table at
+  `0x6E40` (`DR1`, `DR2`, `UFD`, `MF0`-`MF2`, `MO0`, `MO1`, `SF…`) is
+  where `MO0:` comes from. Read out of the ROM rather than guessed at
+  after three wrong guesses at the syntax.
+- **`--type` needed `--type-at`.** The ROM reports the keyboard ready very
+  early in boot, but a program loading from disk is not listening yet and
+  discards anything typed at it. Typing `LIB` at a disk-booted prompt
+  arrived as `B`. `--type-at N` holds the text back until N T-states have
+  run, which is what makes any scripted disk test reproducible.
+- **A muddy test is worth redoing.** The first round-trip test typed a
+  program into a session where the disk's own autoboot program was still
+  resident, so `SAVE` stored a *merge* of both and `LIST` came back
+  showing someone else's Luxor game menu with one line of mine in it. The
+  round trip was genuinely correct, but nothing about that output
+  demonstrated it. Redone with `NEW` first.

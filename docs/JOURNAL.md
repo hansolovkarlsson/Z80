@@ -17,6 +17,88 @@ in an entry here.
 
 ---
 
+## 2026-08-28 (later) — ABC802 Milestone 5: the ABC-bus floppy, scoped then built
+
+Scoped the work first, on the suspicion it would be intricate. It was —
+but not where expected, and the scoping is what made the build quick. The
+prediction-versus-outcome comparison lives at the top of
+`abc802/docs/ABC802_FLOPPY_SCOPING.md`; the short version is that the
+document got the *shape* entirely right and the *estimate* wrong in the
+cautious direction.
+
+### What the scoping found
+
+Three things, none visible without looking:
+
+- **The controller is a complete second computer** — its own Z80 at
+  4&nbsp;MHz, a Z80 DMA controller, an FD1793 FDC, five firmware variants,
+  and a PAL that was never dumped.
+- **Porting MAME is not a shortcut.** MAME's card-side ABC-bus handlers
+  are a byte latch, a busy flag and an NMI pulse. It does not *know* the
+  disk protocol; it runs the firmware that implements it. So the choice is
+  binary: run real firmware, or implement the protocol yourself.
+- **The ABC80 target's bypass does not transfer.** That one traps two PC
+  addresses because that ROM has a single sector-level routine. This DOS
+  ROM's bus driver is generic and its callers issue *sequences* of bus
+  commands, so there is no equivalent place to cut.
+
+But abc80sim documents the protocol, and three details of it matched this
+ROM exactly — the two command constants, the select mask, the select
+values. That is what turned "an implementation exists for a related
+machine" into "this is the same protocol", and it is why the build needed
+no reverse-engineering at all.
+
+### What the build found
+
+- **`0x00` and `0xFF` both mean "no device."** The scoping flagged the
+  status byte as the likeliest source of trouble and guessed the problem
+  would be bit polarity. The actual constraint was stricter and was missed
+  entirely: the ROM's poll loop does `INC A / JR Z` *and* `DEC A / JR Z`,
+  so either value aborts it. Which is exactly why the old "every ABC-bus
+  read returns `0xFF`" behavior read as *no card fitted* — correct, and by
+  accident. An idle controller is `0x81`.
+- **The interleave contradiction, settled by experiment.** The scoping
+  recorded that this project verified interleave factor 7 empirically
+  while abc80sim ships with interleave compiled out, and that both could
+  not be right. Rebuilding with it disabled and changing nothing else,
+  real media stops booting entirely. Resolved in favour of this
+  repository's own earlier finding, now confirmed on a second machine and
+  a different DOS ROM.
+- **`LIB` does not exist, and the error was right.** Three guesses at
+  directory-listing syntax all returned `Error 220`, which looked like a
+  controller bug. It was not: the DOS ROM's own command table holds
+  exactly four entries — `BYE`, `KILL`, `NAME`, `AS`. Reading the ROM
+  settled in minutes what guessing had not in three attempts. The general
+  lesson is one this project keeps relearning: when the machine disagrees,
+  read its ROM rather than try another guess.
+- **A gap no scoping would have predicted.** `--type` was unusable for
+  disk work, because the ROM reports the keyboard ready long before a
+  booting program is listening; `LIB` arrived as `B`. `--type-at` exists
+  now because of it, and without it no scripted disk test is reproducible.
+
+### On verifying it
+
+The temptation with disk support is to see software appear on screen and
+call it done. `ORD 800 Version 2.4` booting off a real image is a
+wonderful thing to see, and proves nothing on its own — so the check was
+that the string `ORD 800` appears at sector 57 of the image and in **none
+of the six committed ROMs**, and that with no `--disk` the machine still
+boots to a bare BASIC prompt.
+
+That habit came directly from [the boot-screen
+postmortem](postmortems/2026-08-28-boot-screen-cannot-validate.md) written
+earlier the same day, which is the first time one of these write-ups has
+visibly changed how the next piece of work was checked.
+
+The first round-trip test was also thrown away and redone: it typed a
+program into a session where the disk's own autoboot program was still
+resident, so `SAVE` stored a merge of both and `LIST` came back showing
+someone else's Luxor game menu with one line of mine in it. The round trip
+was genuinely correct; the output simply did not demonstrate it. Redone
+with `NEW` first, it does.
+
+---
+
 ## 2026-08-28 — ABC802 Milestones 2-4: interactive, pixels, GTK
 
 Picked the project back up after a gap. Starting state: `make test` green

@@ -18,6 +18,7 @@
 
 #include "../../../z80core/z80.h"
 #include "chargen.h"
+#include "disk.h"
 #include "memory.h"
 #include "png.h"
 #include "ports.h"
@@ -213,10 +214,17 @@ static void usage(const char *argv0) {
     printf("                   including the row attributes --screen cannot show\n");
     printf("  --profile        print the most-executed addresses when the run ends\n");
     printf("  --type TEXT      send TEXT to the keyboard once the ROM is ready for it\n");
+    printf("  --type-at N      hold TEXT back until N T-states have run. Needed\n");
+    printf("                   when booting from disk: the ROM reports the\n");
+    printf("                   keyboard ready long before a booting program is\n");
+    printf("                   listening, and discards anything typed meanwhile\n");
     printf("  --interactive    live keyboard input (raw terminal) and a real-time,\n");
     printf("                   continuously redrawn screen; Ctrl-C reaches BASIC,\n");
     printf("                   Ctrl-\\ exits. Runs at real ABC802 speed, uncapped\n");
     printf("                   unless --cycles is given explicitly.\n");
+    printf("  --disk FILE      attach FILE as an ABC830 floppy image on the\n");
+    printf("                   ABC-bus (drive 0). Without it no expansion card\n");
+    printf("                   is fitted and the ROM's scan finds nothing.\n");
     printf("  --columns 40|80  characters per line (DIP S3, default 40 as on MAME)\n");
     printf("  -h, --help       this message\n");
     printf("\nEnvironment:\n");
@@ -231,6 +239,8 @@ int main(int argc, char **argv) {
     int show_profile = 0;
     const char *type_text = NULL;
     const char *screenshot_path = NULL;
+    const char *disk_path = NULL;
+    long long type_at = 0;
     int columns = 40;
     bool interactive = false;
     bool cycles_given = false;
@@ -250,6 +260,10 @@ int main(int argc, char **argv) {
             show_screen = 1;
         } else if (!strcmp(argv[i], "--screenshot") && i + 1 < argc) {
             screenshot_path = argv[++i];
+        } else if (!strcmp(argv[i], "--disk") && i + 1 < argc) {
+            disk_path = argv[++i];
+        } else if (!strcmp(argv[i], "--type-at") && i + 1 < argc) {
+            type_at = atoll(argv[++i]);
         } else if (!strcmp(argv[i], "--profile")) {
             show_profile = 1;
         } else if (!strcmp(argv[i], "--type") && i + 1 < argc) {
@@ -292,7 +306,10 @@ int main(int argc, char **argv) {
     abc802_ports_attach(&cpu);
     abc802_set_config(columns == 80, true);
 
+    if (disk_path && !abc802_disk_attach(0, disk_path)) return 1;
+
     printf("ABC802: loaded 32K ROM from '%s' (DOS ROM '%s')\n", rom_dir, dos_rom);
+    if (disk_path) printf("ABC-bus: ABC830 floppy, drive 0 = '%s'\n", disk_path);
 
     if (interactive) {
         abc802_console_init();
@@ -322,7 +339,11 @@ int main(int argc, char **argv) {
     static uint8_t type_chars[4096];
     size_t type_pos = 0;
     size_t type_len = type_text ? abc802_utf8_to_chars(type_text, type_chars, sizeof(type_chars)) : 0;
-    long long next_key_at = 0;
+    // Not zero when --type-at was given: the ROM reports the keyboard
+    // ready very early in boot, but a program loading from disk is not
+    // listening yet and anything typed at it is simply discarded. Found
+    // typing LIB at a disk-booted prompt and watching the L and I vanish.
+    long long next_key_at = type_at;
     // Gap between keystrokes, in T-states (~0.1s of emulated time at
     // 3 MHz). Generous on purpose: the ROM discards input while it is
     // still initializing after the sign-on banner, so typing at a

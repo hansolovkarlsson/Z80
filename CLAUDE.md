@@ -113,6 +113,27 @@ and that tool is not optional cover: the ROM's boot screen uses none of
 the three attributes, so `--screenshot` would render it perfectly with the
 attribute state machine completely broken.
 
+Milestone 5 adds **real disk storage**: `--disk FILE` (on both
+`bin/abc802` and `bin/abc802-gtk`) attaches a 160KB ABC830 floppy image,
+boots real ABC800-family software off it, and round-trips BASIC
+`SAVE`/`LOAD`. Unlike the ABC80 target's `--disk`, which is a *PC-address
+trap* on two DOS ROM routines, this is a real device model
+(`abc802/emu/src/disk.c`): the six ABC-bus ports and the controller's own
+command state machine, serving 256-byte sectors. That difference is forced
+rather than chosen — this DOS ROM's bus driver is generic and its callers
+issue *sequences* of bus commands per logical operation, so there is no
+sector-level routine to trap. Two facts to know before touching it.
+**A status byte of `0x00` or `0xFF` means "no device"** — the ROM's poll
+loop at `0x6196` aborts on either (`INC A / JR Z`, `DEC A / JR Z`), which
+is why the previous "every ABC-bus read returns `0xFF`" behavior read
+correctly as no card fitted; an idle controller is `0x81`. And **the
+sector interleave (factor 7) is required**, now proven by experiment on
+this machine as well as ABC80: with it disabled, real media stops booting
+entirely. That settles a contradiction with abc80sim, which ships with
+interleave compiled out. `--type-at N` exists for disk work specifically:
+the ROM reports the keyboard ready long before a booting program is
+listening, and discards anything typed meanwhile.
+
 Milestone 4 adds `bin/abc802-gtk` (`abc802/gtk/`, opt-in via `make
 abc802-gtk`) — a real Cairo pixel framebuffer like `bin/abc80-gtk`, not a
 VTE launcher like `cpm/gtk/`, and needing only `gtk4` (no SDL2 and no

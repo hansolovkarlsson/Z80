@@ -1,11 +1,53 @@
 # Scoping: ABC-bus floppy support for the ABC802
 
-**Status**: scoping only — nothing implemented, nothing committed to.
+**Status**: **executed.** Option B was built and shipped as Milestone 5 —
+see the outcome section immediately below, and
+[`ABC802_COMPLETED.md`](ABC802_COMPLETED.md) for the full write-up. The
+rest of this document is preserved as written *before* the work, because
+its value now is as a record of what was predicted versus what happened.
 **Date**: 2026-08-28
 **Question**: what would it actually take to give `bin/abc802` real disk
 storage, and is the ABC80 target's existing floppy work reusable?
 
 ---
+
+## Outcome
+
+Option B was built. `bin/abc802 --disk FILE` boots real ABC800-family
+media and round-trips `SAVE`/`LOAD`. All four gates below were met.
+
+**What this document got right:** the shape of the problem entirely. The
+controller really is a second computer, MAME really does contain no
+protocol logic, the ABC80 bypass really does not transfer, and the
+abc80sim-derived protocol really did match this ROM — the two command
+constants, the select mask and the select values all decoded as predicted,
+first time.
+
+**What it got wrong:** the estimate, in the cautious direction. This was
+predicted as "comparable to Milestone 3, larger than Milestone 4." It came
+in smaller than either — roughly 300 lines of new C — because the three
+confirmations meant the protocol needed no reverse-engineering at all.
+Gates 1 and 2 fell in the same session; a blank image was enough to see
+the ROM issue real read commands.
+
+**The one risk that mattered** was the one flagged as most likely: the
+status byte. Not its bit *polarity*, as guessed, but a stricter constraint
+missed here entirely — the ROM treats a status of `0x00` **or** `0xFF` as
+"no device" and aborts. Reading the ROM's own poll loop settled it in
+minutes.
+
+**The interleave contradiction was resolved by experiment**, in favour of
+this repository's own earlier finding: with interleave disabled and
+nothing else changed, real media stops booting.
+
+**One genuinely new gap surfaced** that no amount of scoping would have
+predicted: `--type` was unusable for disk work, because the ROM reports
+the keyboard ready long before a booting program is listening. `--type-at`
+exists now because of it.
+
+---
+
+*Everything below this line is the document as written before the work.*
 
 ## Short answer
 

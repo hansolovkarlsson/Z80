@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "disk.h"
 #include "ports.h"
 #include "memory.h"
 
@@ -284,9 +285,12 @@ static uint8_t io_in(Z80 *cpu, uint8_t port, uint8_t stored) {
 
     switch (decode_port(port, &index)) {
         case DEV_ABCBUS:
-            // No expansion card is modeled, so every read returns the
-            // idle/no-card pattern rather than a stale written byte.
-            value = 0xFF;
+            // The synthetic controller answers only when it is the
+            // selected device; otherwise the bus floats high, which is
+            // the ROM's own "no card fitted" signal (see disk.c). With no
+            // image attached nothing is selected ever, so this is exactly
+            // the pre-existing behavior.
+            value = abc802_disk_in(index);
             break;
         case DEV_DART: {
             int channel = (index & 0x02) ? 1 : 0;
@@ -336,6 +340,14 @@ static int io_out(Z80 *cpu, uint8_t port, uint8_t value) {
             break;
         case DEV_CTC:
             ctc_write(index, value);
+            break;
+        case DEV_ABCBUS:
+            // Port 1 is CS: it selects which expansion card listens. The
+            // ROM masks the select to 6 bits itself (AND 3Fh at 0x6172);
+            // masking again here keeps the card honest if some other
+            // caller does not.
+            if (index == 1) abc802_disk_select(value & 0x3F);
+            else abc802_disk_out(index, value);
             break;
         default:
             break;

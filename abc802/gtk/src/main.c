@@ -32,6 +32,7 @@
 
 #include "../../../z80core/z80.h"
 #include "../../emu/src/chargen.h"
+#include "../../emu/src/disk.h"
 #include "../../emu/src/memory.h"
 #include "../../emu/src/ports.h"
 #include "../../emu/src/render.h"
@@ -391,6 +392,7 @@ typedef struct {
     AppState *app;
     const char *rom_dir;
     const char *dos_rom;
+    const char *disk_path;
     int columns;
 } StartupOptions;
 
@@ -407,6 +409,7 @@ static bool machine_init(AppState *app, const StartupOptions *opts) {
     abc802_memory_attach(&app->cpu);
     abc802_ports_attach(&app->cpu);
     abc802_set_config(opts->columns == 80, true);
+    if (opts->disk_path && !abc802_disk_attach(0, opts->disk_path)) return false;
     return true;
 }
 
@@ -478,6 +481,7 @@ static void print_usage(const char *prog) {
     printf("Options:\n");
     printf("  --rom-dir DIR      ROM directory (default: %s)\n", DEFAULT_ROM_DIR);
     printf("  --dos-rom FILE     DOS/option ROM (default: %s)\n", DEFAULT_DOS_ROM);
+    printf("  --disk FILE        attach FILE as an ABC830 floppy image (drive 0)\n");
     printf("  --columns 40|80    characters per line (default 40, as on MAME)\n");
     printf("  --screenshot FILE  headless: run, render one frame to FILE, exit.\n");
     printf("                     Opens no window - this is how changes to the\n");
@@ -490,7 +494,7 @@ static void print_usage(const char *prog) {
 
 int main(int argc, char *argv[]) {
     static AppState app;
-    StartupOptions opts = {&app, DEFAULT_ROM_DIR, DEFAULT_DOS_ROM, 40};
+    StartupOptions opts = {&app, DEFAULT_ROM_DIR, DEFAULT_DOS_ROM, NULL, 40};
     const char *screenshot_path = NULL;
     const char *type_text = NULL;
     long long screenshot_cycles = 20000000;
@@ -506,6 +510,8 @@ int main(int argc, char *argv[]) {
             opts.rom_dir = argv[++i];
         } else if (!strcmp(argv[i], "--dos-rom") && i + 1 < argc) {
             opts.dos_rom = argv[++i];
+        } else if (!strcmp(argv[i], "--disk") && i + 1 < argc) {
+            opts.disk_path = argv[++i];
         } else if (!strcmp(argv[i], "--columns") && i + 1 < argc) {
             opts.columns = atoi(argv[++i]);
             if (opts.columns != 40 && opts.columns != 80) {
