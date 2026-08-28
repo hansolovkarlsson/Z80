@@ -194,10 +194,117 @@ banner and is not echoed. The ROM also discards input while still
 initializing immediately afterward, so keystrokes have to arrive at
 roughly human speed to survive.
 
+### Line editing
+
+The ROM's line editor recognizes **six control codes, and nothing else**.
+Established by feeding it every byte `0x00`-`0x1F` plus a sample across
+`0x80`-`0xFF` and reading back what each did to a typed line, rather than
+by disassembly — that routine is only entered indirectly, so a
+reachability-based disassembler cannot reach it.
+
+| Code | Key | Effect |
+|---|---|---|
+| `0x03` | Ctrl-C | terminates the line (break) |
+| `0x08` | Backspace | destructive delete-left |
+| `0x0A` | Ctrl-J | terminates the line |
+| `0x0C` | Ctrl-L | clears the screen |
+| `0x0D` | Return | terminates the line |
+| `0x18` | Ctrl-X | discards the whole line |
+
+Every other byte is either ignored or, if printable, appended. `0x7F`
+(DEL) is **not** a delete: it is treated as an ordinary character and
+echoes a blank into the line, which matters because that is what a modern
+terminal's Backspace key actually sends.
+
+Two consequences worth stating plainly:
+
+- **There is no cursor movement.** No non-destructive left, no right,
+  nothing in the high byte range. This is a simpler editor than the
+  ABC80's, which does have a non-destructive cursor-right at `0x09`. An
+  emulator front-end has nothing to map a right-arrow key to.
+- **Editing is delete-and-retype.** Backspace to the mistake and type the
+  rest of the line again, or Ctrl-X and start over.
+
+## Z80 SIO/2
+
+Ports `0x40`-`0x43`, with bit 1 selecting the channel and bit 0 selecting
+control vs data — the same layout as the DART.
+
+| Channel | Attached on real hardware |
+|---|---|
+| A | the machine's second RS-232 port |
+| B | the **cassette** interface |
+
+MAME wires the cassette's input to the SIO's `rxb`, drives its output from
+`txdb`/`rtsb`, and runs the motor from `dtrb`. `bin/abc802` models the
+chip's registers but attaches neither device, so nothing is ever received
+and transmitted bytes are discarded.
+
+**Two configuration DIP switches arrive as channel B modem-status inputs**,
+not through anything memory-mapped, which is why this chip cannot simply
+report a constant:
+
+| Switch | Line | RR0 bit | Meaning | Default |
+|---|---|---|---|---|
+| S1 | channel B DCD | 3 | clear-screen time out | off |
+| S2 | channel B CTS | 5 | unknown (undocumented in MAME too) | on |
+
+So an idle channel B reads RR0 = `0x24`: transmit buffer empty (bit 2)
+plus CTS from S2.
+
+Registers behave as the Z80 SIO datasheet describes. WR0 carries the next
+register pointer in bits 0-2 and a command in bits 3-5 (only channel
+reset, command 3, has an observable effect here); reading a status
+register or writing a non-WR0 register returns the pointer to 0. RR0 is
+status, RR1 reports `all sent` and no error conditions, and **RR2 is valid
+on channel B only** — channel A returns 0 rather than a plausible-looking
+vector, so reading the wrong channel gives an obviously wrong answer
+instead of a subtly right-looking one.
+
+Transmit is always reported empty. With nothing attached, a byte written
+to the data port has by definition gone as far as it is ever going to, and
+a ROM polling loop waiting on that bit must see it set or it never exits.
+
+The boot ROM programs channel B only — WR1, WR3 and WR5, then a
+reset-external-status command — and reads RR0 once. It never touches
+channel A.
+
+Because no device can raise one, **the SIO never generates an interrupt**,
+so its position in the CTC → SIO → DART daisy chain is currently inert.
+
 ## ABC-bus
 
 The same expansion bus as the ABC80, with the same ABC830/832/834-class
-floppy drives. `bin/abc802` models no card: every ABC-bus read returns
-`0xFF`. The boot ROM's controller scan (write `0x24` to CS, read STAT,
-write C4) therefore finds nothing, which is the correct behavior for a
-machine with no expansion card fitted.
+floppy drives.
+
+The host drives it through six ports (see the I/O map): CS selects a card
+by its address, OUT/INP move bytes, STAT reports readiness, and C1/C3
+pulse attention and reset. A transaction is a four-byte command header
+followed by a 256-byte sector transfer, with `INI`/`OUTI` block moves
+gated on the status byte.
+
+**Device-select codes**, from the ROM's own select table at
+`0x61DA`-`0x61FB`:
+
+| Select | Device |
+|---|---|
+| `0x24` | hard disk (`HD`) |
+| `0x2C` | ABC832/834 floppy, 640K (`MF`) |
+| `0x2D` | ABC830 floppy, 160K (`MO`) |
+| `0x2E` | 8-inch floppy (`SF`) |
+
+The boot ROM scans all four, twelve times each. **A status byte of `0x00`
+or `0xFF` means "no device"** — the poll loop at `0x6196` aborts on either
+(`INC A / JR Z`, `DEC A / JR Z`) — so an idle, ready controller reports
+`0x81`: bit 7 "ready for a command header", bit 0 "ready to move a byte".
+
+`bin/abc802` models a synthetic controller for `MO` and `MF` (see
+`ABC802_COMPLETED.md`'s Milestone 5). With no `--disk` image attached no
+card is fitted and every bus read floats high, which is the correct
+behavior for a bare machine — and is exactly the `0xFF` the ROM reads as
+"nothing there".
+
+**Sector interleave differs per drive and cannot be inferred**: `MO` needs
+factor 7 (mask 15), `MF` needs none. Both were established by booting real
+media both ways; a directory sector reads correctly under either mapping,
+because track-boundary sectors map to themselves.

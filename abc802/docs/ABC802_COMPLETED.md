@@ -606,3 +606,65 @@ PRINT 7*6
 Left deletes; Right is swallowed rather than typed as garbage; Ctrl-X
 discards the line, which had always worked and had never been documented.
 
+## Milestone 9: a real Z80 SIO — done
+
+The SIO was the last stub in the machine: every read returned one of two
+constants regardless of what the ROM had programmed. It is now a real
+register model — WR0-WR7, RR0-RR2, the register pointer, and the reset
+command — and, more to the point, the two configuration DIP switches that
+reach the ROM *through it* are finally delivered.
+
+### Why a constant was not good enough
+
+S1 and S2 are not memory-mapped. They arrive as **channel B modem-status
+inputs**: S1 ("Clear Screen Time Out") on DCD, S2 (undocumented in MAME
+too) on CTS. A stub reporting `0x04` told the ROM both switches were off,
+which is a claim about the machine's configuration, not a neutral
+placeholder. An idle channel B now reads `0x24` — transmit empty plus CTS
+from S2 — matching MAME's own defaults of S1 off, S2 on.
+
+Channel A is the second RS-232 port and channel B is the **cassette**
+(MAME wires the cassette input to `rxb`, its output from `txdb`/`rtsb`,
+and the motor from `dtrb`). Neither has a device attached here, so nothing
+is received and transmitted bytes are discarded — but transmit is still
+reported empty, because with nothing attached a byte written to the data
+port has by definition gone as far as it is ever going to, and a ROM
+polling loop waiting on that bit must see it set or it never exits.
+
+### Verified from inside the machine
+
+ABC802 BASIC has `INP()` and `OUT`, so the chip could be tested by the
+emulated machine itself rather than by an assertion in C — the strongest
+form of check available here, since it exercises the whole path the ROM
+uses.
+
+```
+PRINT INP(67)          ->  36    RR0 = Tx empty (0x04) + CTS from S2 (0x20)
+OUT 67,1
+PRINT INP(67)          ->   1    the pointer works: RR1 "all sent", not RR0
+OUT 67,2 : OUT 67,88
+OUT 67,2
+PRINT INP(67)          ->  88    the interrupt vector round-trips
+OUT 65,2
+PRINT INP(65)          ->   0    RR2 is channel B only; A gives no answer
+OUT 67,1 : OUT 67,24
+PRINT INP(67)          ->  36    channel reset returned the pointer to RR0
+```
+
+Before this milestone every one of those reads returned `4`.
+
+That `0` on channel A is deliberate. The datasheet makes RR2 valid on
+channel B only, and returning the vector on A as well would have been
+harmless-looking and quietly wrong — a caller reading the wrong channel
+should get an obviously wrong answer rather than a subtly right one.
+
+### What is deliberately still missing
+
+No device is attached to either channel, so **the SIO never raises an
+interrupt** and its slot in the CTC → SIO → DART daisy chain stays inert.
+Cassette is the interesting absence, and it is a milestone in its own
+right rather than an oversight: the real interface is bit-level, with the
+signal modulated through the SIO's synchronous clocks and demodulated by
+frequency detection. The machine has working disk storage, so a cassette
+would be fidelity rather than capability.
+

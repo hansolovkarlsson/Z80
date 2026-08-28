@@ -21,7 +21,7 @@ that machine's documentation thins out.
 
 ## Completed work
 
-Milestones 1-8 are done. Their full write-ups — including what each one
+Milestones 1-9 are done. Their full write-ups — including what each one
 found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 
 | # | Milestone | Outcome |
@@ -34,6 +34,7 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 | 6 | The ABC832/834 640K drive | the ABC802's own native drive; controller type auto-detected from image size |
 | 7 | A second drive | `--disk` repeats for drives 0, 1, …; `MO1:`/`MF1:` work and are independent |
 | 8 | The line editor's vocabulary | swept every control code; Left arrow works, Right correctly does nothing — the machine has no cursor movement |
+| 9 | A real Z80 SIO | registers, commands and the two DIP switches that reach the ROM through channel B's modem-status inputs |
 
 ## Known gaps
 
@@ -66,9 +67,16 @@ Real, understood, and deliberately not solved yet — not oversights.
   scanline model (Milestone 2) — but anything genuinely tied to field
   timing, including the hardware cursor-blink modes (R10 bits 6:5 = 10/11)
   and the character generator's Row Flash attribute, still is not.
-- **The SIO is a stub.** Reads report "transmit buffer empty, no receive
-  data" so ROM polling loops exit. Nothing is attached to either channel,
-  so the RS-232 ports and cassette do not work.
+- **The SIO has no devices attached.** The chip itself is real as of
+  Milestone 9 — registers, commands, and the S1/S2 DIP switches that reach
+  the ROM through channel B's modem-status inputs — but channel A's RS-232
+  port and channel B's cassette have nothing on the other end, so nothing
+  is ever received and transmitted bytes are discarded. The SIO therefore
+  never raises an interrupt either, leaving its slot in the daisy chain
+  inert. Cassette in particular is a larger job than it looks: the real
+  interface is bit-level, with the signal modulated through the SIO's
+  synchronous clocks and demodulated by frequency detection, which is why
+  it was not bundled into this milestone.
 - **Two drive types, one card.** `MO` (ABC830, 160KB) and `MF`
   (ABC832/834, 640KB) both work, on as many as eight drives; the ROM also
   scans for `SF` (8-inch) and `HD` (hard disk), which `emu/src/disk.c`'s
@@ -95,24 +103,25 @@ Real, understood, and deliberately not solved yet — not oversights.
 
 ## Planned next steps
 
-None committed. Milestones 2-8 closed the items that previously stood
+None committed. Milestones 2-9 closed the items that previously stood
 here. The remaining candidates, roughly in order of how much they would
 add:
 
-1. **The SIO**, currently a stub, which is what the RS-232 ports and the
-   cassette interface would need.
-2. **Retiring the ABC80 target's PC-trap bypass** in favour of the same
+1. **Retiring the ABC80 target's PC-trap bypass** in favour of the same
    synthetic controller, now that one exists and is verified on two drive
    types. That target uses the identical bus and drives, and its trap is a
    known shortcut — this would close it rather than leave two mechanisms
    for one job.
-3. **Two controllers at once** (an ABC830 *and* an ABC832 on the bus),
+2. **Two controllers at once** (an ABC830 *and* an ABC832 on the bus),
    which the current one-controller design cannot express. Only worth
    doing if some real software turns out to want both.
-4. **The `SF`/`HD` drive types**, which the ROM scans for and the geometry
+3. **The `SF`/`HD` drive types**, which the ROM scans for and the geometry
    table is shaped to take. Blocked on verified geometry and test media —
    and note that interleave cannot be inferred from the working drives,
    which need opposite settings.
+4. **A cassette on SIO channel B**, now that the chip around it is real.
+   Bit-level and therefore a milestone in its own right; the machine has
+   working disk storage, so this is fidelity rather than capability.
 
 ## Sources consulted
 

@@ -17,6 +17,65 @@ in an entry here.
 
 ---
 
+## 2026-08-29 — ABC802 Milestone 9: a real SIO, and testing from inside
+
+Documented the line editor's keys in `ABC802_REFERENCE.md` (and refreshed
+its ABC-bus section, which still claimed no card was modeled), then took
+the SIO — the last stub left in the machine.
+
+The thing that made this worth doing properly, rather than leaving a
+constant that "works", is that **two of the machine's configuration DIP
+switches arrive through the SIO**. S1 and S2 are not memory-mapped; they
+are channel B's DCD and CTS inputs. A stub returning `0x04` was therefore
+not a neutral placeholder — it was asserting that both switches were off.
+That is the kind of stub worth being suspicious of: one that answers a
+question it was never asked, in a way nobody notices because the answer is
+plausible.
+
+### Testing from inside the machine
+
+ABC802 BASIC has `INP()` and `OUT`, which means the chip could be verified
+by the emulated machine itself:
+
+```
+PRINT INP(67)   ->  36   RR0 = Tx empty + CTS from S2
+OUT 67,1
+PRINT INP(67)   ->   1   the register pointer works
+OUT 67,2 : OUT 67,88 : OUT 67,2
+PRINT INP(67)   ->  88   the interrupt vector round-trips
+```
+
+Every one of those returned `4` before. This is a better class of evidence
+than a C-level assertion: it goes through the real port decoder, the real
+mirror masks, and the ROM's own `INP` implementation, so it tests the path
+the machine actually uses rather than the function I happened to write. It
+is also the same trick `asm/examples/*.asm` play on the CP/M side — let
+the emulated machine check its own emulator — reached here through BASIC
+instead of assembly.
+
+Worth remembering for the remaining devices: if the guest has a way to
+poke at hardware, the guest is the best test harness available.
+
+### One deliberate wrong-looking answer
+
+RR2 is valid on channel B only. Channel A returns 0 rather than the
+vector, even though returning the vector would have been easy and would
+have looked fine. A caller reading the wrong channel should get an
+obviously wrong answer instead of a subtly right one — the same instinct
+as the negative control in Milestone 7, applied to an API rather than a
+test.
+
+### Scope held
+
+Cassette lives on SIO channel B, and it stays unattached. The real
+interface is bit-level — modulated through the SIO's synchronous clocks,
+demodulated by frequency detection — which is a milestone in itself, and
+the machine already has working disk storage, so it would be fidelity
+rather than capability. Recorded as its own roadmap item rather than
+half-done here.
+
+---
+
 ## 2026-08-28 (last) — ABC802 Milestone 8: the line editor, and a gap that wasn't
 
 Closed the arrow-key gap Milestone 2 left open — by discovering there was

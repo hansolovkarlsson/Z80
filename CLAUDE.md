@@ -153,6 +153,16 @@ the ABC80's editor, which has a non-destructive cursor-right at `0x09`.
 Left arrow therefore maps to `0x08` and Right is deliberately dropped;
 that is hardware, not a missing feature.
 
+Milestone 9 replaced the SIO stub with a real register model. The reason
+it mattered is not the RS-232 port: **two configuration DIP switches reach
+the ROM through SIO channel B's modem-status inputs** (S1 on DCD, S2 on
+CTS), so a stub returning a constant was asserting a machine configuration
+rather than staying neutral. An idle channel B now reads `0x24`. Channel A
+is the second RS-232 port and channel B is the cassette; neither has a
+device attached, so the SIO still raises no interrupts. Note that ABC802
+BASIC has `INP()`/`OUT`, which makes the emulated machine its own best
+test harness for port-level work — that is how the SIO was verified.
+
 `--type-at N` exists for disk work specifically:
 the ROM reports the keyboard ready long before a booting program is
 listening, and discards anything typed meanwhile.

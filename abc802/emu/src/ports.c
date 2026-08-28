@@ -262,6 +262,111 @@ static uint8_t dart_read_control(int channel) {
 
 // Which chip a port number selects, after applying the don't-care bits
 // documented above. Returning the device plus its own register index keeps
+// ---------------------------------------------------------------------
+// Z80 SIO/2
+// ---------------------------------------------------------------------
+//
+// Channel A is the machine's second RS-232 port; channel B is the
+// **cassette** interface (MAME wires the cassette's own input to the SIO's
+// rxb and drives its output from txdb/rtsb, with the motor on dtrb).
+// Neither has a device attached here, so nothing is ever received and
+// transmitted bytes go nowhere - but the registers themselves are now
+// real, where previously every read returned one of two constants
+// regardless of what the ROM had programmed.
+//
+// Two of the machine's configuration DIP switches arrive as channel B
+// modem-status inputs rather than as anything memory-mapped, which is the
+// reason this needs to be more than a stub at all:
+//
+//   S1 "Clear Screen Time Out"  ->  channel B DCD  (RR0 bit 3)
+//   S2 (undocumented in MAME too) -> channel B CTS (RR0 bit 5)
+//
+// Defaults follow MAME's own: S1 off, S2 on.
+typedef struct {
+    uint8_t wr[8];
+    uint8_t wr_pointer;
+    uint8_t rx_data;
+    bool rx_ready;
+    bool dcd;   // modem-status input, wired per channel above
+    bool cts;
+} SioChannel;
+
+static SioChannel sio[2];
+static uint8_t sio_vector;
+
+#define SIO_RR0_RX_AVAILABLE 0x01
+#define SIO_RR0_TX_EMPTY     0x04
+#define SIO_RR0_DCD          0x08
+#define SIO_RR0_CTS          0x20
+#define SIO_RR1_ALL_SENT     0x01
+
+static void sio_channel_reset(int channel) {
+    SioChannel *ch = &sio[channel];
+    ch->wr_pointer = 0;
+    ch->rx_ready = false;
+    ch->rx_data = 0;
+    memset(ch->wr, 0, sizeof(ch->wr));
+}
+
+static uint8_t sio_read_control(int channel) {
+    SioChannel *ch = &sio[channel];
+    uint8_t reg = ch->wr_pointer;
+    // Reading a status register clears the pointer back to RR0, exactly as
+    // writing a data register clears it back to WR0.
+    ch->wr_pointer = 0;
+
+    switch (reg) {
+        case 0:
+            // Transmit is always reported empty: with nothing attached, a
+            // byte written to the data port has by definition already
+            // gone as far as it is ever going to. A ROM polling loop that
+            // waits for this bit must see it or it never exits.
+            return (uint8_t)((ch->rx_ready ? SIO_RR0_RX_AVAILABLE : 0) |
+                             SIO_RR0_TX_EMPTY |
+                             (ch->dcd ? SIO_RR0_DCD : 0) |
+                             (ch->cts ? SIO_RR0_CTS : 0));
+        case 1:
+            // No parity, overrun or framing errors can occur with no
+            // receiver attached; "all sent" is the only true bit.
+            return SIO_RR1_ALL_SENT;
+        case 2:
+            // The datasheet makes RR2 valid on channel B only. Channel A
+            // returns 0 rather than a plausible-looking vector, so a
+            // caller reading the wrong channel gets an obviously wrong
+            // answer instead of a subtly right-looking one.
+            return channel == 1 ? sio_vector : 0x00;
+        default:
+            return 0x00;
+    }
+}
+
+static void sio_write_control(int channel, uint8_t value) {
+    SioChannel *ch = &sio[channel];
+    uint8_t reg = ch->wr_pointer;
+
+    if (reg == 0) {
+        // WR0 carries the next register pointer in bits 0-2 and a command
+        // in bits 3-5. Only "channel reset" changes anything observable
+        // here; the interrupt-related commands have nothing to act on,
+        // since no SIO source can raise one with no device attached.
+        ch->wr_pointer = value & 0x07;
+        uint8_t command = (uint8_t)((value >> 3) & 0x07);
+        if (command == 3) {  // channel reset
+            sio_channel_reset(channel);
+        }
+        return;
+    }
+
+    ch->wr[reg] = value;
+    ch->wr_pointer = 0;
+
+    // WR2 holds the interrupt vector, and only channel B's copy is the
+    // one the chip actually presents - the same arrangement the DART uses.
+    if (reg == 2 && channel == 1) {
+        sio_vector = value;
+    }
+}
+
 // the mirror arithmetic in exactly one place.
 typedef enum { DEV_NONE, DEV_ABCBUS, DEV_DART, DEV_CRTC, DEV_SIO, DEV_CTC } Device;
 
@@ -305,11 +410,18 @@ static uint8_t io_in(Z80 *cpu, uint8_t port, uint8_t stored) {
         case DEV_CRTC:
             value = (index == 0x31 && crtc_addr < 18) ? crtc_regs[crtc_addr] : 0;
             break;
-        case DEV_SIO:
-            // Nothing attached to either channel. Report "transmit buffer
-            // empty, no receive data" so any ROM polling loop exits.
-            value = (index & 0x01) ? 0x04 : 0x00;
+        case DEV_SIO: {
+            // Port layout matches the DART's: bit 1 selects the channel,
+            // bit 0 selects control vs data.
+            int channel = (index & 0x02) ? 1 : 0;
+            if (index & 0x01) {
+                value = sio_read_control(channel);
+            } else {
+                value = sio[channel].rx_data;
+                sio[channel].rx_ready = false;
+            }
             break;
+        }
         case DEV_CTC:
             value = ctc_read(index);
             break;
@@ -338,6 +450,18 @@ static int io_out(Z80 *cpu, uint8_t port, uint8_t value) {
             if (index == 0x38) crtc_addr = value & 0x1F;
             else if (index == 0x39 && crtc_addr < 18) crtc_regs[crtc_addr] = value;
             break;
+        case DEV_SIO: {
+            int channel = (index & 0x02) ? 1 : 0;
+            if (index & 0x01) {
+                sio_write_control(channel, value);
+            }
+            // A data write is a transmitted byte. Channel A's would go to
+            // the RS-232 port and channel B's to the cassette; neither
+            // exists, so it is discarded - but the transmit-empty status
+            // above still reports it as sent, which is what keeps the
+            // ROM's own polling loops from hanging.
+            break;
+        }
         case DEV_CTC:
             ctc_write(index, value);
             break;
@@ -415,11 +539,22 @@ void abc802_ports_attach(Z80 *cpu) {
 
     memset(ctc, 0, sizeof(ctc));
     memset(dart, 0, sizeof(dart));
+    memset(sio, 0, sizeof(sio));
     memset(crtc_regs, 0, sizeof(crtc_regs));
     crtc_addr = 0;
     ctc_vector = 0;
     dart_vector = 0;
+    sio_vector = 0;
     col80 = true;
+
+    // Two configuration DIP switches reach the ROM as SIO channel B
+    // modem-status inputs rather than through anything memory-mapped:
+    // S1 ("Clear Screen Time Out") on DCD and S2 (undocumented, in MAME
+    // too) on CTS. Defaults follow MAME's own - S1 off, S2 on. They are
+    // wired here rather than left at zero because a status bit the
+    // hardware genuinely asserts is not the emulator's to withhold.
+    sio[1].dcd = false;  // S1 off
+    sio[1].cts = true;   // S2 on
 
     cpu->io_in_hook = io_in;
     cpu->io_out_hook = io_out;
