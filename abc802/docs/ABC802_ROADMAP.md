@@ -79,7 +79,7 @@ Real, understood, and deliberately not solved yet — not oversights.
   it was not bundled into this milestone.
 - **Two drive types, one card.** `MO` (ABC830, 160KB) and `MF`
   (ABC832/834, 640KB) both work, on as many as eight drives; the ROM also
-  scans for `SF` (8-inch) and `HD` (hard disk), which `emu/src/disk.c`'s
+  scans for `SF` (8-inch) and `HD` (hard disk), which `abcbus/disk.c`'s
   geometry table is shaped to take but which have no verified geometry and
   no test media here. All drives must be of one type, since one controller
   is fitted — a real machine could have both an ABC830 and an ABC832 on
@@ -104,22 +104,24 @@ Real, understood, and deliberately not solved yet — not oversights.
 ## Planned next steps
 
 None committed. Milestones 2-9 closed the items that previously stood
-here. The remaining candidates, roughly in order of how much they would
-add:
+here, and the ABC80 target's PC-trap bypass has since been retired in
+favour of this controller — the card now lives at `abcbus/disk.c`, shared
+by both machines, and that work is written up as ABC80 Milestone 12 in
+[`../../abc80/docs/ABC80_COMPLETED.md`](../../abc80/docs/ABC80_COMPLETED.md).
+It also corrected a real bug here: status bit 3 was modeled as an error
+flag on no evidence, and is in fact its complement ("this command has not
+failed"). This machine's ROM never reads the bit, so nothing on this
+target could have caught it. The remaining candidates, roughly in order
+of how much they would add:
 
-1. **Retiring the ABC80 target's PC-trap bypass** in favour of the same
-   synthetic controller, now that one exists and is verified on two drive
-   types. That target uses the identical bus and drives, and its trap is a
-   known shortcut — this would close it rather than leave two mechanisms
-   for one job.
-2. **Two controllers at once** (an ABC830 *and* an ABC832 on the bus),
+1. **Two controllers at once** (an ABC830 *and* an ABC832 on the bus),
    which the current one-controller design cannot express. Only worth
    doing if some real software turns out to want both.
-3. **The `SF`/`HD` drive types**, which the ROM scans for and the geometry
+2. **The `SF`/`HD` drive types**, which the ROM scans for and the geometry
    table is shaped to take. Blocked on verified geometry and test media —
    and note that interleave cannot be inferred from the working drives,
    which need opposite settings.
-4. **A cassette on SIO channel B**, now that the chip around it is real.
+3. **A cassette on SIO channel B**, now that the chip around it is real.
    Bit-level and therefore a milestone in its own right; the machine has
    working disk storage, so this is fidelity rather than capability.
 

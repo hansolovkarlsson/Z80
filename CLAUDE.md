@@ -15,7 +15,15 @@ The shared Z80 core itself (`z80.c`/`alu.c`/their headers) lives in
 `z80core/` at the true repo root, not under either machine target's own
 directory — it's genuinely machine-agnostic (`z80_execute()`, not the
 CP/M-specific `z80_step()` covered below) and used by two independent
-targets, so it isn't owned by either one. `asm/` (the `z80asm`
+targets, so it isn't owned by either one. `abcbus/` (`disk.c`/`disk.h`,
+the synthetic ABC-bus floppy controller) is at the repo root on exactly
+those terms and for exactly that reason: the ABC bus is a bus, not a
+machine, and both `abc80/` and `abc802/` drive the same card with the same
+four-byte command header and the same status bits. It started life under
+`abc802/emu/src/`, and was moved out the moment the ABC80 target began
+using it rather than letting `abc802/` become a de facto shared library —
+the same mistake moving `z80core/` out of `cpm/` had already corrected
+once. `asm/` (the `z80asm`
 assembler) and `disasm/` (the `z80dasm` disassembler) live at the true
 repo root for the identical reason: neither has any real CP/M
 dependency (confirmed by inspection, not just asserted — their `src/`
@@ -59,9 +67,18 @@ input (including genuine real-time interactive keyboard input and a live,
 real-time-paced screen via `bin/abc80 --interactive`, not just scripted/
 piped input), cassette quickload/quicksave, a scoped SN76477 sound model,
 a real periodic PIO interrupt, a correctly-modeled (floating-bus-by-
-default, optional `--ram32k`) memory map, and (as of Milestone 6) a
-`--disk` bypass supporting genuine floppy `SAVE`/`LOAD` round trips
-against real ABC80 disk images through the real, unmodified ABC-DOS ROM.
+default, optional `--ram32k`) memory map, and `--disk` support giving
+genuine floppy `SAVE`/`LOAD` round trips against real ABC80 disk images
+through a real, unmodified DOS ROM. That last one was a *PC-address trap*
+on two DOS ROM routines from Milestone 6 until **Milestone 12 retired it**
+in favour of the shared `abcbus/` card, so the ROM's own bus protocol code
+now executes for real; `abc80/emu/src/abcbus.c` keeps only what is
+machine-specific (loading the DOS ROM into the expansion window at
+`0x6000`, and this machine's own `0x17`-masked port decode, installed via
+the core's `io_in_hook`/`io_out_hook`). Two things that buys: the real
+`LIB` utility's directory listing works, where the trap gave `Diskfel`,
+and `--dos-rom UFD80V20.bin` — a *different* real DOS, never trapped and
+never analysed routine-by-routine — drives the same card correctly.
 
 `abc802/` is a *third* machine target - the Luxor ABC802 (1983), a later
 member of the ABC800 family - added on exactly the terms `abc80/`
@@ -116,17 +133,23 @@ attribute state machine completely broken.
 Milestone 5 adds **real disk storage**: `--disk FILE` (on both
 `bin/abc802` and `bin/abc802-gtk`) attaches a 160KB ABC830 floppy image,
 boots real ABC800-family software off it, and round-trips BASIC
-`SAVE`/`LOAD`. Unlike the ABC80 target's `--disk`, which is a *PC-address
-trap* on two DOS ROM routines, this is a real device model
-(`abc802/emu/src/disk.c`): the six ABC-bus ports and the controller's own
-command state machine, serving 256-byte sectors. That difference is forced
-rather than chosen — this DOS ROM's bus driver is generic and its callers
-issue *sequences* of bus commands per logical operation, so there is no
-sector-level routine to trap. Two facts to know before touching it.
+`SAVE`/`LOAD`. This is a real device model (`abcbus/disk.c`, since ABC80
+Milestone 12 shared with that target): the six ABC-bus ports and the
+controller's own command state machine, serving 256-byte sectors. Building
+it was forced rather than chosen — this DOS ROM's bus driver is generic
+and its callers issue *sequences* of bus commands per logical operation,
+so there is no sector-level routine to trap the way the ABC80's ROM
+allowed. Three facts to know before touching it.
 **A status byte of `0x00` or `0xFF` means "no device"** — the ROM's poll
 loop at `0x6196` aborts on either (`INC A / JR Z`, `DEC A / JR Z`), which
 is why the previous "every ABC-bus read returns `0xFF`" behavior read
-correctly as no card fitted; an idle controller is `0x81`. And **the
+correctly as no card fitted. **Status bit 3 means "this command has not
+failed", not "error"** — its exact complement, so an idle, healthy
+controller is `0x89` and a failed one `0x81`, with the failure itself
+reported through the auxiliary status byte on the INP port. This machine's
+ROM never reads bit 3 at all, so it was modeled backwards on no evidence
+until the ABC80's ROM — which reads it twice, and refuses to transfer a
+byte or accept a completed write without it — exposed it. And **the
 sector interleave (factor 7) is required**, now proven by experiment on
 this machine as well as ABC80: with it disabled, real media stops booting
 entirely. That settles a contradiction with abc80sim, which ships with

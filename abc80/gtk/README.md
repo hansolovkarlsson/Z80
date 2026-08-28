@@ -14,8 +14,8 @@ chargen-ROM/video-timing-PROM decode logic `bin/abc80-chargen-dump`/
 
 Shares `abc80_step()` (`abc80/emu/src/step.h`) with `bin/abc80`'s own
 `--interactive` loop, so the carefully-derived per-instruction logic
-(keyboard debounce, sound-register write detection, the floppy/DOS bypass,
-periodic PIO interrupt scheduling) isn't duplicated a second time. Runs
+(keyboard debounce, sound-register write detection, periodic PIO interrupt
+scheduling) isn't duplicated a second time. Runs
 single-threaded: a `g_timeout_add()` callback fires every 5ms, runs a
 real-time-paced batch of instructions (the same wall-clock-vs-emulated-time
 pacing `--interactive` already uses), and queues a redraw at ~30fps.
@@ -42,7 +42,11 @@ cd abc80
 (Run from inside `abc80/` so the default `resources/rom` path resolves —
 same convention as `bin/abc80`.) `--disk`/`--ram32k`/`--quickload`/
 `--quicksave` all behave identically to `bin/abc80`'s own flags (all four
-share the CLI's own `disk.c`/`cassette.c` implementations unchanged).
+share the CLI's own `abcbus.c`/`cassette.c` implementations unchanged), as
+does `--dos-rom`. The floppy is a real ABC-bus card (`abcbus/disk.c`,
+shared with the ABC802 target), so this window installs the same
+`io_in_hook`/`io_out_hook` the CLI does — without them `--disk` would
+attach an image nothing could talk to.
 `--quickload` injects at the same `PC == 0x02AA` trigger point the CLI
 uses; `--quicksave` has no bounded "end of run" to hook here the way the
 CLI does, so it flushes when the window closes instead (including via a
@@ -370,8 +374,8 @@ line) is driven per line, one at a time, via the same keyboard-injection
 mechanism `on_key_pressed()`/the stdin-scripting path already use, and
 the result is read back off video RAM through the identical, already-
 verified `charset.c` decode `render.c` itself uses - the same "let the
-real ROM do the work at the I/O boundary" principle behind the disk
-bypass and BDOS/BIOS interception elsewhere in this project. Listing one
+real ROM do the work at the I/O boundary" principle behind the ABC-bus
+card and BDOS/BIOS interception elsewhere in this project. Listing one
 line at a time (rather than a bare `LIST`, which the ROM clears the
 screen for and then scrolls through for a long program) is what makes
 this scroll-proof regardless of program length - confirmed empirically,

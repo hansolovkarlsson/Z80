@@ -18,7 +18,7 @@
 
 #include "../../../z80core/z80.h"
 #include "chargen.h"
-#include "disk.h"
+#include "../../../abcbus/disk.h"
 #include "memory.h"
 #include "png.h"
 #include "ports.h"
@@ -328,14 +328,14 @@ int main(int argc, char **argv) {
     abc802_set_config(columns == 80, true);
 
     for (int d = 0; d < disk_count; d++) {
-        if (!abc802_disk_attach_arg(disk_paths[d])) return 1;
+        if (!abcbus_disk_attach_arg(disk_paths[d])) return 1;
     }
 
     printf("ABC802: loaded 32K ROM from '%s' (DOS ROM '%s')\n", rom_dir, dos_rom);
     if (disk_count > 0) {
         printf("ABC-bus: %s floppy controller, %d drive%s attached\n",
-               abc802_disk_type_name(), abc802_disk_attached_count(),
-               abc802_disk_attached_count() == 1 ? "" : "s");
+               abcbus_disk_type_name(), abcbus_disk_attached_count(),
+               abcbus_disk_attached_count() == 1 ? "" : "s");
     }
 
     if (interactive) {

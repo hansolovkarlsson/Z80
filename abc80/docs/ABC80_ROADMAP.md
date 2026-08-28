@@ -13,7 +13,7 @@ disk/RAM/other peripherals.
 
 ## Completed work
 
-Milestones 1-11 are all done. Their full write-ups — including the dead
+Milestones 1-12 are all done. Their full write-ups — including the dead
 ends and the hardware facts each one had to establish — live in
 [`ABC80_COMPLETED.md`](ABC80_COMPLETED.md).
 
@@ -24,12 +24,13 @@ ends and the hardware facts each one had to establish — live in
 | 3 | Z80 PIO + keyboard input | real scanned-matrix keyboard with debounce |
 | 4 | Cassette storage | `--quickload`/`--quicksave` round trips |
 | 5 | SN76477 sound (scoped) | full SLF/noise/one-shot/envelope model, `--wav` |
-| 6 | ABCbus expansion | `--ram32k`, plus a `--disk` bypass doing real floppy `SAVE`/`LOAD` |
+| 6 | ABCbus expansion | `--ram32k`, plus `--disk` doing real floppy `SAVE`/`LOAD` (via a DOS-ROM trap, later retired — see 12) |
 | 7 | Periodic PIO interrupt | the real scanline-driven timer interrupt |
 | 8 | `--interactive` | real keyboard input and a live, real-time-paced screen |
 | 9 | Real Ctrl-C break | `Ctrl-C` reaches BASIC rather than killing the emulator |
 | 10 | Left/right arrow keys | mapped from the ROM's own line editor, by disassembly |
 | 11 | A real GTK window | `bin/abc80-gtk`, Cairo framebuffer with live SN76477 audio |
+| 12 | Retiring the PC-address trap | a real ABC-bus card (`abcbus/disk.c`, shared with the ABC802) replaces the DOS-ROM trap |
 
 ## Memory map (grounded, not guessed)
 
@@ -43,7 +44,7 @@ are recorded here rather than trusting either alone.
 | Range | Contents |
 |---|---|
 | `0x0000`-`0x3FFF` | ROM: four 4Kx8 chips — `3506_3.a5`/`3507_3.a3`/`3508_3.a4`/`3509_3.a2` at `0x0000`/`0x1000`/`0x2000`/`0x3000`. CRC32 `e2afbf48`/`d224412a`/`1502ba5b`/`bc8860b7`. |
-| `0x4000`-`0xBFFF` | External ABCbus expansion, minus the video RAM carve-out below. `0x4000`-`0x7BFF`: always floating (`0xFF`) — no DOS/printer/IEC ROM card modeled yet. `0x8000`-`0xBFFF`: floating (`0xFF`) by default, or real RAM with `--ram32k` (the real 16KB expansion mod — see Milestone 6). |
+| `0x4000`-`0xBFFF` | External ABCbus expansion, minus the video RAM carve-out below. `0x4000`-`0x7BFF`: floating (`0xFF`), except `0x6000`-`0x6FFF` when `--disk` loads a real DOS ROM there; no printer/IEC ROM card modeled. `0x8000`-`0xBFFF`: floating (`0xFF`) by default, or real RAM with `--ram32k` (the real 16KB expansion mod — see Milestone 6). |
 | `0x7C00`-`0x7FFF` | Video RAM (1KB — 40×24 char cells). |
 | `0xC000`-`0xFFFF` | Onboard RAM (16KB base configuration). |
 
@@ -56,6 +57,10 @@ I/O ports (global mask `0x17`, i.e. ports repeat every `0x18`):
 | `0x06` | SN76477 sound chip |
 | `0x07` | ABCbus reset |
 | `0x10`-`0x13` (mirrored `0x14`-`0x17`) | Z80 PIO |
+
+The ABCbus ports are a real device, reached through the CPU core's
+`io_in_hook`/`io_out_hook` (installed by `abc80/emu/src/abcbus.c`); every
+other port is the core's flat `io_ports[]` array as before.
 
 ## Known gaps / near-term technical debt
 
@@ -71,18 +76,20 @@ the finished write-ups it refers back to in
   interactive keyboard input with a live, real-time-paced screen including
   a genuine Ctrl-C break to BASIC and real left/right arrow keys
   (Milestones 8-10, `bin/abc80 --interactive`) are done. Floppy/DOS
-  controller support (Milestone 6's remaining second half) is also done:
-  a working `--disk` bypass boots the real, unmodified ABC-DOS ROM and
-  supports genuine `SAVE`/`LOAD` round trips against real ABC80 disk
-  images, verified across independent process runs (including a
-  multi-block file, byte-for-byte) - see that sub-step's own write-up
-  in `ABC80_COMPLETED.md` for the full derivation. `UFD-DOS` (the alternate real DOS ROM,
-  `UFD80V20.bin`) has been examined and compared but not wired up - a
-  genuinely more general multi-drive-type driver, not needed now that
-  `ABC-DOS` itself works. Disk-full behavior (both the directory-capacity
-  and block-space-exhaustion cases) is confirmed correct and safe. The
-  exact meaning of `B`'s unused bits is the one narrower item still
-  open - also covered in that write-up.
+  support is done too, and **is now a real ABC-bus card rather than a
+  bypass** (Milestone 12): `--disk` fits the shared synthetic controller
+  in `abcbus/disk.c` and the DOS ROM's own protocol code executes for
+  real, which retired the PC-address trap on `0x6068`/`0x60A1` that
+  Milestone 6 built. `SAVE`/`LOAD` round trips are byte-identical to what
+  the trap produced; the real `LIB` utility's directory listing, which
+  failed under the trap, now works; and `UFD-DOS` (the alternate real DOS
+  ROM, `UFD80V20.bin`, examined during Milestone 6 and left unwired
+  because a trap cannot serve a second DOS) drives the same card
+  correctly via `--dos-rom`. Disk-full behavior (both the
+  directory-capacity and block-space-exhaustion cases) is confirmed
+  correct and safe. The exact meaning of `B`'s unused bits was a
+  trap-era question and no longer arises — the ROM's own code reads
+  those registers now.
   Cassette storage is a host-file bypass of BASIC's own program-storage
   pointers, not real analog tape emulation. Sound was originally a single
   steady-tone case only, but Milestone 11's "full SN76477 emulation"
@@ -102,8 +109,9 @@ the finished write-ups it refers back to in
   `0x8000`-`0xBFFF` now correctly float (fixed `0xFF` reads, matching MAME's
   own no-card `abcbus_slot_device` behavior) instead of being ordinary flat
   RAM, except for `0x6000`-`0x6FFF` when `--disk` is active (the real DOS
-  ROM). `0x8000`-`0xBFFF` still has no real printer/IEC ROM card content —
-  out of scope, no milestone currently targets those cards.
+  ROM, either of the two committed images). `0x8000`-`0xBFFF` still has no
+  real printer/IEC ROM card content — out of scope, no milestone currently
+  targets those cards.
 - **ROM write-protection**: `0x0000`-`0x3FFF` is writable in this model,
   matching this repo's existing flat-memory-model precedent for the CP/M
   target (`CLAUDE.md`'s Architecture section) rather than a new abstraction
@@ -112,11 +120,19 @@ the finished write-ups it refers back to in
 
 ## Planned next steps
 
-None currently — the last item tracked here (the floppy/DOS controller's
-remaining loose ends: `B`'s unused bits, `L608F`'s failure paths, the
-`disk003.img` commit decision) was closed out in Milestone 6's own
-"closing the three remaining loose ends" sub-step, in
-[`ABC80_COMPLETED.md`](ABC80_COMPLETED.md).
+None committed. Candidates, in rough order of how much they would add:
+
+- **A second drive.** The card supports eight units and the ABC802 target
+  already exposes them (`--disk` repeated, `N:FILE` to pin one). ABC-DOS
+  scans all eight at boot, so `DR1:` should work with only the CLI
+  plumbing. Untested — no second real ABC80 image is in hand.
+- **A UFD-DOS-formatted disk image.** `--dos-rom UFD80V20.bin` drives the
+  card correctly (Milestone 12) but has only ever been pointed at
+  ABC-DOS media, which it reads fine and then correctly reports has no
+  startup file on it. Real UFD-DOS media would turn that from "the bus
+  works" into "the DOS works".
+- **Printer/IEC ROM cards** in the rest of the expansion range — no image
+  committed, no milestone.
 
 ## Sources consulted
 

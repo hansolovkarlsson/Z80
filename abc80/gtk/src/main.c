@@ -50,7 +50,7 @@
 
 #include "../../../z80core/z80.h"
 #include "../../../abc80/emu/src/step.h"
-#include "../../../abc80/emu/src/disk.h"
+#include "../../../abc80/emu/src/abcbus.h"
 #include "../../../abc80/emu/src/keyboard.h"
 #include "../../../abc80/emu/src/video_timing.h"
 #include "../../../abc80/emu/src/chargen.h"
@@ -187,7 +187,7 @@ static AppState *g_app_for_bus_hook = NULL;
 
 static uint8_t abc80_gtk_bus_read_hook(Z80 *cpu, uint16_t address, uint8_t stored_value) {
     (void)cpu;
-    if (abc80_disk_enabled() && address >= 0x6000 && address <= 0x6FFF) {
+    if (abc80_abcbus_rom_loaded() && address >= 0x6000 && address <= 0x6FFF) {
         return stored_value;
     }
     if (address >= 0x4000 && address <= 0x7BFF) {
@@ -1252,9 +1252,11 @@ static void print_usage(const char *prog) {
     printf("\n");
     printf("  rom_dir            Directory containing the four ROM images\n");
     printf("                     (default: resources/rom - run from inside abc80/)\n");
-    printf("  --disk FILE        Load the real ABC-DOS ROM at 0x6000 and back its floppy\n");
-    printf("                     I/O with a host file (created if it doesn't exist) -\n");
-    printf("                     see abc80/docs/ABC80_ROADMAP.md for how this bypass works.\n");
+    printf("  --disk FILE        Load the real ABC-DOS ROM at 0x6000 and fit a real\n");
+    printf("                     ABC-bus floppy controller serving FILE, a 160K ABC830\n");
+    printf("                     image. Without it no card is fitted and the bus floats.\n");
+    printf("  --dos-rom FILE     Use FILE in rom_dir as the DOS ROM instead of the\n");
+    printf("                     default %s.\n", ABC80_DEFAULT_DOS_ROM);
     printf("  --ram32k           Model the real 16KB RAM-expansion mod at 0x8000-0xBFFF\n");
     printf("                     (default: base 16K machine - that range floats)\n");
     printf("  --amber            Start with the Luxor ABC800's amber-on-black look (not\n");
@@ -1275,6 +1277,7 @@ static void print_usage(const char *prog) {
 int main(int argc, char *argv[]) {
     const char *rom_dir = "resources/rom";
     const char *disk_path = NULL;
+    const char *dos_rom = NULL;
     const char *quickload_path = NULL;
     const char *quicksave_path = NULL;
     double turbo_multiplier = 1.0;
@@ -1288,6 +1291,8 @@ int main(int argc, char *argv[]) {
             return EXIT_SUCCESS;
         } else if (strcmp(argv[arg_i], "--disk") == 0 && arg_i + 1 < argc) {
             disk_path = argv[++arg_i];
+        } else if (strcmp(argv[arg_i], "--dos-rom") == 0 && arg_i + 1 < argc) {
+            dos_rom = argv[++arg_i];
         } else if (strcmp(argv[arg_i], "--quickload") == 0 && arg_i + 1 < argc) {
             quickload_path = argv[++arg_i];
         } else if (strcmp(argv[arg_i], "--quicksave") == 0 && arg_i + 1 < argc) {
@@ -1367,13 +1372,18 @@ int main(int argc, char *argv[]) {
     }
 
     if (disk_path) {
-        if (!abc80_disk_init(rom_dir, disk_path, app.ram)) {
+        if (!abc80_abcbus_init(rom_dir, dos_rom, disk_path, app.ram)) {
             return EXIT_FAILURE;
         }
     }
 
     app.cpu.memory = app.ram;
     app.cpu.bus_read_hook = abc80_gtk_bus_read_hook;
+    // The ABC-bus card is a real device reached through the CPU's I/O
+    // path, so this window has to install the same hooks bin/abc80 does or
+    // --disk would attach an image nothing can talk to.
+    app.cpu.io_in_hook = abc80_abcbus_io_in;
+    app.cpu.io_out_hook = abc80_abcbus_io_out;
     z80_init_tables();
     abc80_keyboard_init_port_aliases();
     abc80_sound_log_init(&app.sound_log);

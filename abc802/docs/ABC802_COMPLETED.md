@@ -341,7 +341,8 @@ runs real ABC800-family software, and BASIC can `SAVE` and `LOAD`
 programs.
 
 Built as the **synthetic ABC-bus controller** that
-`ABC802_FLOPPY_SCOPING.md` recommended: `emu/src/disk.c` models the six
+`ABC802_FLOPPY_SCOPING.md` recommended: `abcbus/disk.c` (then
+`emu/src/disk.c`, before the ABC80 target began sharing it) models the six
 bus ports and the controller's command state machine, serving 256-byte
 sectors from an image file. It is a device model, not a PC-address trap
 like the ABC80 target's — anything that talks to the bus correctly works,

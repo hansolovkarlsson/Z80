@@ -1,13 +1,13 @@
-// abc802/emu/src/disk.c - the synthetic ABC-bus disk controller.
-// See disk.h for why this models the protocol rather than the card.
+// abcbus/disk.c - the synthetic ABC-bus disk controller.
+// See disk.h for why this models the protocol rather than the card, and
+// why it is shared rather than owned by a machine.
 //
 // The protocol below is reimplemented from sasq64/abc80sim's own synthetic
 // controller (src/disk.c, src/abcio.c) - the same source ABC80's Milestone
 // 6 already leaned on for its sector interleave. It is not copied, and
-// every claim it makes was cross-checked against this machine's *own* DOS
-// ROM, disassembled with this project's bin/z80dasm. Three details match
-// exactly rather than approximately, which is what makes it safe to treat
-// an ABC80-derived description as authoritative for the ABC802:
+// every claim it makes was cross-checked against real DOS ROMs,
+// disassembled with this project's bin/z80dasm. Three details match
+// exactly rather than approximately in the ABC802's ROM:
 //
 //   1. The command byte is a bitmask, and the ROM's only two command
 //      constants decode cleanly under it. L6080 issues 0x03 and L608D
@@ -20,23 +20,55 @@
 //   3. The device-select values match: 0x2C/0x2D/0x2E appear in the ROM's
 //      own select table at 0x61DA-0x61FB.
 //
+// The ABC80's ABC-DOS ROM independently confirms all three, five years
+// earlier in hardware terms and in a completely separate code base: the
+// same 0x03 and 0x0C command constants (0x6071 and 0x60AA), the same
+// four-byte B/C/D/E header (0x6136-0x6142), and the same 0x2D select code
+// - hardcoded there, since that ROM only ever talks to an ABC830. Two
+// unrelated ROMs agreeing on a bitmask is what makes it a bitmask rather
+// than a coincidence.
+//
 // The status byte is likewise pinned by what the ROM actually tests:
 //
-//   - `L6196` polls with `IN A,(01h)` then `INC A / JR Z` and `DEC A /
-//     JR Z`: a status of 0xFF *or* 0x00 is taken as "no device" and the
-//     poll bails immediately. So a present controller must never report
-//     either. This is precisely why the pre-existing "every ABC-bus read
-//     returns 0xFF" behavior reads as no card fitted - correctly.
-//   - `L616F` waits for `(STAT & 0x80) == 0x80` before issuing a command,
-//     so bit 7 means "idle, ready for a command header".
-//   - The transfer loops at `L612D`/`L6140` do `IN A,(01h) / RRCA / JP NC`,
-//     so bit 0 means "ready to move a byte".
-//   - After the header, `L6107` waits for either bit 7 or
+//   - ABC802 `L6196` polls with `IN A,(01h)` then `INC A / JR Z` and
+//     `DEC A / JR Z`: a status of 0xFF *or* 0x00 is taken as "no device"
+//     and the poll bails immediately. So a present controller must never
+//     report either. This is precisely why the pre-existing "every
+//     ABC-bus read returns 0xFF" behavior reads as no card fitted -
+//     correctly.
+//   - ABC802 `L616F` waits for `(STAT & 0x80) == 0x80` before issuing a
+//     command, so bit 7 means "idle, ready for a command header".
+//   - The transfer loops - ABC802 `L612D`/`L6140`, ABC80 `0x6144`/`0x614D`
+//     - all do `IN A,(01h)` then rotate bit 0 into carry, so bit 0 means
+//     "ready to move a byte".
+//   - After the header, ABC802 `L6107` waits for either bit 7 or
 //     `(STAT & 0x05) == 0x01`.
 //
-// An idle, ready controller is therefore 0x81, which satisfies all four.
+// Bit 3 needed the ABC80's ROM to pin down, and it is the one bit an
+// ABC802-only reading gets backwards. Three tests fix it:
+//
+//   - ABC80 `0x6118`, after a command header: `BIT 3,A / JR Z` treats bit 3
+//     *clear* as "this command produced nothing", and jumps away to read
+//     the result. So the bit must be SET while a transfer is pending.
+//   - ABC80 `0x60E9`, at the end of every command: `IN A,(01h) / CPL /
+//     AND 08h`, whose Z flag the write path at `0x60C1` returns on as
+//     success. So the bit must STILL be set once the command has finished
+//     and the controller is back at idle.
+//   - The error paths (ABC80 `0x608F`, `0x60C9`) are reached exactly when
+//     it is clear.
+//
+// So bit 3 is not an error flag but its complement: "this command has not
+// failed", set from the moment a header is accepted until something goes
+// wrong. Modeling it as an error flag - which is what this file did while
+// only the ABC802 exercised it, whose ROM never reads the bit at all -
+// inverts every one of those three tests. Failures are reported through
+// the auxiliary status byte below instead.
+//
+// An idle, healthy controller is therefore 0x89, and one that has just
+// failed a command is 0x81.
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "disk.h"
@@ -61,10 +93,10 @@ typedef enum {
 #define CMD_SECTOR_FROM_HOST 0x04 // host -> buffer
 #define CMD_WRITE_SECTOR  0x08  // buffer -> media
 
-// Status bits, as derived from the ROM's own polling above.
+// Status bits, as derived from the ROMs' own polling above.
 #define STAT_READY 0x01  // a byte can move now
+#define STAT_OK    0x08  // the current command has not failed
 #define STAT_IDLE  0x80  // command completed, ready for the next header
-#define STAT_ERROR 0x08
 
 // Auxiliary status, read back from the INP port once a command finishes.
 // The ROM checks it with `OR A / JR Z` at 0x6158: zero means success.
@@ -72,10 +104,12 @@ typedef enum {
 #define AUX_WRITE_PROT   0x40
 #define AUX_NOT_READY    0x80
 
-// Drive geometry. Only the ABC830 ("mo") is wired up for now, because
-// that is the class of media this project already has verified ground
-// truth for; the others are here because the ROM scans for them and
-// naming them documents what a future step would fill in.
+// Drive geometry. Two of the four device-select codes are wired up - the
+// ABC830 ("mo") and the ABC832/834 ("mf") - because those are the classes
+// of media this project has verified ground truth for. The 8-inch SF and
+// the hard disk are named in disk.h but not modeled: their geometry, and
+// in particular their interleave, cannot be inferred from these two, which
+// need opposite settings (see DRIVE_MF below).
 typedef struct {
     uint8_t select;
     unsigned sectors_per_cluster;
@@ -95,7 +129,7 @@ typedef struct {
 // where every directory entry resolved to a consistent file header with
 // it and to garbage without, and again here, where disabling it stops
 // real media booting at all.
-static const DriveType DRIVE_MO = {ABC802_SEL_MO, 1, 40 * 1 * 16, 7, 15, "mo"};
+static const DriveType DRIVE_MO = {ABCBUS_SEL_MO, 1, 40 * 1 * 16, 7, 15, "mo"};
 
 // ABC832/834 ("mf"): 80 tracks x 2 sides x 16 sectors = 640KB, and the
 // ABC802's own native drive. Four sectors per cluster rather than one,
@@ -107,7 +141,7 @@ static const DriveType DRIVE_MO = {ABC802_SEL_MO, 1, 40 * 1 * 16, 7, 15, "mo"};
 // the opposite result to the ABC830 and precisely why neither drive's
 // value could be inferred from the other. A mask of 0 makes the mapping
 // in file_offset() an identity, so no special case is needed.
-static const DriveType DRIVE_MF = {ABC802_SEL_MF, 4, 80 * 2 * 16, 0, 0, "mf"};
+static const DriveType DRIVE_MF = {ABCBUS_SEL_MF, 4, 80 * 2 * 16, 0, 0, "mf"};
 
 // Which controller is fitted. Chosen from the attached image's size
 // rather than a flag: the two formats differ by a factor of four, a real
@@ -122,17 +156,15 @@ static bool selected = false;
 
 static BusState state = ST_K0;
 static uint8_t k[4];
-static uint8_t status;
 static uint8_t aux_status;
 static int in_ptr = -1;   // -1 = not sending; otherwise index into buffer
 static int out_ptr;
 static uint8_t buffers[NUM_BUFFERS][SECTOR_SIZE];
 
-bool abc802_disk_present(void) { return card_present; }
+bool abcbus_disk_present(void) { return card_present; }
 
-void abc802_disk_reset(void) {
+void abcbus_disk_reset(void) {
     state = ST_K0;
-    status = 0;
     aux_status = 0;
     in_ptr = -1;
     out_ptr = 0;
@@ -149,7 +181,7 @@ static const DriveType *drive_type_for_size(long size) {
     return NULL;
 }
 
-bool abc802_disk_attach(int unit, const char *path) {
+bool abcbus_disk_attach(int unit, const char *path) {
     if (unit < 0 || unit >= NUM_UNITS) return false;
     // r+b: the controller must be able to write back. A read-only image
     // is reported to the ROM as write-protected rather than refused, the
@@ -191,13 +223,13 @@ bool abc802_disk_attach(int unit, const char *path) {
     if (units[unit]) fclose(units[unit]);
     units[unit] = f;
     card_present = true;
-    abc802_disk_reset();
+    abcbus_disk_reset();
     return true;
 }
 
-const char *abc802_disk_type_name(void) { return drive_type->name; }
+const char *abcbus_disk_type_name(void) { return drive_type->name; }
 
-int abc802_disk_attached_count(void) {
+int abcbus_disk_attached_count(void) {
     int n = 0;
     for (int i = 0; i < NUM_UNITS; i++) {
         if (units[i]) n++;
@@ -205,23 +237,23 @@ int abc802_disk_attached_count(void) {
     return n;
 }
 
-bool abc802_disk_attach_arg(const char *arg) {
+bool abcbus_disk_attach_arg(const char *arg) {
     // "N:path" pins the drive; a bare path takes the next free one, so
     // two plain --disk arguments land on drives 0 and 1 - which is what
     // two-drive software (and the ROM's own MO1:/MF1: device names)
     // expects, without inventing a second flag for it.
     if (arg[0] >= '0' && arg[0] <= '7' && arg[1] == ':' && arg[2] != '\0') {
-        return abc802_disk_attach(arg[0] - '0', arg + 2);
+        return abcbus_disk_attach(arg[0] - '0', arg + 2);
     }
-    int unit = abc802_disk_attached_count();
+    int unit = abcbus_disk_attached_count();
     if (unit >= NUM_UNITS) {
         fprintf(stderr, "Too many disk images: the controller has %d drives\n", NUM_UNITS);
         return false;
     }
-    return abc802_disk_attach(unit, arg);
+    return abcbus_disk_attach(unit, arg);
 }
 
-void abc802_disk_close(void) {
+void abcbus_disk_close(void) {
     for (int i = 0; i < NUM_UNITS; i++) {
         if (units[i]) fclose(units[i]);
         units[i] = NULL;
@@ -229,7 +261,21 @@ void abc802_disk_close(void) {
     card_present = false;
 }
 
-void abc802_disk_select(uint8_t select) {
+// ABCBUS_TRACE=1 logs every command header the card completes, to stderr.
+// The protocol is a state machine driven entirely by the ROM, so when
+// something is wrong the useful question is almost always "which sector
+// did it actually ask for" - which no amount of reading the ROM answers
+// as directly as watching it run.
+static int trace_enabled(void) {
+    static int cached = -1;
+    if (cached < 0) {
+        const char *v = getenv("ABCBUS_TRACE");
+        cached = (v && *v && *v != '0') ? 1 : 0;
+    }
+    return cached;
+}
+
+void abcbus_disk_select(uint8_t select) {
     // A real card compares CS against its own DIP-set address and simply
     // stops responding when it does not match - which is what makes the
     // ROM's scan across 0x24/0x2C/0x2D/0x2E find exactly the cards fitted.
@@ -279,7 +325,6 @@ static void run_command(void) {
         memset(buf, 0, SECTOR_SIZE);
         if (fseek(f, file_offset(), SEEK_SET) != 0 ||
             fread(buf, 1, SECTOR_SIZE, f) != SECTOR_SIZE) {
-            status = STAT_ERROR;
             aux_status = AUX_SEEK_ERROR;
             state = ST_K0;
             return;
@@ -304,7 +349,6 @@ static void run_command(void) {
         k[0] &= (uint8_t)~CMD_WRITE_SECTOR;
         if (fseek(f, file_offset(), SEEK_SET) != 0 ||
             fwrite(buf, 1, SECTOR_SIZE, f) != SECTOR_SIZE) {
-            status = STAT_ERROR;
             aux_status = AUX_WRITE_PROT;
             state = ST_K0;
             return;
@@ -319,14 +363,18 @@ static void run_command(void) {
 // a bad request reports an error rather than seeking off the end of the
 // image.
 static void command_header_complete(void) {
+    if (trace_enabled()) {
+        fprintf(stderr, "[abcbus] cmd %02X %02X %02X %02X -> unit %d buf %d "
+                        "sector %u offset %ld\n",
+                k[0], k[1], k[2], k[3], k[1] & 0x07, (k[1] >> 6) & 0x03,
+                current_sector(), file_offset());
+    }
     if (!current_unit()) {
-        status = STAT_ERROR;
         aux_status = AUX_NOT_READY;
         state = ST_K0;
         return;
     }
     if (current_sector() >= drive_type->sectors) {
-        status = STAT_ERROR;
         aux_status = AUX_SEEK_ERROR;
         state = ST_K0;
         return;
@@ -334,7 +382,7 @@ static void command_header_complete(void) {
     run_command();
 }
 
-void abc802_disk_out(int port, uint8_t value) {
+void abcbus_disk_out(int port, uint8_t value) {
     if (!selected) return;
 
     switch (port) {
@@ -346,13 +394,11 @@ void abc802_disk_out(int port, uint8_t value) {
                     // A new header clears the previous command's result,
                     // so a caller reading status mid-header sees this
                     // command's state rather than the last one's.
-                    status = 0;
                     aux_status = 0;
                     k[state - ST_K0] = value;
                     state = (BusState)(state + 1);
                     break;
                 case ST_K3:
-                    status = 0;
                     aux_status = 0;
                     k[3] = value;
                     state = ST_K0;
@@ -374,7 +420,7 @@ void abc802_disk_out(int port, uint8_t value) {
             // NMI to the controller's own CPU and a device reset; for a
             // synthetic controller both amount to "abandon whatever
             // transfer was in progress and be ready for a header".
-            abc802_disk_reset();
+            abcbus_disk_reset();
             break;
 
         default:
@@ -382,7 +428,7 @@ void abc802_disk_out(int port, uint8_t value) {
     }
 }
 
-uint8_t abc802_disk_in(int port) {
+uint8_t abcbus_disk_in(int port) {
     // Not selected, or no card: the bus floats high. The ROM reads 0xFF as
     // "nothing there" and moves on, which is exactly the behavior this
     // emulator had before the card existed at all.
@@ -402,8 +448,20 @@ uint8_t abc802_disk_in(int port) {
             // the last command - what the ROM tests with `OR A` at 0x6158.
             return aux_status;
 
-        case 1:
-            return (uint8_t)(STAT_READY | status | (state == ST_K0 ? STAT_IDLE : 0));
+        case 1: {
+            // Never 0x00 and never 0xFF: both mean "no device" to the
+            // ABC802's poll at 0x6196, and STAT_READY alone guarantees the
+            // first while nothing here sets enough bits for the second.
+            //
+            // Bit 2 is deliberately never set. The ABC80's ROM loads it
+            // straight into the low byte of the transfer address at 0x6120
+            // (`AND 04h` ... `LD L,A`), which is only correct because the
+            // bit is zero and the buffer is 256-byte aligned.
+            uint8_t stat = STAT_READY;
+            if (aux_status == 0) stat |= STAT_OK;
+            if (state == ST_K0) stat |= STAT_IDLE;
+            return stat;
+        }
 
         default:
             return 0xFF;

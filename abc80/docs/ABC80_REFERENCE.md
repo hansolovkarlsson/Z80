@@ -78,7 +78,7 @@ PEEK(65053)*256`, BASIC's boot-time RAM-size-detection result): `49152`
 emulator reproduces both values exactly (see `ABC80_ROADMAP.md`'s
 Milestone 6 section for the full before/after measurement).
 
-### ABCbus ROM cards (not yet modeled)
+### ABCbus ROM cards
 
 A separate real expansion card ("Minneskort ABC", `ABC80-minneskort-
 bruksanvisning.pdf`, a Luxor-published user manual — primary source) holds
@@ -87,9 +87,44 @@ routines, at a jumper-configurable base address — **24K (`0x6000`) by
 default as shipped**, alternatively 16K (`0x8000` is *not* one of the
 documented jumper options in that manual — the two shown are 16K/`0x4000`
 and 24K/`0x6000`). This lives entirely within `0x4000`-`0x7BFF`, i.e. the
-part of the ABCbus range this emulator always floats — not yet implemented
-here; folded into the still-open second half of Milestone 6 (floppy/DOS
-controller).
+part of the ABCbus range this emulator otherwise floats.
+
+`--disk` models the DOS case: it loads a real 4K DOS ROM at `0x6000` and
+that window then reads as ROM rather than floating. Two real images are
+committed and both work — `ABCDOS80.bin` (the default) and `UFD80V20.bin`,
+selectable with `--dos-rom`. The printer and IEC-bus ROMs are not modeled;
+no image for them is committed.
+
+### ABCbus floppy controller
+
+The bus registers sit at post-mask ports `0x00`-`0x05` and `0x07` (see the
+I/O map below). A transaction is a four-byte command header written to the
+OUT port — command, unit, and two sector-address bytes — followed by a
+256-byte transfer in whichever direction the command asked for, each byte
+gated on status bit 0.
+
+The DOS ROM sends the header straight out of `B`/`C`/`D`/`E` (`0x6136`-
+`0x6142`). The command byte is a bitmask (`0x01` read sector, `0x02` to
+host, `0x04` from host, `0x08` write sector), of which this ROM only ever
+issues two combinations: `0x03` for a read (`0x6071`) and `0x0C` for a
+write (`0x60AA`).
+
+**This ROM talks to exactly one kind of drive.** It writes a hardcoded
+`0x2D` — the ABC830 select code — to the CS port at `0x60F1`, the only
+`OUT (01h)` anywhere in the image, so it can never address a 640K ABC832.
+`UFD80V20.bin` is the more general driver: it masks its select to six bits
+and reads the value from a variable (`0x61C1`).
+
+The status byte is shared with the ABC800 family; see
+`abc802/docs/ABC802_REFERENCE.md`'s ABC-bus section for the bit table. Two
+of those bits are pinned by *this* ROM rather than the ABC802's, which
+never reads them: bit 3 must be set while a command is proceeding
+(`0x6118`) and must still be set when it completes, which the write path
+returns on as success (`0x60E9`, `0x60C1`). Bit 2 must always be clear,
+because `0x6120` loads it directly into the low byte of the transfer
+address (`AND 04h` ... `LD L,A`).
+
+The controller itself is `abcbus/disk.c`, shared with the ABC802 target.
 
 ## I/O ports
 
@@ -98,14 +133,17 @@ Global address mask `0x17` (MAME's `map.global_mask(0x17)`): only bits
 `(P & 0x17) == target` aliases the identical register. Real software
 exploits this — e.g. this ROM addresses PIO Port A via `IN A,(38h)`
 (`0x38 & 0x17 == 0x10`). `z80_io_in()`/`z80_io_out()`
-(`z80core/z80.c`) are a plain flat 256-entry array with no device
-logic of their own, so `abc80/emu/src/main.c` keeps every alias in sync
-itself (`init_pio_port_a_aliases()`/`sync_pio_port_a()`) rather than the
-CPU core knowing anything about the mask.
+(`z80core/z80.c`) are a plain flat 256-entry array by default, with no
+device logic of their own, so `abc80/emu/src/main.c` keeps every PIO alias
+in sync itself (`init_pio_port_a_aliases()`/`sync_pio_port_a()`) rather
+than the CPU core knowing anything about the mask. The ABC-bus ports are
+the exception: they are a real device, and reach it through the core's
+`io_in_hook`/`io_out_hook`, which `abc80/emu/src/abcbus.c` installs and
+which fall through to the flat array for every other port.
 
 | Port(s) (post-mask) | Function |
 |---|---|
-| `0x00`-`0x01` | ABCbus data/status |
+| `0x00`-`0x01` | ABCbus data (INP/OUT) and status/select (STAT/CS) |
 | `0x02`-`0x05` | ABCbus control lines C1-C4 |
 | `0x06` | SN76477 sound chip control byte |
 | `0x07` | ABCbus reset |

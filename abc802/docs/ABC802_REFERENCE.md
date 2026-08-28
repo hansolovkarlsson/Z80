@@ -295,14 +295,37 @@ gated on the status byte.
 
 The boot ROM scans all four, twelve times each. **A status byte of `0x00`
 or `0xFF` means "no device"** — the poll loop at `0x6196` aborts on either
-(`INC A / JR Z`, `DEC A / JR Z`) — so an idle, ready controller reports
-`0x81`: bit 7 "ready for a command header", bit 0 "ready to move a byte".
+(`INC A / JR Z`, `DEC A / JR Z`) — so a present card must never report
+either.
+
+**Status byte:**
+
+| Bit | Meaning | Pinned by |
+|---|---|---|
+| 0 | ready to move a byte | `0x612D`/`0x6140` (`IN A,(01h) / RRCA / JP NC`) |
+| 2 | must be clear | `0x610D` (`AND 05h / XOR 01h`) |
+| 3 | the current command has **not** failed | ABC80 `0x6118`, `0x60E9` — see below |
+| 7 | idle, ready for a command header | `0x6107` (`BIT 7,A`), `0x616F` |
+
+An idle, healthy controller is therefore `0x89`, and one that has just
+failed a command is `0x81`; failures themselves are reported through the
+auxiliary status byte on the INP port, which the ROM tests with `OR A` at
+`0x6158`.
+
+**Bit 3 cannot be derived from this machine's ROM at all** — it never
+reads the bit. It was modeled here as an error flag, on no evidence, and
+is in fact the exact complement: the ABC80's ROM requires it *set* while a
+transfer is pending (`BIT 3,A / JR Z` at `0x6118` treats clear as "this
+command produced nothing") and *still set* once the command has finished,
+which its write path returns on as success (`IN A,(01h) / CPL / AND 08h`
+at `0x60E9`, `RET Z` at `0x60C1`). Sharing the controller with the ABC80
+target is what exposed it.
 
 `bin/abc802` models a synthetic controller for `MO` and `MF` (see
-`ABC802_COMPLETED.md`'s Milestone 5). With no `--disk` image attached no
-card is fitted and every bus read floats high, which is the correct
-behavior for a bare machine — and is exactly the `0xFF` the ROM reads as
-"nothing there".
+`ABC802_COMPLETED.md`'s Milestone 5); it lives in `abcbus/disk.c` and is
+shared with the ABC80 target. With no `--disk` image attached no card is
+fitted and every bus read floats high, which is the correct behavior for a
+bare machine — and is exactly the `0xFF` the ROM reads as "nothing there".
 
 **Sector interleave differs per drive and cannot be inferred**: `MO` needs
 factor 7 (mask 15), `MF` needs none. Both were established by booting real

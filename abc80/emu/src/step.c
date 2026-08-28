@@ -5,9 +5,10 @@
 // abc80/docs/ABC80_ROADMAP.md's Milestone 11 section for the extraction
 // itself - this file only moved the code, it didn't change it.
 
+#include <stdbool.h>
+
 #include "step.h"
 
-#include "disk.h"
 #include "keyboard.h"
 
 int abc80_step(Z80 *cpu, uint8_t *ram, Abc80SoundLog *sound_log,
@@ -83,16 +84,13 @@ int abc80_step(Z80 *cpu, uint8_t *ram, Abc80SoundLog *sound_log,
         }
     }
 
-    // Milestone 6's disk bypass: intercept the two real low-level
-    // block-I/O entry points (see abc80_disk_trap()'s own comment) before
-    // they'd otherwise run the real ABCbus protocol code this emulator
-    // doesn't implement - same interrupt-interception hazard as the other
-    // pc_before-based predictions above, so gated the same way.
-    bool about_to_do_disk_io = abc80_disk_enabled() && !interrupt_will_intercept_this_step &&
-                                (pc_before == 0x6068 || pc_before == 0x60A1);
-
-    int cycles = about_to_do_disk_io ? abc80_disk_trap(cpu, ram, pc_before == 0x6068)
-                                      : z80_execute(cpu, ram);
+    // Milestone 6's disk bypass used to sit here, diverting the two real
+    // block-I/O entry points (0x6068/0x60A1) into C instead of executing
+    // them. Milestone 12 retired it: the ABC-bus card is a real device
+    // model now (abcbus/disk.c, reached through this target's I/O hooks in
+    // abcbus.c), so the DOS ROM's own protocol code runs for real and this
+    // loop has nothing disk-specific left to predict.
+    int cycles = z80_execute(cpu, ram);
     if (about_to_consume_key) {
         abc80_keyboard_consumed();
     }

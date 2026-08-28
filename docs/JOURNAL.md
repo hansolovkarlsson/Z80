@@ -17,6 +17,90 @@ in an entry here.
 
 ---
 
+## 2026-08-29 (later) — ABC80 Milestone 12: retiring the PC-address trap
+
+The ABC802 roadmap's top candidate, taken up directly: replace the ABC80
+target's floppy trap with the real ABC-bus card the ABC802 already had.
+
+### The move
+
+`abc802/emu/src/disk.c` went to `abcbus/disk.c` at the repo root, beside
+`z80core/`. The reasoning is the same one that put `z80core/` there — the
+ABC bus is a bus, not a machine — and it had to happen *before* the ABC80
+could use the card, or `abc802/` would have quietly become a shared
+library for `abc80/`, which is the exact arrangement moving `z80core/` out
+of `cpm/` was meant to end. `abc80/emu/src/disk.c` became `abcbus.c` and
+kept only what is genuinely machine-specific: loading the DOS ROM into the
+`0x6000` expansion window, and this machine's own `0x17`-masked port
+decode.
+
+Before writing any of it, the first question was whether the ABC80's DOS
+ROM even speaks the same protocol, since assuming so would have been the
+whole risk. Scanning `ABCDOS80.bin` for `IN`/`OUT` opcodes answered it in
+one command: ports 0, 1, 2 and 4, and nothing else. Same registers, same
+C1/C3 pulses. Disassembling `0x612B` then showed the same four-byte
+`B`/`C`/`D`/`E` header and the same `0x03`/`0x0C` command constants the
+ABC802's ROM uses. Two unrelated ROMs, five years apart, agreeing on a
+bitmask — which is what makes it a bitmask and not a coincidence.
+
+### The bit that was invented
+
+Then it did not work, twice, in two ways that looked unrelated. `ERR 21`
+on every read; after fixing that, `ERR 48` at boot on every write. Both
+were one bit: the card modeled status bit 3 as an error flag, and it is
+the exact complement — "this command has not failed". Full write-up in
+[a postmortem](postmortems/2026-08-28-status-bit-invented-from-one-rom.md),
+because the interesting part is not the bit but *why nothing could have
+caught it*: the ABC802's ROM never reads bit 3 at all, so no test on that
+target — however thorough — could have distinguished right from wrong. A
+second consumer was the only thing that could.
+
+The tell was there to be seen, though. The file's header comment derives
+four status bits from specific ROM addresses; bit 3 sat in the `#define`
+block with no citation and no mention in that comment. In a file otherwise
+scrupulous about grounding every claim, **the one value nobody could point
+at an address for was the one value that was wrong.**
+
+What made it quick was adding `ABCBUS_TRACE=1` to the card, and then
+reading the trace for what it *lacked*: correct command headers for
+exactly the right sectors, and no transfers at all. The absence of an
+expected line was the entire diagnosis. Kept the facility.
+
+### Evidence it was worth doing
+
+Three results, in ascending order of how much they justify the change:
+
+1. **Byte-identical output.** The same `SAVE`/`LOAD` keystrokes against
+   the same image produce a disk file identical to the trap's, down to the
+   five physical sectors touched. The real protocol and the carefully
+   derived shortcut agree exactly — which is the reassuring result, not
+   the interesting one.
+2. **A case the trap could not do.** `RUN LIB` + Enter, the real directory
+   listing utility, reported `Diskfel` under the trap. It now prints the
+   volume label, all fourteen files and the free-sector count. Nobody was
+   working on that; it came free with modeling the device instead of the
+   routine. Worth noting that this was a *pre-existing, unnoticed*
+   failure — the trap had been signed off as working.
+3. **A different DOS ROM.** `UFD80V20.bin` was examined during Milestone 6
+   and left unwired, for the good reason that a trap derived against
+   ABC-DOS's routines cannot serve a different DOS. It drives the same
+   card correctly — 40 real bus commands, reading bitmap, directory and
+   file sectors — and then correctly reports `HITTAR EJ FILEN`, because an
+   ABC-DOS-formatted disk has no UFD-DOS startup file on it. That is the
+   whole argument for a device model in one line, so `--dos-rom` was added
+   to make it reproducible instead of a throwaway experiment.
+
+### Carried across
+
+The same lesson as the ABC802 sessions, pointed the other way this time:
+the ABC802 target was a good source of *structure* — the whole controller
+transferred unchanged — and one of its hardware facts was wrong. Reuse the
+shape, re-derive the facts. The difference is that here the wrong fact was
+one this project had written itself, and the second machine is what
+audited it.
+
+---
+
 ## 2026-08-29 — ABC802 Milestone 9: a real SIO, and testing from inside
 
 Documented the line editor's keys in `ABC802_REFERENCE.md` (and refreshed

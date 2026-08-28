@@ -30,9 +30,9 @@
 #include <string.h>
 #include <time.h>
 
+#include "../../../abcbus/disk.h"
 #include "../../../z80core/z80.h"
 #include "../../emu/src/chargen.h"
-#include "../../emu/src/disk.h"
 #include "../../emu/src/memory.h"
 #include "../../emu/src/ports.h"
 #include "../../emu/src/render.h"
@@ -417,7 +417,7 @@ static bool machine_init(AppState *app, const StartupOptions *opts) {
     abc802_ports_attach(&app->cpu);
     abc802_set_config(opts->columns == 80, true);
     for (int d = 0; d < opts->disk_count; d++) {
-        if (!abc802_disk_attach_arg(opts->disk_paths[d])) return false;
+        if (!abcbus_disk_attach_arg(opts->disk_paths[d])) return false;
     }
     return true;
 }

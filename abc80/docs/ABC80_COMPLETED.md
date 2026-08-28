@@ -1965,7 +1965,9 @@ file would double the maintenance surface for exactly the kind of bug
 this project has already paid real debugging cost to fix once.
 
 Extracted into two new modules:
-- **`abc80/emu/src/disk.c`/`.h`**: Milestone 6's floppy/DOS bypass
+- **`abc80/emu/src/disk.c`/`.h`** (retired in Milestone 12; the file is
+  now `abcbus.c`/`.h` and holds only the port decode and DOS ROM
+  loading): Milestone 6's floppy/DOS bypass
   (`abc80_disk_init()`, `abc80_disk_enabled()`, `abc80_disk_trap()`) -
   moved verbatim, not rewritten, with `abc80_disk_enabled`/
   `abc80_disk_file`'s old bare-static access replaced by clean accessor
@@ -2856,3 +2858,146 @@ evaluation → video RAM → back to UTF-8 for terminal display, not just a
 byte-level unit check. Re-ran the existing plain-ASCII (`PRINT 1+1`) and
 arrow-key (backspace-and-retype via `ESC [ D`) regression cases
 afterward and confirmed both unaffected.
+
+---
+
+## Milestone 12: retiring the PC-address trap — done
+
+Milestone 6's floppy support was a **PC-address trap**: `abc80_step()`
+watched for `PC == 0x6068` (read) or `PC == 0x60A1` (write) inside the
+real ABC-DOS ROM, and when it saw one, ran the whole sector transfer in C
+— reading the caller's registers for the channel and sector, doing the
+host file I/O, writing the bytes straight into the ROM's own RAM buffer,
+and forging the trapped routine's `RET`. It worked, and the derivation
+behind it was careful (the calling convention, the packed sector address,
+the interleave, the buffer-pointer quirk — all in Milestone 6's own
+write-up above).
+
+It is now gone. `--disk` fits a real ABC-bus card instead: the shared
+synthetic controller in `abcbus/disk.c`, reached through the CPU's own
+I/O hooks, with the DOS ROM's protocol code executing for real.
+
+### Why replace something that worked
+
+The ABC802 target had to implement the real protocol anyway — its DOS
+ROM's bus driver is generic, and its callers issue *sequences* of bus
+commands per logical operation, so there is no sector-level routine to
+stand in front of (see `abc802/docs/ABC802_FLOPPY_SCOPING.md`). Once that
+existed, the ABC80's trap was the only place in the repo where a machine
+pretended to have a peripheral it did not have, and it carried three real
+costs:
+
+1. **It only worked for the entry points it knew.** Anything reaching the
+   disk another way got nothing.
+2. **It was welded to one ROM.** `UFD80V20.bin`, the alternate real DOS
+   ROM committed alongside ABC-DOS, was examined during Milestone 6 and
+   left unwired — a trap derived against ABC-DOS's routines cannot serve
+   a different DOS's.
+3. **It duplicated a controller that already existed**, and duplicated it
+   in a different shape, so neither implementation could check the other.
+
+### What moved where
+
+`abc802/emu/src/disk.c` became `abcbus/disk.c`, at the repo root beside
+`z80core/`, for the same reason that one lives there: the ABC bus is a
+bus, not a machine. Leaving the card under `abc802/` would have made that
+target a de facto shared library for the ABC80 — exactly the arrangement
+moving `z80core/` out of `cpm/` was meant to end.
+
+`abc80/emu/src/disk.c` became `abc80/emu/src/abcbus.c` and kept only what
+is genuinely machine-specific:
+
+- **Loading the DOS ROM.** Unlike the ABC802, whose DOS is part of its 32K
+  onboard ROM, this machine's DOS lives on the expansion card, so `--disk`
+  must place a 4K image in the bus window at `0x6000`.
+- **The port decode.** Both machines put the card's registers at bus
+  addresses 0–7, but the ABC80 hardware decodes only bits `{0,1,2,4}` of
+  the port number (global mask `0x17`) while the ABC802 uses its own range
+  decode. Post-mask `0x06` is the SN76477 and `0x10`-`0x17` the PIO; both
+  still fall through to the CPU core's flat `io_ports[]` array.
+
+This is the ABC80 target's first use of the core's `io_in_hook`/
+`io_out_hook`, which the ABC802 work added.
+
+### The bug this exposed: a status bit invented from one ROM
+
+The card modeled status bit 3 as `STAT_ERROR`. Nothing in the ABC802's ROM
+justified that — **that ROM never reads the bit at all** (its post-header
+poll at `0x6107` is `AND 05h / XOR 01h`, and its completion check is the
+auxiliary status byte via `OR A` at `0x6158`). The bit had been assigned
+by assumption, and because the only consumer could not observe it, nothing
+was ever going to catch it.
+
+The ABC80's ROM reads it twice, and wants the exact opposite:
+
+- `0x6118`, after a command header: `BIT 3,A / JR Z` treats bit 3 **clear**
+  as "this command produced nothing" and jumps away to read the result. So
+  it must be **set** while a transfer is pending.
+- `0x60E9`, at the end of every command: `IN A,(01h) / CPL / AND 08h`,
+  whose `Z` flag the write path returns on as success (`RET Z` at
+  `0x60C1`). So it must **still** be set once the command has finished and
+  the controller is back at idle.
+
+So bit 3 is not an error flag but its complement: *"this command has not
+failed."* Failures are reported through the auxiliary status byte instead.
+An idle, healthy controller reports `0x89`; one that has just failed a
+command reports `0x81`.
+
+Both symptoms were visible and neither pointed at the cause. With bit 3
+modeled as "error", `RUN LIB` gave `ERR 21` (file not found) because the
+ROM concluded every read had produced no data and never ran the transfer
+loop — the trace showed correct command headers for sector 16 and not one
+byte moved. Fixing that half produced `ERR 48` at boot instead, from the
+write path: the DOS reads the free-space bitmap at boot and writes it
+back, and with bit 3 clear at idle the ROM read every successful write as
+a failure and retried it five times before giving up.
+
+One more bit is pinned by this ROM and not the other: **bit 2 must always
+be clear**, because `0x6120` loads it straight into the low byte of the
+transfer address (`AND 04h` … `LD L,A`), which is only correct because the
+bit is zero and the buffer is 256-byte aligned.
+
+### Verification
+
+- **`SAVE`/`LOAD` round trip** on `disk003.img` — type two lines, `SAVE`,
+  `NEW`, `LOAD`, `LIST`, and get both lines back. The resulting disk image
+  is **byte-identical** to the one the trap produced from the same
+  keystrokes: the same five physical sectors changed (8, 10, 16, 180,
+  189 — the two directory copies, the free-space bitmap, and the file's
+  own data), with the same contents. The real protocol and the trap agree
+  exactly.
+- **A case the trap could not do at all.** `RUN LIB` + Enter — the real
+  `LIB` utility's full directory listing — reported `Diskfel` ("disk
+  error") under the trap. It now prints the volume label, all fourteen
+  files, and `453 av 616 sektorer kvar`. This was a pre-existing, unnoticed
+  failure; it went away with no work aimed at it, which is the whole
+  argument for modeling the device instead of the routine.
+- **A different DOS ROM, never trapped and never analysed
+  routine-by-routine.** `--dos-rom UFD80V20.bin` boots and issues 40 real
+  bus commands against the same card — reading the free-space bitmap, the
+  directory, and file data sectors — then correctly reports
+  `HITTAR EJ FILEN`, since an ABC-DOS-formatted disk has no UFD-DOS
+  startup file on it. UFD-DOS has its own bus driver and its own
+  device-select scheme (masked and variable, where ABC-DOS hardcodes
+  `0x2D`). Nothing in this emulator was written for it. That is the
+  evidence that the card implements the bus rather than one ROM's
+  routines, so `--dos-rom` was added to make it reproducible rather than a
+  throwaway experiment.
+- **`bin/abc80-gtk`** boots the DOS ROM over the same card (verified by
+  `ABCBUS_TRACE=1` showing real command headers), exits cleanly on
+  `SIGTERM`, and logs no `Gtk-CRITICAL`.
+- **Non-disk paths unchanged**: plain boot and `PRINT 6*7`, `--ram32k`,
+  `--quicksave`/`--quickload` round trip, and `--wav` sound rendering
+  (which shares the port path the new hooks sit on).
+- **The ABC802 target is unaffected** by the status fix, as predicted:
+  160K and 640K media both still boot real applications, the two-drive
+  `MF0:`/`MF1:` save produces the same MD5 recorded in that target's
+  Milestone 7, and `LOAD "MF0:D1TEST"` still fails as the negative control.
+- `make test` green (16/16), clean `-Wall -Wextra` build of all six
+  binaries.
+
+### Left deliberately
+
+`--disk` no longer creates a missing image file. It used to, and a
+zero-filled 160K file is not valid ABC-DOS media — the card now requires an
+image of a recognized size and says so, which is the more useful answer.

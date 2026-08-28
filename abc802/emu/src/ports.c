@@ -30,7 +30,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "disk.h"
+#include "../../../abcbus/disk.h"
 #include "ports.h"
 #include "memory.h"
 
@@ -395,7 +395,7 @@ static uint8_t io_in(Z80 *cpu, uint8_t port, uint8_t stored) {
             // the ROM's own "no card fitted" signal (see disk.c). With no
             // image attached nothing is selected ever, so this is exactly
             // the pre-existing behavior.
-            value = abc802_disk_in(index);
+            value = abcbus_disk_in(index);
             break;
         case DEV_DART: {
             int channel = (index & 0x02) ? 1 : 0;
@@ -470,8 +470,8 @@ static int io_out(Z80 *cpu, uint8_t port, uint8_t value) {
             // ROM masks the select to 6 bits itself (AND 3Fh at 0x6172);
             // masking again here keeps the card honest if some other
             // caller does not.
-            if (index == 1) abc802_disk_select(value & 0x3F);
-            else abc802_disk_out(index, value);
+            if (index == 1) abcbus_disk_select(value & 0x3F);
+            else abcbus_disk_out(index, value);
             break;
         default:
             break;

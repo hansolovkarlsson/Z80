@@ -127,6 +127,9 @@ implement the protocol yourself.** There is no third path through MAME.
 ## Why the ABC80 target's floppy work does not transfer
 
 `abc80/emu/src/disk.c` is a **PC-address trap**, not a device model.
+(It no longer exists: this document's conclusion held, and the trap was
+subsequently retired in favour of the very controller scoped here — see
+ABC80 Milestone 12.)
 `abc80_step()` watches for two specific addresses inside the ABC-DOS ROM:
 
 ```c
@@ -322,6 +325,6 @@ Listed because each one could change the estimate, not to pad it.
   disassembled with `bin/z80dasm` — every claim above about what the
   ABC802 ROM does was read out of that disassembly, not inferred from the
   other two sources.
-- `abc80/emu/src/disk.c` and ABC80's Milestone 6 write-up in
+- `abc80/emu/src/disk.c` (as it stood then) and ABC80's Milestone 6 write-up in
   `../../abc80/docs/ABC80_COMPLETED.md` — the existing bypass and the
   interleave derivation.

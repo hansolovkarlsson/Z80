@@ -1,5 +1,6 @@
 bin/
 z80core/*.o
+abcbus/*.o
 cpm/emu/src/*.o
 asm/src/*.o
 disasm/src/*.o

@@ -2,9 +2,10 @@
 
 A Z80 CPU emulator written in C, built to run CP/M-80 programs.
 CP/M-specific code lives under `cpm/`; the CPU core (`z80core/`), the
-assembler and disassembler (`asm/`, `disasm/`), their generic docs
-(`docs/`), `bin/` (the build output), and `scripts/` (general-purpose
-tooling) are genuinely CP/M-independent and stay at the repo root.
+shared ABC-bus peripherals (`abcbus/`), the assembler and disassembler
+(`asm/`, `disasm/`), their generic docs (`docs/`), `bin/` (the build
+output), and `scripts/` (general-purpose tooling) are genuinely
+CP/M-independent and stay at the repo root.
 (This repo previously also hosted a standalone Game Boy emulator as a
 separate, code-sharing-free subproject under `gameboy/` — it's since
 been split out into its own repository via `git subtree split`,
@@ -98,14 +99,19 @@ how many bytes to decode):
 
 ## Project layout
 
-CP/M-specific code lives under `cpm/`; `z80core/`, `asm/`, `disasm/`,
-`docs/`, `bin/` (the build output), and `scripts/` (general-purpose
-tooling) stay at the repo root since none of them are CP/M-specific —
-see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
+CP/M-specific code lives under `cpm/`; `z80core/`, `abcbus/`, `asm/`,
+`disasm/`, `docs/`, `bin/` (the build output), and `scripts/`
+(general-purpose tooling) stay at the repo root since none of them are
+CP/M-specific — see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
 
 - `z80core/` — the shared Z80 CPU core (`z80.c`/`z80.h` opcode dispatch,
   `alu.c`/`alu.h` flag/arithmetic logic) — machine-agnostic, used by both
   `bin/z80` (CP/M), `bin/abc80`, and `bin/abc802`.
+- `abcbus/` — the synthetic ABC-bus floppy controller (`disk.c`/`disk.h`),
+  shared by `bin/abc80` and `bin/abc802`. At the repo root for the same
+  reason `z80core/` is: the ABC bus is a bus, not a machine, and both
+  targets drive the same card with the same command header and status
+  bits. Each machine keeps its own port decode and DOS ROM loading.
 - `cpm/emu/src/` — the emulator itself (`z80.c`/`z80.h` opcode dispatch,
   `alu.c`/`alu.h` flag/arithmetic logic, `cpm.c`/`cpm.h` minimal CP/M BDOS
   emulation, `main.c` the CP/M-style program loader/run loop).

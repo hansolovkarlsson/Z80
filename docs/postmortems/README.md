@@ -23,6 +23,7 @@ Each one answers the same four questions:
 
 | Date | Postmortem | One-line lesson |
 |---|---|---|
+| 2026-08-28 | [A status bit invented from one ROM](2026-08-28-status-bit-invented-from-one-rom.md) | A field the only consumer never reads cannot be validated by any test — only by a second consumer |
 | 2026-08-28 | [The boot screen cannot validate the feature](2026-08-28-boot-screen-cannot-validate.md) | A test whose input never exercises the code proves nothing, however real the input is |
 | 2026-08-28 | [`--type` fed raw UTF-8 bytes](2026-08-28-type-raw-utf8-bytes.md) | Two paths doing "the same" thing will disagree unless one of them calls the other |
 | 2026-08-28 | [The DART's single receive byte](2026-08-28-dart-single-byte-overwrite.md) | Emulating a hardware limit means honoring it on *every* input path, not just the one it was found on |

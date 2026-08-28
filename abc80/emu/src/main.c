@@ -43,7 +43,7 @@
 #include "charset.h"
 #include "cassette.h"
 #include "sound.h"
-#include "disk.h"
+#include "abcbus.h"
 #include "step.h"
 
 // Real ABC80 Z80 clock (11.9808 MHz crystal / 2 / 2 - see MAME's
@@ -401,14 +401,14 @@ static const RomImage ROM_IMAGES[] = {
 // Milestone 6.
 static bool abc80_ram32k_enabled = false;
 
-// Milestone 6's floppy/DOS bypass itself (--disk FILE, the real committed
-// ABC-DOS ROM at 0x6000, and abc80_disk_trap()) now lives in disk.c/disk.h
-// (Milestone 11's shared-step extraction) - only the "is it enabled"
-// check below still lives here, since this hook also handles the
-// unrelated floating-bus/RAM-expansion concerns.
+// --disk (the real committed ABC-DOS ROM at 0x6000, and this machine's
+// ABC-bus port decode onto the shared card in abcbus/disk.c) lives in
+// abcbus.c/abcbus.h - only the "was a DOS ROM loaded" check below still
+// lives here, since this hook also handles the unrelated floating-bus/
+// RAM-expansion concerns.
 static uint8_t abc80_bus_read_hook(Z80 *cpu, uint16_t address, uint8_t stored_value) {
     (void)cpu;
-    if (abc80_disk_enabled() && address >= 0x6000 && address <= 0x6FFF) {
+    if (abc80_abcbus_rom_loaded() && address >= 0x6000 && address <= 0x6FFF) {
         return stored_value; // the real, loaded ABCDOS80.bin content
     }
     if (address >= 0x4000 && address <= 0x7BFF) {
@@ -474,9 +474,12 @@ static void print_usage(const char *prog) {
     printf("                     instead of a one-shot batch run to max_instructions.\n");
     printf("                     Ctrl-C reaches BASIC as a real break keystroke; press\n");
     printf("                     Ctrl-\\ to exit this tool. Ignored if stdin isn't a terminal.\n");
-    printf("  --disk FILE        Load the real ABC-DOS ROM at 0x6000 and back its floppy\n");
-    printf("                     I/O with a host file (created if it doesn't exist) -\n");
-    printf("                     see abc80/docs/ABC80_ROADMAP.md for how this bypass works.\n");
+    printf("  --disk FILE        Load the real ABC-DOS ROM at 0x6000 and fit a real\n");
+    printf("                     ABC-bus floppy controller serving FILE, a 160K ABC830\n");
+    printf("                     image. Without it no card is fitted and the bus floats.\n");
+    printf("  --dos-rom FILE     Use FILE in rom_dir as the DOS ROM instead of the\n");
+    printf("                     default %s (the other real image is\n", ABC80_DEFAULT_DOS_ROM);
+    printf("                     UFD80V20.bin, a different DOS driving the same card).\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -486,6 +489,7 @@ int main(int argc, char *argv[]) {
     const char *quicksave_path = NULL;
     const char *wav_path = NULL;
     const char *disk_path = NULL;
+    const char *dos_rom = NULL;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
@@ -503,6 +507,8 @@ int main(int argc, char *argv[]) {
             interactive_mode = true;
         } else if (strcmp(argv[i], "--disk") == 0 && i + 1 < argc) {
             disk_path = argv[++i];
+        } else if (strcmp(argv[i], "--dos-rom") == 0 && i + 1 < argc) {
+            dos_rom = argv[++i];
         } else if (!rom_dir) {
             rom_dir = argv[i];
         } else if (max_instructions < 0) {
@@ -554,7 +560,7 @@ int main(int argc, char *argv[]) {
     // backing its virtual disk. Done after the floating-bus fill, not
     // before, so this ROM content survives it.
     if (disk_path) {
-        if (!abc80_disk_init(rom_dir, disk_path, ram)) {
+        if (!abc80_abcbus_init(rom_dir, dos_rom, disk_path, ram)) {
             return EXIT_FAILURE;
         }
     }
@@ -568,6 +574,13 @@ int main(int argc, char *argv[]) {
     // requirement on the CP/M side).
     cpu.memory = ram;
     cpu.bus_read_hook = abc80_bus_read_hook;
+    // The ABC bus is a real device now rather than a PC-address trap, so
+    // the card has to be reachable through the CPU's own I/O path. Both
+    // hooks fall through to the flat io_ports[] array for every port that
+    // is not the bus, which is where the PIO and the sound register still
+    // live.
+    cpu.io_in_hook = abc80_abcbus_io_in;
+    cpu.io_out_hook = abc80_abcbus_io_out;
     z80_init_tables();
     abc80_keyboard_init_port_aliases();
 
