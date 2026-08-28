@@ -62,13 +62,21 @@ ABC80_TARGET := $(BIN_DIR)/abc80
 # bin/abc80 above - z80core/z80.o and alu.o are linked directly rather than
 # rebuilt. Opt-in only (never part of `all`), same as `abc80`.
 ABC802_SRC_DIR := abc802/emu/src
-ABC802_OBJS := $(ABC802_SRC_DIR)/main.o $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/render.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC802_OBJS := $(ABC802_SRC_DIR)/main.o $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/render.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/png.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
 ABC802_TARGET := $(BIN_DIR)/abc802
 
 # bin/abc80-chargen-dump: the chargen.c decode-verification tool (see its
 # own top comment) - no CPU core needed, just the ROM decode itself.
 ABC80_CHARGEN_DUMP_OBJS := $(ABC80_SRC_DIR)/chargen_dump.o $(ABC80_SRC_DIR)/chargen.o
 ABC80_CHARGEN_DUMP_TARGET := $(BIN_DIR)/abc80-chargen-dump
+
+# bin/abc802-chargen-dump: chargen.c's decode-verification tool. Same role
+# and same reasoning as abc80-chargen-dump above - no CPU core, just the
+# ROM decode fed a synthetic screen - and it earns its place because the
+# row attributes it exercises are precisely what a real ROM boot screen
+# never uses, so `--screenshot` alone could not catch a broken one.
+ABC802_CHARGEN_DUMP_OBJS := $(ABC802_SRC_DIR)/chargen_dump.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/png.o
+ABC802_CHARGEN_DUMP_TARGET := $(BIN_DIR)/abc802-chargen-dump
 
 # bin/abc80-video-timing-dump: the video_timing.c PROM-decode/address-
 # mapping verification tool (see its own top comment) - same reasoning as
@@ -134,7 +142,7 @@ ABC80_GTK_PKGS := gtk4 sdl2
 ABC80_GTK_CFLAGS := $(shell pkg-config --cflags $(ABC80_GTK_PKGS) 2>/dev/null)
 ABC80_GTK_LIBS := $(shell pkg-config --libs $(ABC80_GTK_PKGS) 2>/dev/null)
 
-.PHONY: all emulator assembler disassembler gtk abc80 abc802 abc80-gtk abc80-chargen-dump abc80-video-timing-dump abc80-render-demo abc80-sound-demo run test clean
+.PHONY: all emulator assembler disassembler gtk abc80 abc802 abc802-chargen-dump abc80-gtk abc80-chargen-dump abc80-video-timing-dump abc80-render-demo abc80-sound-demo run test clean
 
 all: emulator assembler disassembler
 
@@ -149,6 +157,8 @@ gtk: $(GTK_TARGET)
 abc80: $(ABC80_TARGET)
 
 abc802: $(ABC802_TARGET)
+
+abc802-chargen-dump: $(ABC802_CHARGEN_DUMP_TARGET)
 
 abc80-chargen-dump: $(ABC80_CHARGEN_DUMP_TARGET)
 
@@ -174,6 +184,9 @@ $(ABC80_TARGET): $(ABC80_OBJS) | $(BIN_DIR)
 
 $(ABC802_TARGET): $(ABC802_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(ABC802_OBJS)
+
+$(ABC802_CHARGEN_DUMP_TARGET): $(ABC802_CHARGEN_DUMP_OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $(ABC802_CHARGEN_DUMP_OBJS)
 
 $(ABC80_CHARGEN_DUMP_TARGET): $(ABC80_CHARGEN_DUMP_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(ABC80_CHARGEN_DUMP_OBJS)

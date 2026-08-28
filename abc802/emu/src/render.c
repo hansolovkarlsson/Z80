@@ -137,6 +137,13 @@ void abc802_render_text_screen(FILE *out) {
 #define ABC802_CRTC_CURSOR_MODE_MASK      0x60
 #define ABC802_CRTC_CURSOR_MODE_NODISPLAY 0x20
 
+int abc802_cursor_address(void) {
+    if ((abc802_crtc_reg(10) & ABC802_CRTC_CURSOR_MODE_MASK) == ABC802_CRTC_CURSOR_MODE_NODISPLAY) {
+        return -1;
+    }
+    return ((abc802_crtc_reg(14) << 8) | abc802_crtc_reg(15)) & 0x7FF;
+}
+
 void abc802_render_frame(FILE *out) {
     const uint8_t *ram = abc802_char_ram();
     Abc802Geometry g;
@@ -149,9 +156,7 @@ void abc802_render_frame(FILE *out) {
         return;
     }
 
-    int cursor_addr = (abc802_crtc_reg(14) << 8) | abc802_crtc_reg(15);
-    bool cursor_visible =
-        (abc802_crtc_reg(10) & ABC802_CRTC_CURSOR_MODE_MASK) != ABC802_CRTC_CURSOR_MODE_NODISPLAY;
+    int cursor_addr = abc802_cursor_address();
 
     for (int y = 0; y < g.rows; y++) {
         for (int x = 0; x < g.cols; x += g.step) {
@@ -162,8 +167,7 @@ void abc802_render_frame(FILE *out) {
             // on it. Either one alone reverses; both together cancel,
             // which is what real inverse-video hardware does with a
             // cursor drawn on top of already-inverted text.
-            int inverse = ((code & 0x80) != 0) ^
-                          (cursor_visible && addr == (cursor_addr & 0x7FF));
+            int inverse = ((code & 0x80) != 0) ^ (addr == cursor_addr);
             if (inverse) fputs("\x1b[7m", out);
             abc802_put_char(out, code);
             if (inverse) fputs("\x1b[0m", out);

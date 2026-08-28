@@ -34,4 +34,9 @@ void abc802_render_frame(FILE *out);
 // with the decode so the two directions cannot drift.
 int abc802_charset_byte_for_codepoint(uint32_t codepoint);
 
+// The character-RAM address the CRTC's cursor is currently on, or -1 when
+// R10's cursor-mode bits say it is not displayed - which on this machine
+// is also how the ROM blinks it (see abc802_render_frame above).
+int abc802_cursor_address(void);
+
 #endif // ABC802_RENDER_H

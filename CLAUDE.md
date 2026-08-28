@@ -91,6 +91,28 @@ blinks in *software*, toggling MC6845 R10 between `0x09` and `0x29` from
 its own 93.75 Hz clock interrupt, so honoring R10 and pacing execution is
 the entire implementation.
 
+Milestone 3 adds real pixel rendering (`abc802/emu/src/chargen.c`, plus a
+hand-written PNG writer in `png.c` using DEFLATE stored blocks, on the
+same "this build has no third-party libraries" grounds as `abc80`'s own
+WAV writer): `bin/abc802 --screenshot FILE` writes the 480x240 screen in
+the machine's real amber phosphor. The decode is worth reading before
+touching anything video-related, because it is not guessable — **the
+character generator ROM's own output byte decides whether a cell is a
+character or an attribute command.** Bit 7 (ATE) set means the byte is not
+pixel data but an instruction: bit 6 (ATD) is the value, bits 1:0 pick
+Row Graphic / Row Flash / Row Clear. So the *font* defines which character
+codes are attribute codes (here `0x01`-`0x09` and `0x11`-`0x18`), and all
+three attributes work by substituting the scanline address rather than
+post-processing pixels — Row Graphic ORs `0x800` into the ROM address to
+select a mosaic font, flash/clear force scanline `0x0E` (blank), and the
+cursor forces `0x0F`, which is a solid bar, so the real cursor *replaces*
+the glyph rather than inverting it. `abc802_render_pixels()` is
+deliberately pure (everything arrives in an `Abc802Screen` struct), which
+is what lets `bin/abc802-chargen-dump` verify it with no CPU core at all —
+and that tool is not optional cover: the ROM's boot screen uses none of
+the three attributes, so `--screenshot` would render it perfectly with the
+attribute state machine completely broken.
+
 Two ABC802-specific implementation facts are worth knowing before
 touching that target, because neither is guessable from a memory map.
 First, **the character RAM at `0x7800-0x7FFF` is decoded by the M1

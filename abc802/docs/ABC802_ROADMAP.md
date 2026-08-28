@@ -200,6 +200,97 @@ ABC802
   are dropped and this is recorded as a known gap below.
 
 
+## Milestone 3: pixel rendering from the character ROM — done
+
+The screen is now decoded into actual pixels, not just into which
+character codes sit where. `bin/abc802 --screenshot FILE` writes a real
+PNG of the display, and `bin/abc802-chargen-dump` verifies the decode
+against a synthetic screen.
+
+```
+$ bin/abc802 --columns 80 --type "PRINT 6*7
+" --screenshot boot.png
+Screenshot: boot.png (480x240)
+```
+
+480x240 is the real geometry: 80 columns of 6-pixel-wide cells by 24 rows
+of 10 scanlines, drawn in the machine's own amber phosphor on black
+(MAME's `abc802_video()` asks for `rgb_t::amber()`, defined as
+`(247, 170, 0)`). 40-column mode produces the same 480 pixels, each
+character drawn double-width.
+
+This closes the gap that blocked a GTK front-end: `abc802_render_pixels()`
+in `chargen.c` is a pure function taking an `Abc802Screen` struct, so any
+front-end — the PNG writer, a future Cairo widget, a test — feeds it state
+and gets pixels back, with no path able to drift from another.
+
+### How the attributes actually work
+
+Grounded in MAME's `abc802_update_row()` (`src/mame/luxor/abc80x_v.cpp`),
+which carries the real PAL16R4 equations from the video board, then
+cross-checked byte-for-byte against the committed ROM.
+
+The scheme is not guessable from a memory map: **the character generator
+ROM's own output byte decides whether a cell is a character or an
+attribute command.** If bit 7 (ATE) of the fetched byte is set, it is not
+pixel data at all but an instruction — bit 6 (ATD) is the new value and
+bits 1:0 select which attribute (0 = Row Graphic, 1 = Row Flash, 2 = Row
+Clear). So the *font* defines which character codes act as attribute
+codes. In this ROM exactly 17 do: `0x01`-`0x09` and `0x11`-`0x18`.
+An attribute cell draws nothing.
+
+All three attributes work by substituting the scanline address rather
+than post-processing pixels:
+
+| Attribute | Mechanism | Verified against the ROM |
+|---|---|---|
+| Row Graphic | ORs `0x800` into the ROM address, selecting the alternate 2K half — a block-mosaic font | exactly 63 codes (`0x21`-`0x3F`, `0x60`-`0x7F`) differ between halves; all others are byte-identical |
+| Row Flash | forces scanline `0x0E` | `0x0E` is `0x00` for every printable code |
+| Row Clear | forces scanline `0x0E` | same |
+| Cursor | forces scanline `0x0F` | `0x0F` is `0x3F` — a solid 6-pixel bar — for every printable code |
+
+So the real cursor is a **solid block substituted for the glyph**, not an
+inversion of it. The cursor is applied first and flash/clear can then
+override it, matching MAME's ordering. Pixels are bits 5..0 of the ROM
+byte, most significant first.
+
+The FLSH clock is derived rather than modeled: real hardware counts
+vertical syncs and toggles every 33 fields, which at 50 Hz is 0.66s per
+phase (~0.76 Hz). This emulator has no vsync, so the same rate is
+expressed in T-states — 3,000,000/50 = 60,000 per field × 33 = 1,980,000.
+
+### Why a separate verification tool
+
+`--screenshot` alone cannot validate any of the above: the ROM's own boot
+screen uses no Row Graphic, no Row Flash and no Row Clear, so a completely
+broken attribute state machine would render it perfectly.
+`bin/abc802-chargen-dump` (`make abc802-chargen-dump`) drives a synthetic
+character RAM that uses all of them and prints the result as ASCII art,
+with an optional `--png`. It shares the same decode, needs no CPU core,
+and prints the ROM's attribute-code inventory so the table above can be
+re-derived rather than trusted:
+
+```
+$ bin/abc802-chargen-dump
+  0x08 -> Row Flash    = 1
+  0x09 -> Row Flash    = 0
+  0x11 -> Row Graphic  = 1
+  0x18 -> Row Clear    = 1
+  (17 attribute codes)
+```
+
+One trap the tool itself hit: an early version demonstrated "Row Graphic
+switched off mid-row" using uppercase letters, which are byte-identical in
+both ROM halves — it would have passed with the attribute ignored
+entirely. It uses digits now, which genuinely differ.
+
+The PNG writer (`png.c`) is hand-written, using DEFLATE *stored* blocks so
+no compressor is needed, for the same reason `abc80/emu/src/sound.c`
+writes its own WAV header: the default build of this project has no
+third-party libraries. Output was validated against a strict decoder —
+chunk CRCs, zlib adler32, filter bytes and palette all check out.
+
+
 ## Known gaps
 
 Real, understood, and deliberately not solved yet — not oversights.
@@ -213,13 +304,16 @@ Real, understood, and deliberately not solved yet — not oversights.
   Milestone 2's findings). Backspace works. Closing this properly means
   disassembling the ROM's own line editor the way the ABC80 target's was,
   rather than guessing.
-- **No pixel rendering.** Both renderers print characters as text. The
-  character generator ROM is loaded and verified but not yet decoded into
-  pixels, so the row attributes (Row Graphic, Row Flash, Row Clear) are
-  not reproduced. Per-character inverse video *is* now shown, in
-  `--interactive`'s live frame, as terminal reverse video. The ABC802 has
-  no bitmap mode, so a text dump is a complete rendering of *which*
-  characters are on screen — just not of how they look.
+- **The terminal renderers do not use the pixel decode.** `--screenshot`
+  and `bin/abc802-chargen-dump` render real pixels (Milestone 3), but
+  `--screen` and `--interactive`'s live frame still print one character
+  per cell, so they do not show Row Graphic mosaics, Row Flash or Row
+  Clear — an attribute-heavy screen reads correctly as a PNG and
+  misleadingly in the terminal. `--interactive` does show inverse video
+  and the cursor. Closing this means either mapping the mosaic font onto
+  Unicode sextants the way `abc80/emu/src/render.c` does, or accepting a
+  half-block pixel render (480 columns wide, so realistically only for
+  a GTK front-end).
 - **The CRTC is a register file, not a timing model.** Rendering reads
   character RAM on demand rather than reproducing the real scanline fetch,
   and no vertical-sync interrupt is generated. The cursor *does* animate
@@ -245,14 +339,36 @@ Real, understood, and deliberately not solved yet — not oversights.
 
 ## Planned next steps
 
-None committed. Milestone 2 closed the first item that stood here. The
-remaining candidates, roughly in order of how much they would add:
+None committed. Milestones 2 and 3 closed the first two items that stood
+here. The remaining candidates, roughly in order of how much they would
+add:
 
-1. **Pixel rendering from the character ROM**, which would bring the row
-   attributes (Row Graphic, Row Flash, Row Clear) to life and is the
-   prerequisite for any GTK front-end.
+1. **A GTK front-end** (`bin/abc802-gtk`), now unblocked: Milestone 3's
+   `abc802_render_pixels()` is exactly the decode a Cairo widget needs,
+   and `abc80/gtk/` is the working precedent for the rest.
 2. **ABC-bus floppy support**, reusing the ABC80 target's existing,
    disassembly-grounded understanding of the same drives.
 3. **The ROM's line editor**, disassembled the way the ABC80's was, to
    settle what its cursor keys actually want and close the arrow-key gap
    above.
+
+## Sources consulted
+
+- MAME mainline driver and video code for the ABC800 family:
+  `src/mame/luxor/abc80x.cpp` and `src/mame/luxor/abc80x_v.cpp` — the
+  memory/I-O maps and ROM checksums (Milestone 1), and
+  `abc802_update_row()` plus its transcribed PAL16R4 equations, the ATE/
+  ATD/INV bit assignments in `abc80x.h`, and the FLSH-clock divider in
+  `vs_w()` (Milestone 3). Fetched from
+  <https://raw.githubusercontent.com/mamedev/mame/master/src/mame/luxor/abc80x_v.cpp>.
+  Note the driver is `abc80x`, covering the whole ABC800/802/806 family —
+  there is no `abc802.cpp`.
+- MAME's `rgb_t::amber()` — `src/lib/util/palette.h`, which defines the
+  amber phosphor this machine's screen is configured with as
+  `(247, 170, 0)`. Used verbatim by `--screenshot` rather than guessed at.
+- The committed ROM images themselves (`../resources/rom/`), used as the
+  independent cross-check on every fact taken from MAME above: the
+  attribute-code inventory, the two font halves and exactly which codes
+  differ between them, and the blank/cursor scanlines at `0x0E`/`0x0F`
+  were all re-derived from the ROM rather than trusted. See that
+  directory's own `README.md` for provenance and checksums.

@@ -17,7 +17,9 @@
 #include <unistd.h>
 
 #include "../../../z80core/z80.h"
+#include "chargen.h"
 #include "memory.h"
+#include "png.h"
 #include "ports.h"
 #include "render.h"
 
@@ -205,6 +207,9 @@ static void usage(const char *argv0) {
     printf("  --dos-rom FILE   DOS/option ROM image (default: %s)\n", DEFAULT_DOS_ROM);
     printf("  --cycles N       stop after N T-states (default: 20000000)\n");
     printf("  --screen         print the text screen when the run ends\n");
+    printf("  --screenshot F   write the screen as a real PNG to F when the run\n");
+    printf("                   ends - actual pixels from the character ROM,\n");
+    printf("                   including the row attributes --screen cannot show\n");
     printf("  --profile        print the most-executed addresses when the run ends\n");
     printf("  --type TEXT      send TEXT to the keyboard once the ROM is ready for it\n");
     printf("  --interactive    live keyboard input (raw terminal) and a real-time,\n");
@@ -224,6 +229,7 @@ int main(int argc, char **argv) {
     int show_screen = 0;
     int show_profile = 0;
     const char *type_text = NULL;
+    const char *screenshot_path = NULL;
     int columns = 40;
     bool interactive = false;
     bool cycles_given = false;
@@ -241,6 +247,8 @@ int main(int argc, char **argv) {
             cycles_given = true;
         } else if (!strcmp(argv[i], "--screen")) {
             show_screen = 1;
+        } else if (!strcmp(argv[i], "--screenshot") && i + 1 < argc) {
+            screenshot_path = argv[++i];
         } else if (!strcmp(argv[i], "--profile")) {
             show_profile = 1;
         } else if (!strcmp(argv[i], "--type") && i + 1 < argc) {
@@ -459,5 +467,37 @@ int main(int argc, char **argv) {
     }
 
     if (show_screen) abc802_render_text_screen(stdout);
+
+    if (screenshot_path) {
+        // The real machine's phosphor: MAME's own abc802_video() machine
+        // config asks for rgb_t::amber(), which its palette header defines
+        // as (247, 170, 0). Black background, as a monochrome CRT has.
+        static const uint8_t amber[3] = {247, 170, 0};
+        static const uint8_t black[3] = {0, 0, 0};
+
+        Abc802Screen screen = {
+            .char_rom = abc802_char_rom(),
+            .char_ram = abc802_char_ram(),
+            .cols = abc802_crtc_reg(1),
+            .rows = abc802_crtc_reg(6),
+            .start = ((abc802_crtc_reg(12) & 0x3F) << 8) | abc802_crtc_reg(13),
+            .eighty_column = abc802_80_column(),
+            .cursor_addr = abc802_cursor_address(),
+            .flash_on = abc802_flash_phase(cycles),
+        };
+
+        int w = abc802_pixel_width(&screen);
+        int h = abc802_pixel_height(&screen);
+        static uint8_t pixels[ABC802_MAX_PIXELS];
+
+        if (!abc802_render_pixels(&screen, pixels, sizeof(pixels))) {
+            fprintf(stderr, "Screenshot failed: CRTC not programmed, or screen too large\n");
+        } else if (!abc802_write_png(screenshot_path, pixels, w, h, amber, black)) {
+            fprintf(stderr, "Screenshot failed: could not write '%s'\n", screenshot_path);
+        } else {
+            printf("Screenshot: %s (%dx%d)\n", screenshot_path, w, h);
+        }
+    }
+
     return halted ? EXIT_FAILURE : EXIT_SUCCESS;
 }
