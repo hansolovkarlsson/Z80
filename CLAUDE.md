@@ -176,6 +176,22 @@ every already-built object compiled against the old, smaller struct while
 CP/M program silently produced no output at all - a failure a plain
 `make clean` hides, which is exactly what makes it worth tracking.
 
+Project history lives in the top-level `docs/` too, and is worth
+consulting before repeating an investigation: `docs/JOURNAL.md` is a
+running log organized by *when* (what was worked on, why an approach was
+chosen, what turned out to be wrong first), and `docs/postmortems/` holds
+write-ups of failures whose lesson outlived the fix — currently the
+missing block I/O opcodes, `--type`'s raw-UTF-8 bug, the DART's
+single-receive-byte constraint, and the "boot screen cannot validate the
+feature" near-miss. Each machine target's *finished* work now lives in its
+own `*_COMPLETED.md` (`cpm/docs/COMPLETED.md`,
+`abc80/docs/ABC80_COMPLETED.md`, `abc802/docs/ABC802_COMPLETED.md`) rather
+than in its roadmap, so each `ROADMAP.md` answers only "what works, what
+doesn't, what's next" — they had grown to 4,605 lines between them, nearly
+all of it completed-work narrative. The milestone write-ups themselves are
+unchanged and still worth reading: most of this project's hard-won
+hardware knowledge is in them, especially the "found the hard way" notes.
+
 Two generic reference docs live in the top-level `docs/` (not
 CP/M-specific, so not under `cpm/docs/` — same reasoning as `asm/`/
 `disasm/` above, which they document): `Z80_REFERENCE.md` (the Z80

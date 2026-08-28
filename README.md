@@ -148,9 +148,15 @@ see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
 - `docs/` — generic, non-CP/M-specific reference docs: a Z80 CPU
   reference including undocumented opcodes
   ([`Z80_REFERENCE.md`](docs/Z80_REFERENCE.md)) and the assembler syntax
-  reference ([`ASSEMBLER.md`](docs/ASSEMBLER.md)).
+  reference ([`ASSEMBLER.md`](docs/ASSEMBLER.md)). Also the project's
+  cross-cutting history: [`JOURNAL.md`](docs/JOURNAL.md), a running log of
+  what was worked on and what it taught, and
+  [`postmortems/`](docs/postmortems/), write-ups of the failures whose
+  lesson outlived the fix.
 - `cpm/docs/` — the CP/M-side project roadmap
-  ([`ROADMAP.md`](cpm/docs/ROADMAP.md)), a CP/M 2.2 BDOS/BIOS reference
+  ([`ROADMAP.md`](cpm/docs/ROADMAP.md)) covering what is left, with the
+  finished phases in [`COMPLETED.md`](cpm/docs/COMPLETED.md); a CP/M 2.2
+  BDOS/BIOS reference
   ([`CPM_REFERENCE.md`](cpm/docs/CPM_REFERENCE.md)) for the Phase 3 work,
   and references for the real CP/M software this emulator's been
   validated against: the CCP shell
@@ -163,13 +169,20 @@ see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
   1978 BASIC ROM with video, keyboard, cassette, sound, a periodic PIO
   interrupt, and floppy support, plus an opt-in GTK4 front-end
   (`make abc80-gtk`). See
-  [`ABC80_ROADMAP.md`](abc80/docs/ABC80_ROADMAP.md).
+  [`ABC80_ROADMAP.md`](abc80/docs/ABC80_ROADMAP.md) for what is left and
+  [`ABC80_COMPLETED.md`](abc80/docs/ABC80_COMPLETED.md) for the finished
+  milestones.
 - `abc802/` — the Luxor ABC802 machine target (`make abc802`): boots the
-  real 1983 BASIC II ROM to a working prompt — MC6845 CRTC, Z80
-  CTC/DART/SIO on an IM 2 daisy chain, the M1-decoded character-RAM
-  overlay, and a serial keyboard. See
-  [`ABC802_ROADMAP.md`](abc802/docs/ABC802_ROADMAP.md) and
-  [`ABC802_REFERENCE.md`](abc802/docs/ABC802_REFERENCE.md).
+  real 1983 BASIC II ROM — MC6845 CRTC, Z80 CTC/DART/SIO on an IM 2 daisy
+  chain, the M1-decoded character-RAM overlay, and a serial keyboard —
+  with a live `--interactive` session, real pixel rendering from the
+  character ROM (`--screenshot`), and an opt-in GTK4 front-end
+  (`make abc802-gtk`). See
+  [`ABC802_ROADMAP.md`](abc802/docs/ABC802_ROADMAP.md) for what is left,
+  [`ABC802_COMPLETED.md`](abc802/docs/ABC802_COMPLETED.md) for the
+  finished milestones, and
+  [`ABC802_REFERENCE.md`](abc802/docs/ABC802_REFERENCE.md) for the
+  hardware.
 - `cpm/gtk/` — an opt-in (`make gtk`) thin GTK4 launcher for `bin/z80`,
   attached to a pty with a `VteTerminal` doing the real terminal
   interpretation. See `cpm/gtk/README.md`.
