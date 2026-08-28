@@ -101,25 +101,132 @@ through DART modem-status inputs, and the character-cell renderer.
   `make clean` hid it. Now fixed with `-MMD -MP` plus `-include`, and
   verified by touching a header and watching the right objects rebuild.
 
+## Milestone 2: live interactive keyboard and screen — done
+
+`bin/abc802 --interactive` is a real session: keystrokes reach BASIC as
+they are typed, the screen redraws continuously at ABC802 speed, and the
+cursor blinks. Previously input arrived only through `--type`, a fixed
+string fed at a paced rate, and the screen was a single dump printed
+after the run ended.
+
+What it does:
+
+- **Raw terminal input.** `termios` with `ICANON`/`ECHO` off (the ROM
+  does its own echo through character RAM), `ICRNL`/`INLCR`/`IGNCR` off
+  so a real Enter arrives as `0x0D`, and `IXON` off so `Ctrl-S`/`Ctrl-Q`
+  are not swallowed as flow control. `VINTR` is set to `_POSIX_VDISABLE`
+  so `Ctrl-C` reaches BASIC as a plain `0x03` byte instead of killing the
+  emulator; `Ctrl-\` (SIGQUIT) is the tool's own quit key. The original
+  terminal mode is restored through `atexit()`, and SIGINT/SIGQUIT are
+  caught rather than defaulted so an external `kill -INT` cannot leave a
+  user's shell in raw mode.
+- **Real-time pacing.** Execution is throttled to the real 3 MHz clock,
+  corrected every 500 instructions rather than every one — `clock_gettime()`
+  and `nanosleep()` are real syscalls and three million of each per second
+  would swamp the emulation. `--cycles` is uncapped in this mode unless
+  given explicitly.
+- **A live screen**, redrawn at up to 30 fps, with per-character inverse
+  video (bit 7) and the real cursor — neither of which the static
+  `--screen` dump shows, because neither means anything without motion.
+  `--screen`'s own output is byte-for-byte unchanged.
+- **Swedish letters.** Å/Ä/Ö/Ü/É and lowercase arrive from a host
+  terminal as 2-byte UTF-8 and are translated to the machine's ISO 646
+  codes. One table in `render.c` drives both this and the screen decode,
+  so a letter the display can show is always a letter the keyboard can
+  type.
+
+Verified end to end, at both column widths:
+
+```
+$ printf 'PRINT "\xc3\x85\xc3\x84\xc3\x96"\r' | bin/abc802 --interactive --columns 80
+ABC802
+PRINT "ÅÄÖ"
+ÅÄÖ
+ABC802
+
+$ printf '10 FOR I=1 TO 3\r20 PRINT I;I*I\r30 NEXT I\rRUN\r' | bin/abc802 --interactive
+ABC802
+10 FOR I=1 TO 3
+20 PRINT I;I*I
+30 NEXT I
+RUN
+ 1  1
+ 2  4
+ 3  9
+ABC802
+```
+
+### Things this milestone found the hard way
+
+- **The cursor blink comes from the ROM, not from the emulator.**
+  Tracing the real ROM's CRTC writes shows it toggling MC6845 R10
+  between `0x09` (cursor mode 00, non-blink/displayed) and `0x29`
+  (mode 01, non-display) continuously, driven by its own 93.75 Hz clock
+  interrupt — it blinks the cursor in *software*. So `--interactive`
+  needs no blink-rate constant at all, unlike `bin/abc80`, which has to
+  supply its own `ABC80_BLINK_HZ` (3.125 Hz, from MAME's blink timer)
+  because that machine blinks in hardware. Honoring R10 and pacing
+  execution correctly is the whole implementation; the measured result
+  is a ~2.7 Hz blink that the firmware, not this code, decides.
+- **Live input has to be paced exactly like `--type` is.** The DART holds
+  a single receive byte. A human at a keyboard cannot outrun that, but a
+  pipe or a paste delivers a whole line at once, and the bytes then
+  overwrite each other. Piping `PRINT 6*7` into the first version of
+  `--interactive` reached BASIC as *nothing at all*. The fix is the same
+  ~0.1s (300,000 T-state) inter-key gap `--type` already used; unsent
+  input simply waits in the host's own terminal/pipe buffer, so nothing
+  is dropped, it is just drained at the speed the real machine could
+  accept it.
+- **That gap must not apply to multi-byte sequences.** A UTF-8 lead byte
+  returns "nothing yet" and needs its continuation promptly — those
+  sequences time out after 0.05s of *real* time, which is shorter than
+  the key gap is at real ABC802 speed. Restarting the gap on a
+  partial read would expire every one of them and no accented letter
+  would ever arrive. The gap therefore restarts only when a byte is
+  actually delivered.
+- **The host Backspace key sends DEL, and this ROM does not want DEL.**
+  The line editor implements a real destructive delete on `0x08`
+  (`PRINT 12` + two `0x08` + `3` evaluates to `3`) but treats `0x7F` as
+  an ordinary printable character, echoing a blank into the line
+  (`PRINT 12` + two `0x7F` + `3` leaves `PRINT 12  3`). Untranslated, a
+  user's Backspace would silently corrupt what they typed rather than
+  erase it, so DEL is rewritten to BS. Both behaviors were established by
+  probing the real ROM, not assumed from the ABC80's.
+- **The ABC802's line editor is not the ABC80's.** The ABC80 target
+  translates host arrow keys to `0x08`/`0x09`, grounded in a disassembly
+  of *that* ROM's editor. Probing this one with the obvious candidates
+  found no non-destructive cursor-right: `0x09` and `0x1F` are ignored
+  and `0x0C` clears the screen. Rather than invent a mapping, arrow keys
+  are dropped and this is recorded as a known gap below.
+
+
 ## Known gaps
 
 Real, understood, and deliberately not solved yet — not oversights.
 
-- **No interactive mode.** Input arrives through `--type`, which feeds a
-  fixed string at a paced rate; there is no live-keyboard mode like
-  `bin/abc80 --interactive`, and no GTK front-end. The keyboard path
-  itself is real (DART receive plus interrupt), so this is a front-end
-  gap rather than a hardware-modeling one.
-- **No pixel rendering.** `--screen` prints character codes as text. The
+- **No GTK front-end.** `--interactive` (Milestone 2) covers live
+  keyboard and a live screen in a terminal, but there is no equivalent of
+  `bin/abc80-gtk`. That needs pixel rendering first — see the next gap.
+- **Arrow keys are dropped.** A host terminal's cursor keys arrive as ESC
+  sequences and are discarded rather than translated: probing the ROM
+  found no byte that acts as a non-destructive cursor-right (see
+  Milestone 2's findings). Backspace works. Closing this properly means
+  disassembling the ROM's own line editor the way the ABC80 target's was,
+  rather than guessing.
+- **No pixel rendering.** Both renderers print characters as text. The
   character generator ROM is loaded and verified but not yet decoded into
-  pixels, so the row attributes (Row Graphic, Row Flash, Row Clear) and
-  per-character inverse video are not reproduced. The ABC802 has no
-  bitmap mode, so a text dump is a complete rendering of *which*
+  pixels, so the row attributes (Row Graphic, Row Flash, Row Clear) are
+  not reproduced. Per-character inverse video *is* now shown, in
+  `--interactive`'s live frame, as terminal reverse video. The ABC802 has
+  no bitmap mode, so a text dump is a complete rendering of *which*
   characters are on screen — just not of how they look.
 - **The CRTC is a register file, not a timing model.** Rendering reads
   character RAM on demand rather than reproducing the real scanline fetch,
-  and no vertical-sync interrupt is generated. The ROM's cursor and
-  flash-clock behavior therefore is not animated.
+  and no vertical-sync interrupt is generated. The cursor *does* animate
+  now — the ROM blinks it in software through R10, so it needs no
+  scanline model (Milestone 2) — but anything genuinely tied to field
+  timing, including the hardware cursor-blink modes (R10 bits 6:5 = 10/11)
+  and the character generator's Row Flash attribute, still is not.
 - **The SIO is a stub.** Reads report "transmit buffer empty, no receive
   data" so ROM polling loops exit. Nothing is attached to either channel,
   so the RS-232 ports and cassette do not work.
@@ -138,14 +245,14 @@ Real, understood, and deliberately not solved yet — not oversights.
 
 ## Planned next steps
 
-None committed. The natural candidates, roughly in order of how much
-they would add:
+None committed. Milestone 2 closed the first item that stood here. The
+remaining candidates, roughly in order of how much they would add:
 
-1. **Live interactive keyboard**, matching `bin/abc80 --interactive` —
-   the hardware path already works, so this is mostly host-terminal
-   plumbing that target has already solved once.
-2. **Pixel rendering from the character ROM**, which would bring the row
-   attributes and inverse video to life and is the prerequisite for any
-   GTK front-end.
-3. **ABC-bus floppy support**, reusing the ABC80 target's existing,
+1. **Pixel rendering from the character ROM**, which would bring the row
+   attributes (Row Graphic, Row Flash, Row Clear) to life and is the
+   prerequisite for any GTK front-end.
+2. **ABC-bus floppy support**, reusing the ABC80 target's existing,
    disassembly-grounded understanding of the same drives.
+3. **The ROM's line editor**, disassembled the way the ABC80's was, to
+   settle what its cursor keys actually want and close the arrow-key gap
+   above.

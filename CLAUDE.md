@@ -77,7 +77,19 @@ Milestone 1 it boots the real, unmodified BASIC II ROM images (committed
 under `abc802/resources/rom/`, every one verified byte-for-byte against
 MAME's published CRC32 *and* SHA1) to a working prompt: `bin/abc802
 --columns 80 --type "PRINT 6*7"` renders the ROM's own sign-on banner,
-its echo of the typed line, and its answer, `42`.
+its echo of the typed line, and its answer, `42`. Milestone 2 adds
+`--interactive`: a genuine live session (raw-terminal keyboard, real
+3 MHz pacing, a screen redrawn at 30fps with inverse video and a real
+cursor), on the same terms `bin/abc80 --interactive` established. Two
+things there are worth knowing. Live input is deliberately paced with the
+*same* ~0.1s inter-key gap `--type` uses, because the DART holds one
+receive byte and a pipe or paste would otherwise overwrite the whole line
+away — but that gap is skipped mid-sequence, since a UTF-8 lead byte's
+continuation must arrive inside a much shorter real-time timeout. And the
+cursor blink needs no constant like ABC80's `ABC80_BLINK_HZ`: this ROM
+blinks in *software*, toggling MC6845 R10 between `0x09` and `0x29` from
+its own 93.75 Hz clock interrupt, so honoring R10 and pacing execution is
+the entire implementation.
 
 Two ABC802-specific implementation facts are worth knowing before
 touching that target, because neither is guessable from a memory map.
