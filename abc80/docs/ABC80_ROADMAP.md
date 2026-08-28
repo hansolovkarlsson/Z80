@@ -124,8 +124,11 @@ None committed. Candidates, in rough order of how much they would add:
 
 - **A second drive.** The card supports eight units and the ABC802 target
   already exposes them (`--disk` repeated, `N:FILE` to pin one). ABC-DOS
-  scans all eight at boot, so `DR1:` should work with only the CLI
-  plumbing. Untested — no second real ABC80 image is in hand.
+  scans all eight at boot — visible in `ABCBUS_TRACE=1` output, which
+  walks units 0-7 reading directory sectors 16-23 on each — so this is
+  mostly CLI plumbing. Testable: two distinct real images exist in the
+  abc80.net archive set this project already uses (`disk001.img` and
+  `disk003.img`; `disk002.img` is byte-identical to `disk001.img`).
 - **A UFD-DOS-formatted disk image.** `--dos-rom UFD80V20.bin` drives the
   card correctly (Milestone 12) but has only ever been pointed at
   ABC-DOS media, which it reads fine and then correctly reports has no
