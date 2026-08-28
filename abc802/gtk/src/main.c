@@ -218,10 +218,13 @@ static void queue_key(AppState *app, uint8_t byte) {
 // pre-folding it the way a tty driver does. Ctrl-C matters in particular -
 // it reaches BASIC as a plain 0x03, which is where a break belongs.
 //
-// Arrow keys are deliberately not mapped. Probing the real ROM's line
-// editor found no non-destructive cursor-right (0x09 and 0x1F ignored,
-// 0x0C clears the screen), so there is nothing grounded to map them to;
-// see ABC802_ROADMAP.md's known gaps.
+// Left arrow maps to 0x08; the other three are dropped. Sweeping the ROM's
+// line editor with every byte 0x00-0x1F (and a sample of 0x80-0xFF)
+// established that its whole vocabulary is backspace (0x08), discard-line
+// (0x18), clear-screen (0x0C) and the three line terminators 0x03/0x0A/
+// 0x0D - **no cursor movement of any kind**. So Left becomes the only
+// leftward motion that exists, and Right has nothing to become. See
+// abc802/emu/src/main.c for the full table.
 static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval,
                                 guint keycode, GdkModifierType state, gpointer user_data) {
     (void)controller;
@@ -243,6 +246,9 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval,
             return TRUE;
         case GDK_KEY_BackSpace:
         case GDK_KEY_Delete:
+            queue_key(app, 0x08);
+            return TRUE;
+        case GDK_KEY_Left:
             queue_key(app, 0x08);
             return TRUE;
         case GDK_KEY_Escape:

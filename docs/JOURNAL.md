@@ -17,6 +17,51 @@ in an entry here.
 
 ---
 
+## 2026-08-28 (last) — ABC802 Milestone 8: the line editor, and a gap that wasn't
+
+Closed the arrow-key gap Milestone 2 left open — by discovering there was
+nothing to close.
+
+Milestone 2 had recorded it as "probing found no non-destructive
+cursor-right; closing this properly means disassembling the ROM's own line
+editor the way the ABC80 target's was." That framing quietly assumed the
+mapping existed and simply had not been found. It doesn't.
+
+I swept the editor with every byte `0x00`-`0x1F` plus a sample across
+`0x80`-`0xFF`, typing `ABCDE<code>X` each time and reading back what
+happened to the line. Its entire vocabulary is six codes: backspace
+(`0x08`), discard-line (`0x18`), clear-screen (`0x0C`), and three line
+terminators (`0x03`/`0x0A`/`0x0D`). **No cursor movement of any kind**, in
+either byte range. This is a genuinely simpler editor than the ABC80's,
+which does have a non-destructive cursor-right at `0x09`.
+
+So Left maps to `0x08` — the only leftward motion that exists, and the key
+that literally *is* backspace on the ABC80's own keyboard — and Right is
+dropped, because the machine has nothing for it to do. The known-gap entry
+becomes a documented hardware fact instead, phrased so nobody re-opens it
+as a missing feature.
+
+### On the method
+
+The planned approach was a disassembly, and it would have been the harder
+road for a worse answer. The editor sits in a region `bin/z80dasm` cannot
+reach — it is only entered indirectly, so a reachability-based
+disassembler renders it as `DB` bytes, which is exactly what happened when
+I looked. I could have carved the region out and disassembled it linearly,
+but then I would be reasoning about code paths I might have misread.
+
+A 47-run behavioral sweep answered the question completely, and answered
+it about *behavior* rather than about my reading of assembly. It also
+turned up something the disassembly plan wasn't even aiming at: Ctrl-X
+discards the whole line, has always worked, and had never been documented.
+
+Worth remembering as a general preference. Disassembly tells you what the
+code appears to do; a sweep tells you what the machine does. When the
+question is "what does this accept?", and the input space is 256 values
+wide, just try all of them.
+
+---
+
 ## 2026-08-28 (end of day) — ABC802 Milestone 7: a second drive
 
 Short one. `--disk` is now repeatable, so images take drives 0, 1, … in

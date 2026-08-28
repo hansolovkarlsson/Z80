@@ -144,6 +144,15 @@ Milestone 7 makes `--disk` repeatable (drives 0, 1, …, or `N:FILE` to pin
 one), so `MO1:`/`MF1:` work; all drives must share one type, since one
 controller is modeled.
 
+Milestone 8 settled the line editor by sweeping every control code rather
+than disassembling it (that routine is only entered indirectly, so
+`bin/z80dasm` renders it as `DB` bytes). Its entire vocabulary is
+backspace `0x08`, discard-line `0x18`, clear-screen `0x0C`, and the
+terminators `0x03`/`0x0A`/`0x0D` — **no cursor movement at all**, unlike
+the ABC80's editor, which has a non-destructive cursor-right at `0x09`.
+Left arrow therefore maps to `0x08` and Right is deliberately dropped;
+that is hardware, not a missing feature.
+
 `--type-at N` exists for disk work specifically:
 the ROM reports the keyboard ready long before a booting program is
 listening, and discards anything typed meanwhile.

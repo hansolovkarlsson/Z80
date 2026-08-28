@@ -21,7 +21,7 @@ that machine's documentation thins out.
 
 ## Completed work
 
-Milestones 1-7 are done. Their full write-ups — including what each one
+Milestones 1-8 are done. Their full write-ups — including what each one
 found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 
 | # | Milestone | Outcome |
@@ -33,6 +33,7 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 | 5 | ABC-bus floppy support | `--disk` boots real 160KB ABC830 images and round-trips `SAVE`/`LOAD`, via a synthetic bus controller |
 | 6 | The ABC832/834 640K drive | the ABC802's own native drive; controller type auto-detected from image size |
 | 7 | A second drive | `--disk` repeats for drives 0, 1, …; `MO1:`/`MF1:` work and are independent |
+| 8 | The line editor's vocabulary | swept every control code; Left arrow works, Right correctly does nothing — the machine has no cursor movement |
 
 ## Known gaps
 
@@ -42,12 +43,12 @@ Real, understood, and deliberately not solved yet — not oversights.
   `bin/abc80-gtk` has. Load/Save has nothing to wire to until this target
   gets a cassette or disk path at all; the amber phosphor is fixed at the
   machine's real value. See `../gtk/README.md`.
-- **Arrow keys are dropped.** A host terminal's cursor keys arrive as ESC
-  sequences and are discarded rather than translated: probing the ROM
-  found no byte that acts as a non-destructive cursor-right (see
-  Milestone 2's findings). Backspace works. Closing this properly means
-  disassembling the ROM's own line editor the way the ABC80 target's was,
-  rather than guessing.
+- **The line editor has no cursor movement, and that is the hardware.**
+  Left arrow maps to backspace and Right does nothing, because a full
+  sweep of every control code (Milestone 8) established the editor's whole
+  vocabulary as backspace, discard-line, clear-screen and three line
+  terminators. Listed here so nobody re-opens it as a missing feature: it
+  is a documented property of this ROM, not a gap in the emulator.
 - **The terminal renderers do not use the pixel decode.** `--screenshot`
   and `bin/abc802-chargen-dump` render real pixels (Milestone 3), but
   `--screen` and `--interactive`'s live frame still print one character
@@ -94,19 +95,24 @@ Real, understood, and deliberately not solved yet — not oversights.
 
 ## Planned next steps
 
-None committed. Milestones 2-7 closed the items that previously stood
+None committed. Milestones 2-8 closed the items that previously stood
 here. The remaining candidates, roughly in order of how much they would
 add:
 
-1. **The ROM's line editor**, disassembled the way the ABC80's was, to
-   settle what its cursor keys actually want and close the arrow-key gap
-   above.
-3. **The SIO**, currently a stub, which is what the RS-232 ports and
-   cassette would need.
-4. **Retiring the ABC80 target's PC-trap bypass** in favour of the same
-   synthetic controller, now that one exists and is verified. That target
-   uses the identical bus and drives, and its trap is a known shortcut —
-   this would close it rather than leave two mechanisms for one job.
+1. **The SIO**, currently a stub, which is what the RS-232 ports and the
+   cassette interface would need.
+2. **Retiring the ABC80 target's PC-trap bypass** in favour of the same
+   synthetic controller, now that one exists and is verified on two drive
+   types. That target uses the identical bus and drives, and its trap is a
+   known shortcut — this would close it rather than leave two mechanisms
+   for one job.
+3. **Two controllers at once** (an ABC830 *and* an ABC832 on the bus),
+   which the current one-controller design cannot express. Only worth
+   doing if some real software turns out to want both.
+4. **The `SF`/`HD` drive types**, which the ROM scans for and the geometry
+   table is shaped to take. Blocked on verified geometry and test media —
+   and note that interleave cannot be inferred from the working drives,
+   which need opposite settings.
 
 ## Sources consulted
 

@@ -7,6 +7,7 @@ so the default build stays free of the GTK4 dependency. Needs `gtk4`
 ```
 make abc802-gtk
 bin/abc802-gtk --columns 80
+bin/abc802-gtk --columns 80 --disk system.img --disk games.img
 ```
 
 ## What it is
@@ -103,10 +104,11 @@ most keys need no table. What needs handling:
 - **Å/Ä/Ö/Ü/É** go through the emulator's own charset table, the same one
   the renderer decodes with.
 
-**Arrow keys are deliberately unmapped.** Probing the real ROM's line
-editor found no non-destructive cursor-right (`0x09` and `0x1F` are
-ignored, `0x0C` clears the screen), so there is nothing grounded to map
-them to. See `../docs/ABC802_ROADMAP.md`'s known gaps.
+**Left arrow deletes; the other three do nothing.** A full sweep of the
+ROM's line editor (Milestone 8) established that its entire vocabulary is
+backspace, discard-line, clear-screen and three line terminators — there
+is no cursor movement on this machine at all. Left therefore maps to
+`0x08`, the only leftward motion that exists, and the rest are dropped.
 
 Keystrokes are queued in a small ring buffer and handed to the DART no
 faster than one per ~0.1s of emulated time. That is not throttling for its
@@ -116,10 +118,12 @@ so without a queue a fast typist's keys would overwrite each other.
 
 ## Known gaps
 
-- **No Load/Save.** `bin/abc80-gtk` has Save/Load Program because that
-  machine's cassette quickload/quicksave exists; the ABC802 target has no
-  equivalent yet (no ABC-bus card, no cassette — see the roadmap), so
-  there is nothing to wire a dialog to.
+- **No File dialog for disks.** `--disk FILE` attaches floppy images at
+  launch (160K ABC830 or 640K ABC832/834, repeat for more drives), and
+  BASIC's own `SAVE`/`LOAD` then work against them — but there is no
+  in-window way to swap a disk, the way `bin/abc80-gtk`'s Save/Load
+  Program dialogs work for that machine's cassette. A "Change Disk…" menu
+  item would be the natural addition.
 - **No color picker.** `bin/abc80-gtk` grew one; here the amber phosphor
   is fixed at the machine's real `(247, 170, 0)`.
 - **Window size is fixed at startup** to 2x the emulated 480x240. The

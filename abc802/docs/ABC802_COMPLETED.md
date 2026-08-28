@@ -541,3 +541,68 @@ controller is fitted and its drives are all of its own kind —
 Disk image 'mf001.img' is a mf image, but a mo controller is already fitted
 ```
 
+## Milestone 8: the line editor's actual vocabulary — done
+
+The arrow-key gap Milestone 2 left open is closed, though not the way it
+was expected to be. The **Left** arrow now works in both `--interactive`
+and `bin/abc802-gtk`. **Right does nothing, correctly** — because there is
+nothing on this machine for it to do.
+
+### What the editor actually accepts
+
+Established by sweeping the ROM's line editor with every byte `0x00`-`0x1F`
+and a sample across `0x80`-`0xFF`, typing `ABCDE<code>X` in each case and
+reading back what the editor did to the line. The whole vocabulary:
+
+| Code | Key | Effect on the line |
+|---|---|---|
+| `0x03` | Ctrl-C | terminates it (break) |
+| `0x08` | Backspace | destructive delete-left |
+| `0x0A` | Ctrl-J | terminates it |
+| `0x0C` | Ctrl-L | clears the screen |
+| `0x0D` | Return | terminates it |
+| `0x18` | Ctrl-X | discards the whole line |
+| everything else | — | ignored, or appended if printable |
+
+**There is no cursor movement of any kind.** Not a non-destructive left,
+not a right, and nothing in the high byte range either — `0x80`-`0xFF`
+behave exactly like their low equivalents. This is a genuinely simpler
+editor than the ABC80's, which does have a non-destructive cursor-right
+(`0x09`).
+
+So Left maps to `0x08` — the only leftward motion that exists, and the
+same key that literally *is* backspace on the ABC80's own keyboard — and
+Right is dropped, harmlessly, since the editor ignores control bytes it
+does not recognize.
+
+### Why this was a finding rather than a fix
+
+Milestone 2 recorded this as a known gap on the assumption that the
+mapping existed and had not been found yet: "closing this properly means
+disassembling the ROM's own line editor." That framing was wrong. The
+honest closure was to establish that **the machine has no such function**,
+which turns an open item into a documented hardware fact.
+
+The method mattered. A disassembly would have had to find the editor
+first — it sits in a region the reachability-based `bin/z80dasm` cannot
+reach, since it is only entered indirectly. A 47-run behavioral sweep
+answered the same question completely, and answered it about *behavior*
+rather than about code that might have had paths the reader missed.
+
+Verified end to end:
+
+```
+$ printf 'PRINT 12\x1b[D\x1b[D3\r' | bin/abc802 --interactive --columns 80
+PRINT 3
+ 3
+$ printf 'PRINT 4\x1b[C\x1b[C2\r' | bin/abc802 --interactive --columns 80
+PRINT 42
+ 42
+$ printf 'GARBAGE\x18PRINT 7*6\r' | bin/abc802 --interactive --columns 80
+PRINT 7*6
+ 42
+```
+
+Left deletes; Right is swallowed rather than typed as garbage; Ctrl-X
+discards the line, which had always worked and had never been documented.
+

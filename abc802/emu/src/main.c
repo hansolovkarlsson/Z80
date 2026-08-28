@@ -122,17 +122,29 @@ static int poll_stdin_byte(void) {
 // Buffer the lead byte, wait for its continuation, then look the
 // codepoint up via render.c's own charset table.
 //
-// ESC-introduced sequences (a modern terminal's arrow keys, function
-// keys, and so on) are recognized only well enough to be *discarded*, not
-// translated. That is deliberate. The ABC80 target does translate its
-// arrow keys, because disassembling that ROM's line editor established
-// exactly which two bytes it wants (0x08/0x09). The ABC802's editor is a
-// different one, and probing it with the obvious candidates found no
-// non-destructive cursor-right at all: 0x09 and 0x1F are ignored, and
-// 0x0C clears the screen. Rather than invent a mapping, this drops them -
-// harmless, since the ROM ignores unrecognized control bytes anyway - and
-// ABC802_ROADMAP.md records it as a known gap for whoever disassembles
-// that editor.
+// ESC-introduced sequences (a modern terminal's arrow keys, function keys
+// and so on) are handled by translating the one that has a meaning on this
+// machine and discarding the rest.
+//
+// Which one that is was settled by sweeping the ROM's line editor with
+// every byte 0x00-0x1F and a sample of 0x80-0xFF, and reading back what
+// each did to a typed line. Its entire vocabulary is:
+//
+//   0x03  terminate the line (break)
+//   0x08  destructive backspace
+//   0x0A  terminate the line
+//   0x0C  clear the screen
+//   0x0D  terminate the line (Return)
+//   0x18  discard the whole line
+//   everything else  ignored, or appended if printable
+//
+// **There is no cursor movement of any kind** - no non-destructive left,
+// no right, nothing in the high range either. So Left maps to 0x08, the
+// only leftward motion the editor has (and the same key that *is*
+// backspace on the ABC80's own keyboard), and Right is dropped because
+// the machine has nothing for it to do. That is a property of this ROM,
+// not a gap in this emulator - which is why it is stated here rather than
+// tracked as an open item.
 #define ABC802_ESC_SEQUENCE_TIMEOUT_SEC 0.05
 
 // Every common terminal's Backspace key sends DEL (0x7F), not BS (0x08).
@@ -198,7 +210,11 @@ static int poll_keyboard_byte(void) {
         return (esc_state == ESC_BRACKET) ? -1 : b;
     }
 
-    esc_state = ESC_NONE; // ESC_BRACKET: a CSI sequence, deliberately dropped
+    // ESC_BRACKET: a CSI sequence. Left is the only one this machine can
+    // act on; everything else is dropped, harmlessly, since the editor
+    // ignores control bytes it does not recognize anyway.
+    esc_state = ESC_NONE;
+    if (b == 'D') return ABC802_BS;
     return -1;
 }
 
