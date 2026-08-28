@@ -113,6 +113,26 @@ and that tool is not optional cover: the ROM's boot screen uses none of
 the three attributes, so `--screenshot` would render it perfectly with the
 attribute state machine completely broken.
 
+Milestone 4 adds `bin/abc802-gtk` (`abc802/gtk/`, opt-in via `make
+abc802-gtk`) — a real Cairo pixel framebuffer like `bin/abc80-gtk`, not a
+VTE launcher like `cpm/gtk/`, and needing only `gtk4` (no SDL2 and no
+threads at all, since this machine's only sound is a strobe the emulator
+doesn't sound). It is far shorter than ABC80's equivalent because that
+decode is already shared and verified; `abc802_step()`
+(`abc802/emu/src/step.h`) was extracted at the same time so the CLI's
+`--interactive` loop and the window share the per-instruction logic, the
+same move ABC80's Milestone 11 made. The thing worth copying from it is
+`--screenshot`: it opens no window and never creates a `GtkApplication`,
+but renders through the *identical* `draw_screen()` the live window uses,
+against an offscreen surface. That exists because automating
+`screencapture` against the user's real desktop steals focus and switches
+Spaces (see `abc80/gtk/README.md`), so this app was built to verify itself
+instead — and it immediately earned its keep, catching that `--type` fed
+its argument to the keyboard as raw bytes, so `PRINT "ÅÄÖ"` reached BASIC
+as UTF-8 and errored, while the interactive paths decoded the same text
+correctly. `abc802_utf8_to_chars()` (`render.c`) is now the one converter
+both use.
+
 Two ABC802-specific implementation facts are worth knowing before
 touching that target, because neither is guessable from a memory map.
 First, **the character RAM at `0x7800-0x7FFF` is decoded by the M1

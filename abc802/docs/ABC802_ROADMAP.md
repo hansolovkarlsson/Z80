@@ -291,13 +291,65 @@ third-party libraries. Output was validated against a strict decoder —
 chunk CRCs, zlib adler32, filter bytes and palette all check out.
 
 
+## Milestone 4: a GTK window — done
+
+`bin/abc802-gtk` (`make abc802-gtk`) is a real GTK4 window: a Cairo pixel
+framebuffer running the core in-process, the same shape as
+`bin/abc80-gtk` and deliberately not the VTE-launcher shape of
+`bin/z80-gtk` — a character-cell machine's screen is a bitmap, not a
+terminal. See `../gtk/README.md` for the full write-up.
+
+Two things made it small. First, Milestone 3's decode is a pure function,
+so the app only turns its output into a Cairo surface — the mosaic font,
+all three row attributes, inverse video and the hardware cursor come along
+for free and cannot drift from what `--screenshot` produces. Second,
+`abc802_step()` was extracted into `emu/src/step.h` so the CLI's
+`--interactive` loop and the window share the per-instruction machine
+logic (the M1 notification, the CTC tick, interrupt delivery) instead of
+each keeping a copy — the same extraction ABC80's Milestone 11 did.
+
+No SDL2 and no threads: `bin/abc80-gtk` needs both for live SN76477 audio,
+and this machine's only sound is a speaker strobe the emulator does not
+sound.
+
+### Verification, and the flag that makes it possible
+
+Automating `screencapture` against the user's real desktop is disruptive —
+it steals focus and switches Spaces — a lesson `abc80/gtk/README.md`
+already records. So this app was built to verify itself:
+`bin/abc802-gtk --screenshot FILE` opens no window and never creates a
+`GtkApplication`, but renders one frame through the *identical*
+`draw_screen()` the live window uses, against an offscreen surface. Real
+evidence about the real renderer, with no desktop involved.
+
+Verified: clean `-Wall -Wextra` build; headless renders at both column
+widths, including a multi-line BASIC program and Swedish letters; and a
+launch/terminate cycle exiting 0 with an empty log (`SIGTERM` routed
+through `g_unix_signal_add()` so shutdown runs on the main loop and a
+`kill` cannot be mistaken for a clean exit).
+
+### A bug this milestone found
+
+`--type` fed its argument to the keyboard as **raw bytes**, so a shell
+argument containing Å arrived as the two bytes of its UTF-8 encoding and
+BASIC answered `Error 234.` — while the interactive keyboard paths, which
+decode properly, handled the identical text correctly. The two disagreed
+about what typing the same thing meant. Found by rendering
+`PRINT "ÅÄÖ"` through the new headless path and looking at the result.
+Fixed with one shared `abc802_utf8_to_chars()` (`render.c`, next to the
+charset table it uses) now called by both `bin/abc802`'s `--type` and
+`bin/abc802-gtk`'s — the pre-existing CLI defect included, since it was
+the same bug.
+
+
 ## Known gaps
 
 Real, understood, and deliberately not solved yet — not oversights.
 
-- **No GTK front-end.** `--interactive` (Milestone 2) covers live
-  keyboard and a live screen in a terminal, but there is no equivalent of
-  `bin/abc80-gtk`. That needs pixel rendering first — see the next gap.
+- **The GTK window has no Load/Save and no color picker**, both of which
+  `bin/abc80-gtk` has. Load/Save has nothing to wire to until this target
+  gets a cassette or disk path at all; the amber phosphor is fixed at the
+  machine's real value. See `../gtk/README.md`.
 - **Arrow keys are dropped.** A host terminal's cursor keys arrive as ESC
   sequences and are discarded rather than translated: probing the ROM
   found no byte that acts as a non-destructive cursor-right (see
@@ -339,18 +391,19 @@ Real, understood, and deliberately not solved yet — not oversights.
 
 ## Planned next steps
 
-None committed. Milestones 2 and 3 closed the first two items that stood
+None committed. Milestones 2-4 closed the items that previously stood
 here. The remaining candidates, roughly in order of how much they would
 add:
 
-1. **A GTK front-end** (`bin/abc802-gtk`), now unblocked: Milestone 3's
-   `abc802_render_pixels()` is exactly the decode a Cairo widget needs,
-   and `abc80/gtk/` is the working precedent for the rest.
-2. **ABC-bus floppy support**, reusing the ABC80 target's existing,
-   disassembly-grounded understanding of the same drives.
-3. **The ROM's line editor**, disassembled the way the ABC80's was, to
+1. **ABC-bus floppy support**, reusing the ABC80 target's existing,
+   disassembly-grounded understanding of the same drives. The largest
+   remaining piece of unmodeled hardware, and the one that would let this
+   machine load and save real programs.
+2. **The ROM's line editor**, disassembled the way the ABC80's was, to
    settle what its cursor keys actually want and close the arrow-key gap
    above.
+3. **The SIO**, currently a stub, which is what the RS-232 ports and
+   cassette would need.
 
 ## Sources consulted
 

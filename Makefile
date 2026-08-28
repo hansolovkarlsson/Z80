@@ -62,7 +62,7 @@ ABC80_TARGET := $(BIN_DIR)/abc80
 # bin/abc80 above - z80core/z80.o and alu.o are linked directly rather than
 # rebuilt. Opt-in only (never part of `all`), same as `abc80`.
 ABC802_SRC_DIR := abc802/emu/src
-ABC802_OBJS := $(ABC802_SRC_DIR)/main.o $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/render.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/png.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC802_OBJS := $(ABC802_SRC_DIR)/main.o $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/render.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/png.o $(ABC802_SRC_DIR)/step.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
 ABC802_TARGET := $(BIN_DIR)/abc802
 
 # bin/abc80-chargen-dump: the chargen.c decode-verification tool (see its
@@ -134,6 +134,23 @@ GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 # from render.c's own already-verified table) - no render.o, since this
 # target has its own Cairo renderer instead of render.c's terminal-glyph
 # one.
+# bin/abc802-gtk: a GTK4 window for the ABC802 (ABC802_ROADMAP.md's
+# Milestone 4). Like bin/abc80-gtk it is a real Cairo framebuffer running
+# the core in-process, not a VTE launcher - but it needs no SDL2, since
+# this machine's only sound is a speaker strobe the emulator does not
+# sound. Links the emulator modules it actually uses: chargen.o for the
+# pixel decode (the same pure function --screenshot and
+# abc802-chargen-dump verify), render.o for the charset/cursor helpers,
+# and step.o for the shared per-instruction logic. Opt-in only, never part
+# of `all`/`test`.
+ABC802_GTK_SRC_DIR := abc802/gtk/src
+ABC802_GTK_SRCS := $(wildcard $(ABC802_GTK_SRC_DIR)/*.c)
+ABC802_GTK_OBJS := $(ABC802_GTK_SRCS:.c=.o) $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/render.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/step.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC802_GTK_TARGET := $(BIN_DIR)/abc802-gtk
+ABC802_GTK_PKGS := gtk4
+ABC802_GTK_CFLAGS := $(shell pkg-config --cflags $(ABC802_GTK_PKGS) 2>/dev/null)
+ABC802_GTK_LIBS := $(shell pkg-config --libs $(ABC802_GTK_PKGS) 2>/dev/null)
+
 ABC80_GTK_SRC_DIR := abc80/gtk/src
 ABC80_GTK_SRCS := $(wildcard $(ABC80_GTK_SRC_DIR)/*.c)
 ABC80_GTK_OBJS := $(ABC80_GTK_SRCS:.c=.o) $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/chargen.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/disk.o $(ABC80_SRC_DIR)/step.o $(ABC80_SRC_DIR)/sound.o $(ABC80_SRC_DIR)/cassette.o $(ABC80_SRC_DIR)/charset.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
@@ -142,7 +159,7 @@ ABC80_GTK_PKGS := gtk4 sdl2
 ABC80_GTK_CFLAGS := $(shell pkg-config --cflags $(ABC80_GTK_PKGS) 2>/dev/null)
 ABC80_GTK_LIBS := $(shell pkg-config --libs $(ABC80_GTK_PKGS) 2>/dev/null)
 
-.PHONY: all emulator assembler disassembler gtk abc80 abc802 abc802-chargen-dump abc80-gtk abc80-chargen-dump abc80-video-timing-dump abc80-render-demo abc80-sound-demo run test clean
+.PHONY: all emulator assembler disassembler gtk abc80 abc802 abc802-chargen-dump abc802-gtk abc80-gtk abc80-chargen-dump abc80-video-timing-dump abc80-render-demo abc80-sound-demo run test clean
 
 all: emulator assembler disassembler
 
@@ -159,6 +176,8 @@ abc80: $(ABC80_TARGET)
 abc802: $(ABC802_TARGET)
 
 abc802-chargen-dump: $(ABC802_CHARGEN_DUMP_TARGET)
+
+abc802-gtk: $(ABC802_GTK_TARGET)
 
 abc80-chargen-dump: $(ABC80_CHARGEN_DUMP_TARGET)
 
@@ -209,6 +228,9 @@ $(GTK_TARGET): $(GTK_OBJS) | $(BIN_DIR)
 $(ABC80_GTK_TARGET): $(ABC80_GTK_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(ABC80_GTK_OBJS) $(ABC80_GTK_LIBS)
 
+$(ABC802_GTK_TARGET): $(ABC802_GTK_OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $(ABC802_GTK_OBJS) $(ABC802_GTK_LIBS)
+
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
 
@@ -217,6 +239,9 @@ $(GTK_SRC_DIR)/%.o: $(GTK_SRC_DIR)/%.c
 
 $(ABC80_GTK_SRC_DIR)/%.o: $(ABC80_GTK_SRC_DIR)/%.c
 	$(CC) $(CFLAGS) $(ABC80_GTK_CFLAGS) -c $< -o $@
+
+$(ABC802_GTK_SRC_DIR)/%.o: $(ABC802_GTK_SRC_DIR)/%.c
+	$(CC) $(CFLAGS) $(ABC802_GTK_CFLAGS) -c $< -o $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@

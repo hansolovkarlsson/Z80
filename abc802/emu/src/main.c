@@ -22,6 +22,7 @@
 #include "png.h"
 #include "ports.h"
 #include "render.h"
+#include "step.h"
 
 #define DEFAULT_ROM_DIR "abc802/resources/rom"
 #define DEFAULT_DOS_ROM "ABC802-dos.32-31.bin"
@@ -315,8 +316,12 @@ int main(int argc, char **argv) {
     // single receive byte, so typing faster than the ROM reads would just
     // overwrite it. The gap is measured in T-states rather than
     // instructions so it tracks emulated time.
+    // --type's text, already converted from host UTF-8 into the machine's
+    // own character bytes (see abc802_utf8_to_chars) rather than fed
+    // through raw.
+    static uint8_t type_chars[4096];
     size_t type_pos = 0;
-    size_t type_len = type_text ? strlen(type_text) : 0;
+    size_t type_len = type_text ? abc802_utf8_to_chars(type_text, type_chars, sizeof(type_chars)) : 0;
     long long next_key_at = 0;
     // Gap between keystrokes, in T-states (~0.1s of emulated time at
     // 3 MHz). Generous on purpose: the ROM discards input while it is
@@ -347,25 +352,18 @@ int main(int argc, char **argv) {
     long long instructions = 0;
     bool halted = false;
     while (!abc802_quit_requested && cycles < max_cycles) {
-        // Stands in for the real M1 line - see memory.c's header comment.
-        // Must happen before the instruction runs, since it is that
-        // instruction's own data reads that consult it.
-        abc802_note_instruction_fetch(cpu.pc);
         if (show_profile) pc_hits[cpu.pc]++;
-        int taken = z80_execute(&cpu, ram);
+        int taken = abc802_step(&cpu, ram, &cycles);
         if (taken < 0) {
             fprintf(stderr, "Halted: unimplemented opcode at PC=%04X\n", cpu.pc);
             halted = true;
             break;
         }
-        cycles += taken;
         instructions++;
-        abc802_ports_tick(&cpu, taken);
 
         if (type_pos < type_len && cycles >= next_key_at &&
             abc802_keyboard_ready() && !abc802_keyboard_busy()) {
-            char ch = type_text[type_pos++];
-            abc802_keyboard_send((uint8_t)(ch == '\n' ? 0x0D : ch));
+            abc802_keyboard_send(type_chars[type_pos++]);
             // ~10ms of emulated time between keystrokes at 3 MHz, which is
             // slower than any real typist and leaves the ROM ample room to
             // process each one.

@@ -61,6 +61,33 @@ int abc802_charset_byte_for_codepoint(uint32_t codepoint) {
     return -1;
 }
 
+size_t abc802_utf8_to_chars(const char *utf8, uint8_t *out, size_t out_size) {
+    size_t n = 0;
+    for (const unsigned char *p = (const unsigned char *)utf8; *p && n < out_size; ) {
+        unsigned char c = *p++;
+        if (c < 0x80) {
+            // Newline in a host string means "press Return", which the
+            // machine sees as CR - the same rewrite every caller of this
+            // used to do by hand.
+            out[n++] = (c == '\n') ? 0x0D : c;
+        } else if (c >= 0xC2 && c <= 0xDF && (*p & 0xC0) == 0x80) {
+            // The ABC802's whole character set lives in the Latin-1
+            // Supplement block, which UTF-8 always encodes in exactly two
+            // bytes, so no 3-/4-byte lead bytes need handling here.
+            uint32_t cp = ((uint32_t)(c & 0x1F) << 6) | (uint32_t)(*p++ & 0x3F);
+            int byte = abc802_charset_byte_for_codepoint(cp);
+            if (byte >= 0) out[n++] = (uint8_t)byte;
+            // A codepoint this machine has no character for is dropped,
+            // matching what the interactive keyboard path does with one.
+        } else {
+            // A malformed or out-of-range sequence: skip its continuation
+            // bytes rather than feeding them to the ROM as characters.
+            while ((*p & 0xC0) == 0x80) p++;
+        }
+    }
+    return n;
+}
+
 // Emit one character cell's glyph. `code` is the raw character-RAM byte,
 // bit 7 included - the caller decides whether that bit means anything.
 static void abc802_put_char(FILE *out, uint8_t code) {

@@ -3,6 +3,7 @@
 #ifndef ABC802_RENDER_H
 #define ABC802_RENDER_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -33,6 +34,18 @@ void abc802_render_frame(FILE *out);
 // keyboard can type every letter the screen can show. Shares one table
 // with the decode so the two directions cannot drift.
 int abc802_charset_byte_for_codepoint(uint32_t codepoint);
+
+// Convert a host UTF-8 string into the machine's own character bytes,
+// writing at most out_size of them and returning how many. Newline becomes
+// CR (0x0D), the byte a real Return key produces; a codepoint the machine
+// has no character for is dropped.
+//
+// This exists because --type used to feed its argument to the keyboard as
+// raw bytes: a shell argument containing Å reached BASIC as the two bytes
+// of its UTF-8 encoding, which the ROM answered with a syntax error. The
+// interactive keyboard paths always decoded properly, so the two disagreed
+// about what typing the same text meant.
+size_t abc802_utf8_to_chars(const char *utf8, uint8_t *out, size_t out_size);
 
 // The character-RAM address the CRTC's cursor is currently on, or -1 when
 // R10's cursor-mode bits say it is not displayed - which on this machine
