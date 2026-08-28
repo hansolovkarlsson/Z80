@@ -13,7 +13,7 @@ disk/RAM/other peripherals.
 
 ## Completed work
 
-Milestones 1-12 are all done. Their full write-ups — including the dead
+Milestones 1-13 are all done. Their full write-ups — including the dead
 ends and the hardware facts each one had to establish — live in
 [`ABC80_COMPLETED.md`](ABC80_COMPLETED.md).
 
@@ -31,6 +31,7 @@ ends and the hardware facts each one had to establish — live in
 | 10 | Left/right arrow keys | mapped from the ROM's own line editor, by disassembly |
 | 11 | A real GTK window | `bin/abc80-gtk`, Cairo framebuffer with live SN76477 audio |
 | 12 | Retiring the PC-address trap | a real ABC-bus card (`abcbus/disk.c`, shared with the ABC802) replaces the DOS-ROM trap |
+| 13 | An automated regression suite | `abc80/tests/run_tests.sh`, 16 checks, part of `make test` |
 
 ## Memory map (grounded, not guessed)
 
@@ -117,6 +118,19 @@ the finished write-ups it refers back to in
   target (`CLAUDE.md`'s Architecture section) rather than a new abstraction
   introduced early. No milestone yet — revisit only if something concrete
   needs it, same standard `cpm/docs/ROADMAP.md` applies elsewhere.
+
+## Testing
+
+`make test-abc80` (also part of `make test`) runs
+[`tests/run_tests.sh`](../tests/run_tests.sh): boot and BASIC, the
+Swedish charset round trip, both memory-map configurations, the
+floating bus, the ABC-bus/sound port decode boundary, a cassette
+`--quicksave`/`--quickload` round trip across two processes, the video
+timing PROMs, a chargen fixture diff, and the SN76477 tone measured by
+zero crossings. Five floppy checks — boot, the card's status byte read
+from BASIC, the real `LIB` directory listing, a `SAVE`/`LOAD` round trip,
+and UFD-DOS over the same card — need `ABC80_TEST_DISKS` pointed at a
+directory holding `disk003.img`, and skip loudly without it.
 
 ## Planned next steps
 

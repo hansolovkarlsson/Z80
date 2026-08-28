@@ -107,6 +107,11 @@ CP/M-specific — see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
 - `z80core/` — the shared Z80 CPU core (`z80.c`/`z80.h` opcode dispatch,
   `alu.c`/`alu.h` flag/arithmetic logic) — machine-agnostic, used by both
   `bin/z80` (CP/M), `bin/abc80`, and `bin/abc802`.
+- `scripts/testlib.sh` — shared PASS/FAIL reporting for the machine
+  targets' regression suites, which live in `abc80/tests/` and
+  `abc802/tests/` and run as part of `make test`. Their floppy checks need
+  real disk images this repo does not commit and skip loudly without them;
+  see each script's header for the environment variable to set.
 - `abcbus/` — the synthetic ABC-bus floppy controller (`disk.c`/`disk.h`),
   shared by `bin/abc80` and `bin/abc802`. At the repo root for the same
   reason `z80core/` is: the ABC bus is a bus, not a machine, and both

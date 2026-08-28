@@ -17,6 +17,74 @@ in an entry here.
 
 ---
 
+## 2026-08-29 (later still) — regression suites for the machine targets
+
+Three machine targets, one covered by `make test`. Everything the ABC
+targets had ever been verified by lived in a hand-run matrix retyped each
+session — which is how the previous entry's change got signed off, and it
+would not have survived to the next one.
+
+`abc80/tests/run_tests.sh` (16 checks) and `abc802/tests/run_tests.sh`
+(14) are that matrix, kept, with shared reporting in
+`scripts/testlib.sh`. `make test` now runs all three suites: 46 checks,
+under two minutes including a clean build.
+
+### The stance
+
+No unit tests of internal functions. Almost every bug these targets have
+had was a wrong belief about the hardware rather than a wrong line of C,
+and a unit test written from the same wrong belief passes — the
+`*_COMPLETED.md` files are substantially a catalogue of such beliefs.
+Everything drives the real ROMs and asserts on what the machine produced.
+
+Where a check can be written as BASIC, it is. `PRINT INP(6)` exercises the
+real port decode, the ROM's own `INP`, and the CPU's I/O path; calling the
+same C function exercises none of them. That came from the ABC802 SIO work
+and transfers to the ABC80 unchanged.
+
+### Validated by breaking things on purpose
+
+A suite nobody has seen fail is not known to work, so five real
+regressions went in one at a time and each had to be caught: the status
+bit from the previous entry reverted, the bus decode widened to swallow
+the sound port, an ABC802 DIP-switch default flipped, the ABC830
+interleave disabled, the mosaic-font address bit changed.
+
+Four were caught. **The port-decode check passed with its subject entirely
+broken.** It looked for `" 42"` in the output and found it — in
+`OUT 6,42`, the command line the ROM had echoed back to the screen. What
+BASIC actually printed was `255`. Every check on these targets reads a
+screen containing the typed input as well as the answer, so substring
+matching on a result is structurally unsafe here; the numeric checks now
+extract result lines and compare them positionally.
+
+Rerunning the sweep found two more checks that were weak rather than
+wrong — `disk-boot` asserted only the absence of an error, and the
+UFD-DOS check asserted a "file not found" that a completely dead card
+also produces. Both now assert on the card's own `ABCBUS_TRACE=1` output,
+so they fail when the bus stops carrying anything.
+
+That is the argument for mutation testing in one session: the suite went
+in green, and three of its checks were not testing what their names said.
+
+### An aside on measuring
+
+The hand-run matrix used instruction caps up to 120,000,000 where
+3,000,000 does. They had been copied forward from an earlier session and
+never questioned. At roughly 1.7M instructions/sec that was most of a
+minute per check spent on nothing, and measuring the minimum took two
+commands. Worth remembering next time a number gets carried across
+sessions because it worked once.
+
+### Also found
+
+The ABC80 emulator runs at about 1.7M instructions/sec, which is slow for
+`-O2` and worth looking at some day; nothing depends on it yet. And
+`bin/abc80-video-timing-dump` already spoke PASS/FAIL and set an exit code
+of its own — it had simply never been run automatically. It is now.
+
+---
+
 ## 2026-08-29 (later) — ABC80 Milestone 12: retiring the PC-address trap
 
 The ABC802 roadmap's top candidate, taken up directly: replace the ABC80

@@ -21,7 +21,7 @@ that machine's documentation thins out.
 
 ## Completed work
 
-Milestones 1-9 are done. Their full write-ups — including what each one
+Milestones 1-10 are done. Their full write-ups — including what each one
 found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 
 | # | Milestone | Outcome |
@@ -35,6 +35,7 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 | 7 | A second drive | `--disk` repeats for drives 0, 1, …; `MO1:`/`MF1:` work and are independent |
 | 8 | The line editor's vocabulary | swept every control code; Left arrow works, Right correctly does nothing — the machine has no cursor movement |
 | 9 | A real Z80 SIO | registers, commands and the two DIP switches that reach the ROM through channel B's modem-status inputs |
+| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 14 checks, part of `make test` |
 
 ## Known gaps
 
@@ -101,9 +102,22 @@ Real, understood, and deliberately not solved yet — not oversights.
   comment that consumes it disagree; see `ABC802_REFERENCE.md`. Nothing
   currently depends on it.
 
+## Testing
+
+`make test-abc802` (also part of `make test`) runs
+[`tests/run_tests.sh`](../tests/run_tests.sh): boot at both column widths,
+the Swedish charset round trip, five SIO register checks driven from
+BASIC through `INP()`/`OUT`, a `--screenshot` PNG validated down to its
+IHDR dimensions, and a chargen fixture diff covering the three row
+attributes no boot screen exercises. Four floppy checks — 160K and 640K
+media booting real applications, drive independence, and a cross-drive
+load with its negative control — need `ABC802_TEST_DISKS` pointed at a
+directory holding `disk001.img`, `mf001.img` and `mf002.img`, and skip
+loudly without it.
+
 ## Planned next steps
 
-None committed. Milestones 2-9 closed the items that previously stood
+None committed. Milestones 2-10 closed the items that previously stood
 here, and the ABC80 target's PC-trap bypass has since been retired in
 favour of this controller — the card now lives at `abcbus/disk.c`, shared
 by both machines, and that work is written up as ABC80 Milestone 12 in

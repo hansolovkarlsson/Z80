@@ -669,3 +669,43 @@ signal modulated through the SIO's synchronous clocks and demodulated by
 frequency detection. The machine has working disk storage, so a cassette
 would be fidelity rather than capability.
 
+
+
+---
+
+## Milestone 10: an automated regression suite — done
+
+`abc802/tests/run_tests.sh`, fourteen checks, part of `make test`. The
+reasoning, the shared reporting primitives (`scripts/testlib.sh`), and the
+mutation sweep that validated both suites are written up under ABC80
+Milestone 13 in [`../../abc80/docs/ABC80_COMPLETED.md`](../../abc80/docs/ABC80_COMPLETED.md);
+only what is specific to this machine is repeated here.
+
+**This target leans hardest on testing from inside the machine.** ABC802
+BASIC has `INP()` and `OUT`, so five of the fourteen checks interrogate
+the SIO register model the way the SIO was originally verified — through
+the real port decode and the ROM's own implementation. Every one of them
+returned `4` before Milestone 9 replaced the stub, so they fail loudly if
+it is ever reverted to a constant. The `sio-rr2-is-channel-b-only` check
+asserts channel A reads `0`: deliberately wrong-looking, and the point of
+it is that a caller reading the wrong channel should get an obviously
+wrong answer rather than a subtly right one.
+
+**One check documents a fact by asserting something that looks like a
+typo.** `boot-40-columns` requires the run summary to say `R1=80 cols`.
+The CRTC counts 80 character cells per row in *both* modes; 40-column mode
+halves the character clock and doubles the glyph width rather than
+reprogramming R1. A render reporting `R1=40` would mean the mode had been
+modeled the wrong way. The check pairs it with the rendered frame width,
+which is what actually distinguishes the two modes.
+
+**The chargen fixture is the only coverage the row attributes have**, for
+the reason `chargen_dump.c` was written in the first place: the ROM's own
+boot screen uses none of them, so `--screenshot` renders it perfectly with
+the attribute state machine completely broken. Perturbing the mosaic-font
+address bit during the mutation sweep failed this check and nothing else.
+
+**The two-drive checks need media that reaches a BASIC prompt.** Both
+other images autoboot an application, which swallows the typed commands —
+found the direct way, by writing the check against `mf001.img` and
+watching drive 1 never get written.

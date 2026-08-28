@@ -3001,3 +3001,83 @@ bit is zero and the buffer is 256-byte aligned.
 `--disk` no longer creates a missing image file. It used to, and a
 zero-filled 160K file is not valid ABC-DOS media — the card now requires an
 image of a recognized size and says so, which is the more useful answer.
+
+---
+
+## Milestone 13: an automated regression suite — done
+
+Three machine targets, and `make test` covered exactly one. Everything
+this target had ever been verified by lived in a hand-run matrix retyped
+each session, which is how Milestone 12 — a change that moved a
+controller between directories, rewired the machine's whole I/O path, and
+altered a status bit both targets depend on — came to be signed off.
+`abc80/tests/run_tests.sh` is that matrix, kept.
+
+### Shape
+
+Everything drives the real committed ROMs and asserts on what the machine
+actually produced. There are no unit tests of internal functions, and that
+is deliberate: almost every bug this target has had was a wrong belief
+about the hardware rather than a wrong line of C, and a unit test written
+from the same wrong belief passes. The `*_COMPLETED.md` files are largely
+a catalogue of such beliefs.
+
+Where a check can be written as BASIC, it is. `PRINT INP(6)` exercises the
+real port decode, the ROM's own `INP` implementation, and the CPU's I/O
+path; a C-level call to the same function exercises none of them. That
+technique came from the ABC802's SIO work and transfers cleanly.
+
+Sixteen checks: boot and arithmetic, the Swedish charset round trip
+(UTF-8 in on the keyboard and back out of video RAM), both memory-map
+configurations, the floating bus, the ABC-bus/sound port decode boundary,
+a cassette round trip across two processes, the video-timing PROMs, a
+chargen fixture diff, the SN76477 tone measured by zero crossings, and
+five floppy checks.
+
+### Skips are not passes
+
+Real disk images stay uncommitted (third-party dumps — the decision made
+in Milestone 6 and again by the ABC802 target). The floppy checks read
+`ABC80_TEST_DISKS`; without it they print a `SKIP` line naming the image
+they want, and the summary counts skips separately. A suite that silently
+ran nothing and reported green would be worse than no suite.
+
+### Validated by breaking things on purpose
+
+A suite nobody has seen fail is not known to work. Five real regressions
+were injected and each had to be caught:
+
+| Injected fault | Caught by |
+|---|---|
+| Status bit 3 back to its old "error flag" meaning | `disk-abcbus-status`, `disk-lib-directory`, `disk-save-load` |
+| Bus port decode widened to swallow the sound port | `io-port-decode` — **after a fix; see below** |
+| ABC802 configuration DIP switch default flipped | `sio-idle-status`, `sio-channel-reset` |
+| ABC830 sector interleave disabled | `disk-lib-directory` |
+| Mosaic-font address bit changed | `chargen-attributes` |
+
+The sweep paid for itself immediately. **The port-decode check passed with
+its subject entirely broken.** It asserted that `" 42"` appeared in the
+output, and it did — in `OUT 6,42`, the command line the ROM had echoed to
+the screen. The value BASIC actually printed was `255`. Every check here
+reads a screen that contains the typed input as well as the answer, so
+substring matching on a result is structurally unsafe on this target; the
+numeric checks now extract result lines with `sed` and compare them
+positionally.
+
+Two other checks were weak rather than wrong, and were strengthened the
+same way. `disk-boot` asserted only that no error appeared, and
+`disk-alternate-dos-rom` asserted a "file not found" message that a
+completely dead card also produces. Both now assert on the card's own
+`ABCBUS_TRACE=1` output — that real command headers were issued, and that
+UFD-DOS issued at least twenty of them — so they fail when the bus stops
+carrying anything.
+
+### Cost
+
+Sixteen checks in about 20 seconds; `make test` end to end is under two
+minutes including a clean build. Getting there meant measuring rather than
+guessing the instruction caps: the hand-run matrix used values up to
+120,000,000 where 3,000,000 does, because they had been copied forward
+from an earlier session and never questioned. This target runs at roughly
+1.7M instructions/sec, so that was most of a minute per check spent on
+nothing.
