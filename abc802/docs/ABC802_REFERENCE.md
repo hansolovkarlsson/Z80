@@ -331,3 +331,15 @@ bare machine — and is exactly the `0xFF` the ROM reads as "nothing there".
 factor 7 (mask 15), `MF` needs none. Both were established by booting real
 media both ways; a directory sector reads correctly under either mapping,
 because track-boundary sectors map to themselves.
+
+**But the factor is a property of the dump, not only of the drive.** Those
+defaults are correct for abc80.net's `.img` archive, which stores ABC830
+sectors in physical order. Other archives ship `.dsk` images of the same
+media in plain logical order, and those need factor 0 — verified against
+ten such images, where all nine 160K ones fail and the one 640K one works
+untouched (`MF` defaulting to no interleave happens to match that
+convention). Nothing inside an image says which it is, so `--interleave N`
+overrides the default on both `bin/abc802` and `bin/abc80`. The symptom of
+the wrong choice is worth memorizing, because it does not look like a
+broken disk: the card is found, the directory lists correctly, and every
+real file read returns `Error 37`.

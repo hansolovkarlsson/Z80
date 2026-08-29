@@ -122,8 +122,9 @@ bool abc80_abcbus_init(const char *rom_dir, const char *dos_rom, const char *dis
     }
     rom_loaded = true;
     printf("Loaded DOS ROM '%s' at 0x6000; ABC-bus: %s floppy controller, "
-           "disk image '%s'\n",
-           dos_rom_path, abcbus_disk_type_name(), disk_path);
+           "disk image '%s', interleave %u\n",
+           dos_rom_path, abcbus_disk_type_name(), disk_path,
+           abcbus_disk_interleave());
     if (strcmp(abcbus_disk_type_name(), "mo") != 0) {
         fprintf(stderr,
                 "Warning: ABCDOS80.bin only ever selects the ABC830 (device "

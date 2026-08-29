@@ -44,6 +44,7 @@
 #include "cassette.h"
 #include "sound.h"
 #include "abcbus.h"
+#include "../../../abcbus/disk.h"
 #include "step.h"
 
 // Real ABC80 Z80 clock (11.9808 MHz crystal / 2 / 2 - see MAME's
@@ -477,6 +478,13 @@ static void print_usage(const char *prog) {
     printf("  --disk FILE        Load the real ABC-DOS ROM at 0x6000 and fit a real\n");
     printf("                     ABC-bus floppy controller serving FILE, a 160K ABC830\n");
     printf("                     image. Without it no card is fitted and the bus floats.\n");
+    printf("  --interleave N     Override the sector interleave of the disk image.\n");
+    printf("                     0 means none. Two dump conventions exist for the\n");
+    printf("                     same media: abc80.net's .img archive stores ABC830\n");
+    printf("                     sectors physically (factor 7, the default), while\n");
+    printf("                     other .dsk dumps are in logical order and need\n");
+    printf("                     --interleave 0. The wrong choice shows up as a\n");
+    printf("                     read error on every real file, not as a dead disk.\n");
     printf("  --dos-rom FILE     Use FILE in rom_dir as the DOS ROM instead of the\n");
     printf("                     default %s (the other real image is\n", ABC80_DEFAULT_DOS_ROM);
     printf("                     UFD80V20.bin, a different DOS driving the same card).\n");
@@ -507,6 +515,14 @@ int main(int argc, char *argv[]) {
             interactive_mode = true;
         } else if (strcmp(argv[i], "--disk") == 0 && i + 1 < argc) {
             disk_path = argv[++i];
+        } else if (strcmp(argv[i], "--interleave") == 0 && i + 1 < argc) {
+            char *end = NULL;
+            long factor = strtol(argv[++i], &end, 10);
+            if (!end || *end || factor < 0 || factor > 15) {
+                fprintf(stderr, "--interleave must be 0-15\n");
+                return EXIT_FAILURE;
+            }
+            abcbus_disk_set_interleave((unsigned)factor);
         } else if (strcmp(argv[i], "--dos-rom") == 0 && i + 1 < argc) {
             dos_rom = argv[++i];
         } else if (!rom_dir) {

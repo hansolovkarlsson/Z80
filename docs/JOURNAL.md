@@ -17,6 +17,193 @@ in an entry here.
 
 ---
 
+## 2026-08-30 (later) — bin/abcdisk, and a filesystem read out of the media
+
+A CLI tool that creates formatted, empty ABC-bus disk images, and lists
+what is on one. `abcbus/mkdisk.c`, beside `disk.c` and for that file's own
+reason: the bus is not a machine and both targets mount the same media.
+
+### Why it had to exist
+
+Two sessions ago the reference document recorded, honestly, that a blank
+file is not a blank disk — an all-zero image of the right size attaches,
+is recognized, and then fails every `SAVE` with `Error 41`, because it has
+no free-list, and neither the BASIC nor the DOS ROM has a `FORMAT`
+command. That left the emulator able to *read* real media and unable to
+produce any. Every write test needed media the repository cannot ship.
+
+### Deriving the format
+
+Nothing documents it, so it came out of the media by inspection. The step
+that made it tractable was noticing that **sector 7 is a pristine copy of
+the free-list**: on real disks it reports exactly the system area
+allocated and nothing else, while sector 6 tracks the actual files. That
+is not a backup, it is a photograph of the disk as formatted — the thing
+being reconstructed, sitting on every disk already.
+
+The rest fell out from there:
+
+- The free-list is one bit per **cluster**, MSB first, 1 = allocated.
+  Both drives have 640 clusters — the ABC832's four-sectors-per-cluster
+  geometry is exactly what keeps its bitmap the same 80 bytes as the
+  ABC830's, which is why one constant serves both.
+- A directory sector is sixteen zero bytes then fifteen 16-byte records,
+  and a free record is sixteen `0xFF`. So an empty directory sector is a
+  two-line `memset`.
+- **The primary directory is at sector 16, not 8.** Sector 8 is a backup
+  the DOS does not keep in sync — of three real disks, two matched and one
+  had drifted. Established by saving to a disk built by hand and seeing
+  which copy the DOS actually wrote.
+- The ABC832 marks everything from cluster 320 up as permanently
+  allocated, i.e. this DOS uses only the first half of a 640K disk. Odd,
+  but it is what its own real media says, so it is what the tool writes.
+
+Verification was the same shape the disk milestones have always used and
+is the only kind that counts here: build an image with the C code, `SAVE`
+a program to it under the real ROM, then `LOAD`, `LIST` and `RUN` it back
+**in a separate process**. Both drive types pass.
+
+### The listing side earned itself twice
+
+`list` started as a convenience so a created image could be checked
+without booting a machine. It immediately did two things worth more than
+that.
+
+It **replaced a wrong analysis**. The ad-hoc Python parser used earlier
+this week to tabulate what was on each disk had the record framing off by
+four bytes and reported three disks as undecodable. The tool reads all
+ten, and those three turned out to be perfectly ordinary — `ord800.dsk`
+holds the *ORD 800* word processor with an `INITIERA.*` file per printer
+make. The disks README's contents table has been regenerated from the
+tool rather than from that script.
+
+And it **exposed a blind spot in its own test**. Sabotaging the
+directory's sector number did not fail anything: the writer and the reader
+share the constant, so they agree perfectly on a wrong value. Fixed by
+adding a check that has `abcdisk` read *real* media it did not write,
+which does catch it. Sabotaging the free-list was caught by the round trip
+from the start.
+
+Both sabotages were run and confirmed before trusting either check.
+
+### What this buys the suite
+
+Four of the abc802 suite's disk checks no longer skip on a bare checkout,
+because the tool makes their media. The write path — `SAVE` to disk, and
+the DOS's own directory and allocation updates — was previously
+untestable without third-party dumps. It is now covered by default, and
+the suite went from 10 passing to 14.
+
+### Loose ends
+
+- The eight bytes at `0xEF`-`0xF6` of a free-list sector are counters,
+  1 on a pristine disk and incrementing with use. Reproduced because real
+  media has them; their meaning was not chased.
+- Sectors 1-5 of a 160K disk are filled with `@`. Purpose unknown, copied
+  for the same reason.
+- The size field in a directory record is bytes, confirmed against two
+  programs of known length, but real Luxor media often carries 0 there —
+  so the tool prints "(size not recorded)" rather than "0 bytes".
+- `list` prints names as raw bytes, so a Swedish character shows as its
+  ASCII position (`ORDLÄNK` reads as `ORDL[NK`). Mapping it would pull
+  the ABC802 charset table into a bus-level tool; left alone.
+- **The ABC80 path is not verified.** It mounts the same media through
+  the same card and its DOS keeps its directory copies at the same
+  sectors, so images from this tool are expected to work there — but
+  `bin/abc80` has no scripted-keyboard option, so nothing has driven a
+  `SAVE` on that machine. Said so in the tool's own header rather than
+  letting "shared infrastructure" imply coverage it does not have.
+
+---
+
+## 2026-08-30 — interleave belongs to the dump, not the drive
+
+`--interleave N` on both `bin/abc802` and `bin/abc80`, plus a home and a
+README for disk images. What forced it was a user dropping ten real `.dsk`
+images into `abc802/resources/disks/` and finding that nine of them did
+not work.
+
+### The finding
+
+Every 160K image read as `Error 37` — file *found*, data garbage — which
+is the wrong-interleave signature this project already knew from ABC80's
+Milestone 6. But the emulator was using the factor that milestone
+established. The images were not the problem and neither was the code.
+
+**Both are right, for different dumps.** abc80.net's `.img` archive stores
+ABC830 sectors in *physical* order, so reading it needs the factor-7
+permutation. These `.dsk` files store the same media in *logical* order,
+so applying that permutation breaks them. Nothing inside an image says
+which convention it follows.
+
+Proved before touching any code, by permuting a copy of the image so the
+emulator's existing factor-7 mapping would land correctly. `RUN "MO0:LIB"`
+immediately brought up a real Luxor directory utility that had been
+returning `Error 37` a minute earlier. Then repeated across three more
+images, with a negative control: the one 640K image in the set autoboots
+*untouched*, because `MF` already defaults to no interleave and that
+happens to match this convention. Applying `--interleave 7` to it breaks
+it. Opposite defaults, opposite dumps, consistent explanation.
+
+This closes something `ABC802_FLOPPY_SCOPING.md` flagged as a risk before
+Milestone 5 and got half right. It predicted "likely a difference in how
+the image files themselves were dumped." Milestone 5 then resolved the
+abc80sim contradiction *by experiment*, in favour of factor 7, and
+recorded it as settled — which it was, for the media in hand. The scoping
+document's guess was the better one, and the experiment could not have
+distinguished them with only one archive's dumps available.
+
+Worth stating plainly for next time: **a repeatable experiment on one
+sample settles what that sample does, not what the parameter means.**
+
+### The flag
+
+`abcbus_disk_set_interleave(factor)` in the shared card, overriding the
+drive type's own value; the mask is forced to 15 or 0 alongside it, since
+both modeled drives put 16 sectors on a track. Exposed as `--interleave N`
+on both machine CLIs — the card is shared and ABC80 has exactly the same
+media problem, so wiring only one would have left the capability
+half-connected. The startup line now reports the factor in force and
+whether it was overridden, which makes any future bug report about disks
+self-documenting.
+
+### The symptom is the part worth remembering
+
+Not "the disk does nothing," which is what ABC80's Milestone 6 saw when
+interleave was *missing*. Here the card is found, the directory lists
+correctly, filenames are all legible, and only real file reads fail. That
+is because track-boundary sectors map to themselves under any factor, and
+both formats keep a directory copy at such a sector — the same trap
+Milestone 6 documented for hex dumps, met again from the other side. A
+readable directory is not evidence of a correct mapping.
+
+### Also
+
+- `abc802/resources/disks/` is now a real location with a committed
+  README and a `.gitignore` pair, on the terms already recorded for disk
+  images: unlike the ROMs, they carry no license statement, so they stay
+  out of git while the directory and its documentation do not. The README
+  carries the interleave note, checksums, and each disk's contents.
+- Those contents were read straight out of the image files. The directory
+  is 16-byte records from offset 2068 — `name[8] ext[3] 0xFF` plus four
+  bytes, 15 usable slots, `0xFF`-filled ones free. Two of the ten images
+  keep their directory somewhere else and were left undecoded rather than
+  guessed at.
+- `RUN "MO0:LIB"` is now the *verified* answer to "how do I list a disk",
+  replacing the reference document's earlier honest hedge. `BYE` — the
+  other documented route, into the disk's own `CMDINT.SYS` — prints
+  `Abort 48` and is recorded as undiagnosed rather than written up as
+  working.
+
+### Not done
+
+The regression suite does not cover the override; the flag is verified by
+hand only. Covering it needs a logical-order image the suite can rely on,
+and the suite's existing media is all physical-order, so this is a media
+problem rather than a test-writing one. Noted in the roadmap.
+
+---
+
 ## 2026-08-29 (last) — a BASIC II reference, read out of the ROM
 
 `abc802/docs/ABC802_BASIC_REFERENCE.md`: how to actually *use* the

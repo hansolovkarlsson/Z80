@@ -150,6 +150,12 @@ static const DriveType DRIVE_MF = {ABCBUS_SEL_MF, 4, 80 * 2 * 16, 0, 0, "mf"};
 // reports about the wrong geometry.
 static const DriveType *drive_type = &DRIVE_MO;
 
+// A --interleave override, or -1 for "use whatever the fitted drive says".
+// See abcbus_disk_set_interleave() in disk.h for why an override exists at
+// all: two dump conventions for the same media, and nothing in a disk
+// image says which one it is.
+static long interleave_override = -1;
+
 static FILE *units[NUM_UNITS];
 static bool card_present = false;
 static bool selected = false;
@@ -229,6 +235,15 @@ bool abcbus_disk_attach(int unit, const char *path) {
 
 const char *abcbus_disk_type_name(void) { return drive_type->name; }
 
+void abcbus_disk_set_interleave(unsigned factor) {
+    interleave_override = (long)factor;
+}
+
+unsigned abcbus_disk_interleave(void) {
+    return interleave_override >= 0 ? (unsigned)interleave_override
+                                    : drive_type->interleave_factor;
+}
+
 int abcbus_disk_attached_count(void) {
     int n = 0;
     for (int i = 0; i < NUM_UNITS; i++) {
@@ -299,8 +314,16 @@ static unsigned current_sector(void) {
 // right up until it reads anything that is not at a multiple of 16.
 static long file_offset(void) {
     unsigned s = current_sector();
+    unsigned factor = drive_type->interleave_factor;
     unsigned mask = drive_type->interleave_mask;
-    unsigned mapped = (s & ~mask) | ((s * drive_type->interleave_factor) & mask);
+    if (interleave_override >= 0) {
+        factor = (unsigned)interleave_override;
+        // Both modeled drives put 16 sectors on a track, so the mask that
+        // confines the permutation to one track is the same for either;
+        // a factor of 0 makes the mapping an identity regardless.
+        mask = factor ? 15 : 0;
+    }
+    unsigned mapped = (s & ~mask) | ((s * factor) & mask);
     return (long)mapped * SECTOR_SIZE;
 }
 

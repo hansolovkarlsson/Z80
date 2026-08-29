@@ -16,8 +16,13 @@ The shared Z80 core itself (`z80.c`/`alu.c`/their headers) lives in
 directory — it's genuinely machine-agnostic (`z80_execute()`, not the
 CP/M-specific `z80_step()` covered below) and used by two independent
 targets, so it isn't owned by either one. `abcbus/` (`disk.c`/`disk.h`,
-the synthetic ABC-bus floppy controller) is at the repo root on exactly
-those terms and for exactly that reason: the ABC bus is a bus, not a
+the synthetic ABC-bus floppy controller, plus `mkdisk.c` → `bin/abcdisk`,
+which *creates* formatted blank images and lists what is on one — the
+on-disk format was derived by inspecting real Luxor media and confirmed
+by a `SAVE`/`LOAD` round trip through the real ROM on both drive types,
+and it matters because neither ROM has a `FORMAT` command, so before it
+the only writable media was media you already had) is at the repo root on
+exactly those terms and for exactly that reason: the ABC bus is a bus, not a
 machine, and both `abc80/` and `abc802/` drive the same card with the same
 four-byte command header and the same status bits. It started life under
 `abc802/emu/src/`, and was moved out the moment the ABC80 target began
@@ -157,8 +162,16 @@ until the ABC80's ROM — which reads it twice, and refuses to transfer a
 byte or accept a completed write without it — exposed it. And **the
 sector interleave (factor 7) is required**, now proven by experiment on
 this machine as well as ABC80: with it disabled, real media stops booting
-entirely. That settles a contradiction with abc80sim, which ships with
-interleave compiled out. Milestone 6 adds the 640KB ABC832/834 (`MF`) drive alongside the 160KB
+entirely. That looked like it settled a contradiction with abc80sim, which
+ships with interleave compiled out — but the real answer is that **the
+factor belongs to the dump, not the drive**: abc80.net's `.img` archive
+stores sectors physically and needs factor 7, while `.dsk` images of the
+same media are in logical order and need none, and nothing inside an image
+says which. Both are right for their own dumps. `--interleave N` (on
+`bin/abc802` and `bin/abc80`, overriding the drive default via
+`abcbus_disk_set_interleave()`) exists for that; the wrong choice is easy
+to misread, because the card is found and the directory lists correctly
+while every real file read gives `Error 37`. Milestone 6 adds the 640KB ABC832/834 (`MF`) drive alongside the 160KB
 ABC830 (`MO`), with the controller type chosen from the image's size
 rather than a flag. **The two drives interleave in opposite directions** —
 `MO` needs factor 7 and `MF` needs none, each established by booting real

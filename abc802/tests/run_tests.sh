@@ -25,12 +25,13 @@ cd "$ROOT"
 
 ABC802="$ROOT/bin/abc802"
 CHARGEN_DUMP="$ROOT/bin/abc802-chargen-dump"
+ABCDISK="$ROOT/bin/abcdisk"
 FIXTURES="$ROOT/abc802/tests/fixtures"
 
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
-for binary in "$ABC802" "$CHARGEN_DUMP"; do
+for binary in "$ABC802" "$CHARGEN_DUMP" "$ABCDISK"; do
     if [ ! -x "$binary" ]; then
         echo "abc802/tests/run_tests.sh: $binary is missing (run 'make test')" >&2
         exit 1
@@ -229,6 +230,57 @@ else
     tl_want "$out" 'PRINT "DRIVE ONE"' "the program listed back from drive 1"
     tl_want "$out" "Error 21" "the same name failing to load from drive 0"
     tl_end "$out"
+
+    # bin/abcdisk reading media it did not write. Without this, its
+    # directory location is only ever checked against its own constant -
+    # a writer and reader sharing one wrong value agree perfectly, which
+    # is exactly what a deliberate sabotage of dir_first demonstrated.
+    # Real media pins it independently.
+    #
+    # No --interleave equivalent is needed here: the directory sits on a
+    # track boundary, and those sectors map to themselves under any
+    # factor, so a raw read finds it under either dump convention.
+    out=$("$ABCDISK" list "$MO_IMAGE" 2>&1)
+    tl_begin "abcdisk-list-real-media"
+    tl_want "$out" "mo, 640 sectors" "the format identified from the image size"
+    tl_want "$out" "BASICINI SYS" "a real file listed out of media abcdisk did not write"
+    tl_end "$out"
 fi
+
+# --- Formatted blank media, with no external images needed ------------
+#
+# These are the only floppy checks that never SKIP: bin/abcdisk builds the
+# media, so the write path is covered on a machine with no third-party
+# dumps at all. That matters beyond convenience - before this tool the
+# whole SAVE path was untestable without media the repo cannot ship.
+#
+# Note the --interleave 0: abcdisk writes images in logical sector order,
+# which is the convention the MO default does *not* assume.
+for spec in "mo:160K:--interleave 0:MO0" "mf:640K::MF0"; do
+    type=${spec%%:*}; rest=${spec#*:}
+    label=${rest%%:*}; rest=${rest#*:}
+    flag=${rest%%:*}; dev=${rest#*:}
+    image="$WORKDIR/blank-$type.dsk"
+
+    out=$("$ABCDISK" create "$image" --type "$type" 2>&1)
+    tl_begin "abcdisk-create-$type"
+    tl_want "$out" "Created" "the image being written"
+    tl_want "$("$ABCDISK" list "$image" 2>&1)" "(empty)" "a fresh disk listing no files"
+    tl_end "$out"
+
+    # shellcheck disable=SC2086
+    "$ABC802" --columns 80 --cycles "$DISK_CAP" $flag --disk "$image" \
+        --type-at "$DISK_TYPE_AT" \
+        --type "10 PRINT \"$label BLANK OK\""$'\n'"SAVE \"$dev:BLANKT\""$'\n' \
+        > /dev/null 2>&1
+    # shellcheck disable=SC2086
+    out=$("$ABC802" --columns 80 --screen --cycles "$DISK_CAP" $flag \
+          --disk "$image" --type-at "$DISK_TYPE_AT" \
+          --type "LOAD \"$dev:BLANKT\""$'\n'"RUN"$'\n' 2>&1)
+    tl_begin "disk-blank-roundtrip-$type"
+    tl_want "$out" "$label BLANK OK" "the program running back off a disk this repo formatted"
+    tl_want "$("$ABCDISK" list "$image" 2>&1)" "BLANKT" "abcdisk reading back the entry the DOS wrote"
+    tl_end "$out"
+done
 
 tl_summary "abc802"

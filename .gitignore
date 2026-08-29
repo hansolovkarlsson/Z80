@@ -16,3 +16,13 @@ abc802/gtk/src/*.o
 .claude/
 cpm_disk/
 !/cpm/cpm_disk/
+
+# Real ABC-bus floppy images. Third-party disk dumps with no license
+# statement anywhere, unlike the ROM images (which carry an explicit
+# provenance and checksum table) - so they stay out of the repo while the
+# directory itself, and the README documenting what belongs in it, do not.
+# See abc802/resources/disks/README.md.
+abc80/resources/disks/*
+!abc80/resources/disks/README.md
+abc802/resources/disks/*
+!abc802/resources/disks/README.md

@@ -49,10 +49,11 @@ I/O ports, `IM`, `RETI`/`RETN`, and `LD A,I`-family are implemented).
 ## Build & run
 
 ```
-make               # builds bin/z80, bin/z80asm, and bin/z80dasm
+make               # builds bin/z80, bin/z80asm, bin/z80dasm and bin/abcdisk
 make emulator      # just the emulator
 make assembler     # just the assembler
 make disassembler  # just the disassembler
+make abcdisk       # just the ABC floppy-image tool
 make run           # build the emulator, then run it against zexall.com
 make test          # build, then run the regression check (cpm/tests/run_tests.sh)
 make clean         # remove build output
@@ -201,6 +202,16 @@ CP/M-specific — see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
   [`ABC802_BASIC_REFERENCE.md`](abc802/docs/ABC802_BASIC_REFERENCE.md)
   for the BASIC II language itself, including the disk drives and how a
   disk is stored.
+- `abcbus/` — the synthetic ABC-bus floppy controller shared by both ABC
+  targets, plus `bin/abcdisk`, which creates formatted, empty disk images
+  and lists what is on one. Neither machine's ROM has a `FORMAT` command,
+  and a zero-filled file of the right size is not a blank disk — it is
+  recognized and then refuses every `SAVE` — so this is the only way to
+  get writable media without already having some. Both the 160K ABC830
+  and 640K ABC832/834 formats are verified by a `SAVE`/`LOAD` round trip
+  through the ABC802's real ROM; the ABC80 mounts the same media and its
+  own DOS keeps its directory in the same place, but that path has not
+  been tested.
 - `cpm/gtk/` — an opt-in (`make gtk`) thin GTK4 launcher for `bin/z80`,
   attached to a pty with a `VteTerminal` doing the real terminal
   interpretation. See `cpm/gtk/README.md`.

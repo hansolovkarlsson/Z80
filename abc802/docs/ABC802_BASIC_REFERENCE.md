@@ -668,14 +668,42 @@ CHAIN "MF0:PART2"      (in a program) load and run another program
 from the DOS ROM's own command table at `0x6F87`, whose complete contents
 are exactly four entries: `BYE`, `KILL`, `NAME`, `AS`.
 
+### Listing a disk's files
+
 **There is no `DIR` or `LIB` command in ROM. (verified)** Typing `LIB`
 gives `Error 220` ("spelling error") — the ROM has no such keyword, and
-the error is correct rather than a controller failure. Directory listing
-lives in the DOS command interpreter on the disk itself, not in the
-machine: `BYE` transfers control from BASIC to DOS, and `$BAS` transfers
-control back. The two system files that make that work are named in the
-DOS ROM as `BASICINI.SYS` and `CMDINT.SYS` — the boot-time init file and
-the command interpreter.
+the error is correct rather than a controller failure. Listing a directory
+is a *program that lives on the disk*:
+
+```
+RUN "MO0:LIB"
+```
+
+**(verified)** against a real Luxor system disk, which opens `LIB`'s own
+menu:
+
+```
+                       ** ABC800 LIB **
+                      1 - Skrivare (Printer)
+                      2 - Storlek
+                      3 - Filstatus
+                      4 - Viss drivenhet
+                         Välj (1-4)?
+```
+
+It is interactive, so drive it under `--interactive`. Scripted `--type`
+can start it but cannot reliably answer more than one of its prompts: the
+DART holds a single received byte, so every keystroke typed while the
+program is not reading is discarded, and `--type-at` offers only one delay
+point in a run.
+
+`BYE` is the other route — it leaves BASIC for the disk's own command
+interpreter, with `$BAS` returning. The two system files involved are
+named in the DOS ROM itself as `BASICINI.SYS` (boot-time init) and
+`CMDINT.SYS` (the interpreter). Both are present on real system disks, but
+`BYE` has not been made to work here: against a system disk it prints
+`Abort 48` repeatedly (error 48 is "failure in system data"), and that has
+not been diagnosed.
 
 ### Data files
 
@@ -738,8 +766,13 @@ easy to get wrong:
 
 - **`MO` media is sector-interleaved with factor 7; `MF` media is not.**
   The two drives interleave in *opposite* directions, each established by
-  booting real media both ways. Getting it wrong does not produce an
-  error — the disk simply does nothing.
+  booting real media both ways. But the factor belongs to the **dump**, not
+  only the drive: those defaults suit abc80.net's `.img` archive, which
+  stores sectors physically, while `.dsk` images of the same media are in
+  logical order and need `--interleave 0`. Nothing inside an image says
+  which. The wrong choice does not look like a broken disk — the card is
+  found and the directory lists correctly, and then every real file read
+  gives `Error 37`.
 - **A readable hex dump proves nothing about interleave.** Both formats
   keep their directory at sector 16, and track-boundary sectors map to
   themselves under either mapping, so the directory is legible even when
@@ -783,14 +816,34 @@ bin/abc802 --disk 1:work.img                 # pin to drive 1, no drive 0
 - **With no `--disk`, no card is fitted at all.** Every ABC-bus read
   floats high, which is precisely the `0xFF` the ROM's boot scan reads as
   "nothing there".
+- **`--interleave N` overrides the sector interleave** (0 disables it) for
+  images dumped in logical rather than physical order. The startup line
+  reports what is in force:
+  `ABC-bus: mo floppy controller, 1 drive attached, interleave 0 (overridden)`.
 
-**You cannot create a blank disk from inside the emulator. (verified)** An
-all-zero 163,840-byte file is accepted as an ABC830 image, but `SAVE` to
-it gives `Error 41` ("disk space full") — an unformatted image has no
-valid free-list, and there is no `FORMAT` command in the BASIC or DOS ROM
-to build one. Real, already-formatted media is required. This repository
-deliberately does not commit disk images; `ABC802_TEST_DISKS` points the
-regression suite at a directory of them.
+**Neither ROM has a `FORMAT` command**, so a blank disk cannot be made
+from inside the machine — and an all-zero file of the right size is *not*
+a blank disk: it attaches and is recognized, then fails every `SAVE` with
+`Error 41` ("disk space full"), because an unformatted image has no
+free-list to allocate from. **(verified.)**
+
+`bin/abcdisk` writes a real, formatted, empty one:
+
+```
+bin/abcdisk create work.dsk                # 160K ABC830
+bin/abcdisk create big.dsk --type mf       # 640K ABC832/834
+bin/abcdisk list work.dsk                  # what is on it
+```
+
+Its images are in logical sector order, so attach a 160K one with
+`--interleave 0`. Both types are verified end to end: a program `SAVE`d to
+a freshly created disk `LOAD`s, `LIST`s and `RUN`s back in a *separate*
+process, and `abcdisk list` then reads the directory entry the DOS itself
+wrote. See `abcbus/mkdisk.c` for the on-disk format it builds.
+
+This repository still deliberately does not commit third-party disk
+images; `ABC802_TEST_DISKS` points the regression suite at a directory of
+them.
 
 For worked, verified `SAVE`/`LOAD` round trips against real media —
 including a negative control proving the drives are independent — see

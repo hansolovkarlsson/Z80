@@ -123,6 +123,24 @@ load with its negative control — need `ABC802_TEST_DISKS` pointed at a
 directory holding `disk001.img`, `mf001.img` and `mf002.img`, and skip
 loudly without it.
 
+Those three are `.img` dumps in physical sector order, so they run at the
+default interleave. Images from other archives may be dumped in logical
+order and need `--interleave 0` — see
+[`../resources/disks/README.md`](../resources/disks/README.md).
+
+Five further checks need **no external media at all**, because
+`bin/abcdisk` builds it: two format a blank disk of each type, and two
+`SAVE` a program to one and `LOAD`, `LIST` and `RUN` it back in a separate
+process. The fifth has `abcdisk` read a real image it did not write, which
+is what independently pins the directory's location — a writer and reader
+sharing one wrong constant agree perfectly, as a deliberate sabotage
+confirmed. That check is media-gated; the other four are not, so the disk
+*write* path is now covered on a bare checkout.
+
+Still uncovered: the `--interleave` override itself. Verifying it needs a
+logical-order image the suite can rely on, which is a media problem rather
+than a test-writing one.
+
 ## Planned next steps
 
 None committed. Milestones 2-10 closed the items that previously stood

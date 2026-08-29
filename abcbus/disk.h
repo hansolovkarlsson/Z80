@@ -81,6 +81,29 @@ bool abcbus_disk_present(void);
 // 160KB ABC830, "mf" for a 640KB ABC832/834), for startup reporting.
 const char *abcbus_disk_type_name(void);
 
+// Override the sector interleave the fitted drive would otherwise use.
+// `factor` is the multiplier applied within each 16-sector track; 0
+// disables interleaving entirely, i.e. the image is in plain logical
+// sector order.
+//
+// This exists because two dump conventions are genuinely in circulation
+// for the same media. The abc80.net `.img` archive stores ABC830 sectors
+// in *physical* order, which is why DRIVE_MO's factor of 7 was needed to
+// boot it at all (ABC80 Milestone 6, re-confirmed on the ABC802). Other
+// archives ship `.dsk` files in logical order, and those read as Error 37
+// - the file is found and its data is garbage - until the factor is
+// turned off. Neither dump is wrong; they simply record different things,
+// and nothing inside a disk says which. Note that a directory hex dump
+// cannot tell them apart: track-boundary sectors map to themselves under
+// any factor, so only reading a real file settles it.
+//
+// May be called before or after attaching; it takes effect per transfer.
+void abcbus_disk_set_interleave(unsigned factor);
+
+// The interleave factor actually in force - the override if one was set,
+// otherwise the fitted drive type's own. For startup reporting.
+unsigned abcbus_disk_interleave(void);
+
 // Release any attached images.
 void abcbus_disk_close(void);
 

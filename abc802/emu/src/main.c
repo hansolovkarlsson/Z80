@@ -244,6 +244,14 @@ static void usage(const char *argv0) {
     printf("                   1, ... in order, or pin one with \"1:FILE\".\n");
     printf("                   Without it no card is fitted and the ROM's\n");
     printf("                   scan finds nothing.\n");
+    printf("  --interleave N   override the sector interleave of the attached\n");
+    printf("                   images. 0 means none. Needed because two dump\n");
+    printf("                   conventions exist: abc80.net's .img archive\n");
+    printf("                   stores ABC830 sectors physically (factor 7, the\n");
+    printf("                   default), while other .dsk dumps are in logical\n");
+    printf("                   order and need --interleave 0. The symptom of\n");
+    printf("                   the wrong choice is Error 37 on every real file\n");
+    printf("                   while the disk is otherwise found.\n");
     printf("  --columns 40|80  characters per line (DIP S3, default 40 as on MAME)\n");
     printf("  -h, --help       this message\n");
     printf("\nEnvironment:\n");
@@ -262,6 +270,7 @@ int main(int argc, char **argv) {
     int disk_count = 0;
     long long type_at = 0;
     int columns = 40;
+    long interleave = -1;   // <0 = leave the drive type's own factor alone
     bool interactive = false;
     bool cycles_given = false;
 
@@ -291,6 +300,13 @@ int main(int argc, char **argv) {
             type_text = argv[++i];
         } else if (!strcmp(argv[i], "--interactive")) {
             interactive = true;
+        } else if (!strcmp(argv[i], "--interleave") && i + 1 < argc) {
+            char *end = NULL;
+            interleave = strtol(argv[++i], &end, 10);
+            if (!end || *end || interleave < 0 || interleave > 15) {
+                fprintf(stderr, "--interleave must be 0-15\n");
+                return 1;
+            }
         } else if (!strcmp(argv[i], "--columns") && i + 1 < argc) {
             columns = atoi(argv[++i]);
             if (columns != 40 && columns != 80) {
@@ -327,15 +343,19 @@ int main(int argc, char **argv) {
     abc802_ports_attach(&cpu);
     abc802_set_config(columns == 80, true);
 
+    if (interleave >= 0) abcbus_disk_set_interleave((unsigned)interleave);
     for (int d = 0; d < disk_count; d++) {
         if (!abcbus_disk_attach_arg(disk_paths[d])) return 1;
     }
 
     printf("ABC802: loaded 32K ROM from '%s' (DOS ROM '%s')\n", rom_dir, dos_rom);
     if (disk_count > 0) {
-        printf("ABC-bus: %s floppy controller, %d drive%s attached\n",
+        printf("ABC-bus: %s floppy controller, %d drive%s attached, "
+               "interleave %u%s\n",
                abcbus_disk_type_name(), abcbus_disk_attached_count(),
-               abcbus_disk_attached_count() == 1 ? "" : "s");
+               abcbus_disk_attached_count() == 1 ? "" : "s",
+               abcbus_disk_interleave(),
+               interleave >= 0 ? " (overridden)" : "");
     }
 
     if (interactive) {
