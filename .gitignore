@@ -17,6 +17,10 @@ abc802/gtk/src/*.o
 cpm_disk/
 !/cpm/cpm_disk/
 
+# The user's own scratch directory - personal test scripts and workspace,
+# not part of the project and not maintained with it.
+scratch/
+
 # Real ABC-bus floppy images. Third-party disk dumps with no license
 # statement anywhere, unlike the ROM images (which carry an explicit
 # provenance and checksum table) - so they stay out of the repo while the

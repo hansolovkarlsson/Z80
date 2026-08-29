@@ -17,6 +17,93 @@ in an entry here.
 
 ---
 
+## 2026-08-30 (last) — driving the real thing, and what a live session found
+
+`bin/abcdisk` and `--interleave` were both verified through scripted runs.
+This session put them under a genuine `--interactive` session and worked
+through the whole disk command set, which turned a reference table of
+syntax into a table of confirmed behaviour.
+
+### Getting an interactive session at all
+
+This runs as a background job with no TTY, and `--interactive` needs a
+real terminal. The way through was a **pty with paced keystrokes** — the
+same technique `cpm/`'s dBASE II and RED investigations used years of
+commits ago to capture what a program really emits. A small driver forks a
+pty, types a script a character at a time, and reads the framebuffer back.
+
+That is worth recording as a general capability rather than a one-off:
+anything in this repo that needs `--interactive` can now be exercised
+without a human at a keyboard, including the parts of `LIB` that scripted
+`--type` cannot reach.
+
+### The command set, now actually run
+
+`SAVE`, `LOAD`, `RUN "file"`, `LIST "file"`, `MERGE`, `UNSAVE`, `KILL` and
+`NAME … AS` were each run live against a disk `bin/abcdisk` had formatted,
+with the directory read back afterwards to confirm what happened. All
+work. `CHAIN` was not tested and is marked as such.
+
+Two findings the syntax tables could not have given:
+
+- **`MERGE` refuses a `.BAC` file with `Error 204`**, and the *same*
+  program saved as text with `LIST` merges fine. That is the manual's own
+  rule confirmed from both sides rather than transcribed.
+- **`UNSAVE` and `KILL` genuinely release clusters** — deleting the only
+  file on a fresh disk returns the free-list to exactly its as-formatted
+  state — **but the next save does not reuse the hole.** A file deleted
+  from clusters 24-25 leaves them free while the next one lands at 28.
+  The allocator appends. Harmless, but it means a churned disk fragments.
+
+That last one is also the strongest evidence yet that the reconstructed
+free-list is right: real firmware is reading it, allocating from it,
+freeing into it, and the result stays consistent across sessions.
+
+Also noticed: `LIST` re-indents loop bodies, so a listing is the ROM's own
+formatting, not the text that was typed.
+
+### An anomaly with a mundane cause: two people, one disk
+
+Midway through, a file deleted two sessions earlier reappeared in the
+directory. That looked like a serious defect — either `UNSAVE` not really
+deleting, or the directory being restored from a stale copy.
+
+It did not reproduce. `SAVE` alone, then `UNSAVE` alone, on a fresh disk,
+in separate processes: clean, and the free-list returns to its pristine
+24 clusters. Replaying the entire original sequence on a fresh disk: also
+clean.
+
+**The cause was that the user had been driving the same disk.** They were
+trying the interface out interactively and re-saved the file themselves.
+`UNSAVE` had worked correctly all along, and so had everything else — the
+directory was simply showing a write neither of my sessions made.
+
+The lesson is about where a test disk lives. `work.dsk` was created in
+`abc802/resources/disks/`, alongside the real media — a *shared* location,
+open to whoever runs the emulator next. A disk being written by an
+automated check has no business there; it belongs in scratch space, so
+that "the directory changed" can only ever mean the software changed it.
+The interleave and formatter work avoided this by copying media into a
+temp directory per run, which is exactly the habit that should have
+applied here too.
+
+Kept in the log anyway, because the reasoning up to that point was right
+even though the hypothesis was wrong. An observation that contradicts the
+story has to be chased until it reproduces or is explained, and the two
+minimal experiments were what established that no defect existed — the
+explanation then came from asking rather than from more testing.
+
+### Housekeeping
+
+`scratch/` is now in `.gitignore`. The user added it as their own
+workspace and asked that it not be maintained or published; it was
+untracked but *not* ignored, and the last two commits used `git add -A`,
+so an hour's difference in timing would have published it. Ignoring it is
+the fix that survives whoever runs `git add` next — a note to myself would
+not have.
+
+---
+
 ## 2026-08-30 (later) — bin/abcdisk, and a filesystem read out of the media
 
 A CLI tool that creates formatted, empty ABC-bus disk images, and lists

@@ -653,20 +653,62 @@ and fix the lines that then report errors.
 
 ### Program file commands
 
+Every one of these was run live against a disk `bin/abcdisk` formatted,
+under `--interactive`, with the result confirmed by reading the directory
+back afterwards:
+
+| Command | Effect | |
+|---|---|---|
+| `SAVE "MO0:GAME"` | save the program, tokenized, as `GAME.BAC` | **(verified)** |
+| `LOAD "MO0:GAME"` | load it back | **(verified)** |
+| `RUN "MO0:GAME"` | load and run in one step | **(verified)** |
+| `LIST "MO0:GAME"` | save as readable text instead, as `GAME.BAS` | **(verified)** |
+| `MERGE "MO0:SUBS.BAS"` | merge another program into this one | **(verified)** |
+| `UNSAVE "MO0:GAME"` | delete the file | **(verified)** |
+| `KILL "MO0:GAME.BAC"` | delete, as a statement | **(verified)** |
+| `NAME "MO0:OLD.BAC" AS "NEW.BAC"` | rename in place | **(verified)** |
+| `CHAIN "MO0:PART2"` | in a program: load and run another | not tested |
+
+`KILL` and `NAME` … `AS` are *statements* from the DOS ROM's own command
+table at `0x6F87`, whose complete contents are exactly four entries:
+`BYE`, `KILL`, `NAME`, `AS`.
+
+**`MERGE` only works on a text file. (verified)** Against a `.BAC` it
+gives `Error 204` ("MERGE cannot be used on a BAC file"), which is the
+manual's own rule confirmed from both sides — the same program saved with
+`LIST` instead of `SAVE` merges correctly:
+
 ```
-SAVE "MF0:GAME"        save the program in memory, tokenized, as GAME.BAC
-LOAD "MF0:GAME"        load it back
-RUN "MF0:GAME"         load and run in one step
-LIST "MF0:GAME.BAS"    save as readable text instead
-MERGE "MF0:SUBS"       merge another program into this one
-UNSAVE "MF0:GAME"      delete the file
-CHAIN "MF0:PART2"      (in a program) load and run another program
+NEW
+100 PRINT "MERGED IN"
+LIST "MO0:SUBST"          ! writes SUBST.BAS, text
+NEW
+10 PRINT "MAIN"
+MERGE "MO0:SUBST.BAS"
+LIST
+10 PRINT "MAIN"
+100 PRINT "MERGED IN"
 ```
 
-`KILL "[device:]file.ext"` also deletes, and
-`NAME "[device:]old.ext" AS "new.ext"` renames — both are *statements*
-from the DOS ROM's own command table at `0x6F87`, whose complete contents
-are exactly four entries: `BYE`, `KILL`, `NAME`, `AS`.
+Two behaviours worth knowing, both observed rather than documented:
+
+- **`UNSAVE` and `KILL` genuinely release the file's clusters.** Deleting
+  the only file on a fresh disk returns the free-list to exactly its
+  as-formatted state, 24 of 640 clusters used. **(verified)**
+- **Freed clusters are not reused by the next save.** After deleting a
+  file at clusters 24-25 and saving a new one, the new file lands at 28,
+  with 24-25 left free. The allocator appends rather than filling holes.
+  **(verified)** — harmless, but it means a disk churned through many
+  saves fragments rather than compacting.
+
+`LIST` also re-indents loop bodies when it prints a program back, so a
+listing is the ROM's own formatting rather than the text you typed:
+
+```
+20 FOR I%=1 TO 3
+30   PRINT I%;
+40 NEXT I%
+```
 
 ### Listing a disk's files
 
@@ -836,10 +878,39 @@ bin/abcdisk list work.dsk                  # what is on it
 ```
 
 Its images are in logical sector order, so attach a 160K one with
-`--interleave 0`. Both types are verified end to end: a program `SAVE`d to
-a freshly created disk `LOAD`s, `LIST`s and `RUN`s back in a *separate*
-process, and `abcdisk list` then reads the directory entry the DOS itself
-wrote. See `abcbus/mkdisk.c` for the on-disk format it builds.
+`--interleave 0` — the `create` command prints the exact line to use.
+See `abcbus/mkdisk.c` for the on-disk format it builds.
+
+A complete session, start to finish:
+
+```
+$ bin/abcdisk create work.dsk
+Created 'work.dsk': mo, 640 sectors, 163840 bytes, 616 free clusters
+Attach it with: bin/abc802 --disk work.dsk --interleave 0
+
+$ bin/abc802 --interactive --columns 80 --interleave 0 --disk work.dsk
+ABC802
+10 PRINT "HELLO FROM A BLANK DISK"
+20 FOR I%=1 TO 3
+30 PRINT I%;
+40 NEXT I%
+RUN
+HELLO FROM A BLANK DISK
+ 1  2  3
+ABC802
+SAVE "MO0:HELLO"
+ABC802
+                                    (Ctrl-\ exits)
+
+$ bin/abcdisk list work.dsk
+work.dsk: mo, 640 sectors
+  HELLO    BAC  sector 24    512 bytes
+  26 of 640 clusters used, 614 free
+```
+
+**(verified)** — that is a real transcript, and a *separate* live session
+then `LOAD`s, `LIST`s and `RUN`s the program back. Both drive types were
+checked this way.
 
 This repository still deliberately does not commit third-party disk
 images; `ABC802_TEST_DISKS` points the regression suite at a directory of

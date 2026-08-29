@@ -120,9 +120,18 @@ bin/abcdisk list work.dsk                 # what is on it
 ```
 
 It writes in logical sector order, so attach a 160K one with
-`--interleave 0`. `list` also reads real media, under either dump
-convention — the directory sits on a track boundary and those sectors map
-to themselves under any interleave factor.
+`--interleave 0` — `create` prints the exact line. `list` also reads real
+media, under either dump convention, because the directory sits on a track
+boundary and those sectors map to themselves under any interleave factor.
+
+The whole disk command set has been run live against a disk created this
+way: `SAVE`, `LOAD`, `RUN "file"`, `LIST "file"`, `MERGE`, `UNSAVE`,
+`KILL` and `NAME … AS`. See
+[`ABC802_BASIC_REFERENCE.md`](../../docs/ABC802_BASIC_REFERENCE.md)'s
+"Program file commands" for what each was confirmed to do, including two
+behaviours worth knowing before they surprise you: `MERGE` refuses a
+`.BAC` file, and deleting a file frees its clusters but the next save does
+not reuse them.
 
 ## Listing a disk's files from BASIC
 
