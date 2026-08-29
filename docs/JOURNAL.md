@@ -17,6 +17,106 @@ in an entry here.
 
 ---
 
+## 2026-08-29 (last) — a BASIC II reference, read out of the ROM
+
+`abc802/docs/ABC802_BASIC_REFERENCE.md`: how to actually *use* the
+machine, alongside the disk drives and how a disk is stored. The ABC80
+target has had an equivalent since its own Milestone 3; the ABC802 had a
+hardware reference and three roadmap-shaped documents but nothing that
+answered "what can I type at this prompt."
+
+### Reading the language out of the ROM rather than a manual
+
+The ABC80 document was built from a vendor quick-reference card and
+spot-checked against the ROM. This one went the other way round, and the
+result was better than expected: **BASIC II's keyword tables are stored in
+the ROM in a format that decodes cleanly**, as a token byte with bit 7 set
+followed by the keyword's ASCII characters, `0xFF` closing a group. Eight
+tables came out of it — operators, functions, attributes, statements,
+commands, an extension table, and in the DOS ROM the device names and the
+four DOS commands.
+
+Two things fell out for free that a manual could not have given as
+reliably:
+
+- **The operator table is stored in precedence order**, with the `0xFF`
+  separators marking the group boundaries. So the precedence table in the
+  document is read out of the ROM, not inferred by experiment.
+- **Synonyms are identifiable, not guessable.** `NEW`/`SCR`,
+  `RENUMBER`/`REN`, `LEFT`/`LEFT$` and `ASC`/`ASCII` each appear as two
+  entries carrying the *same* token. That settled a contradiction: the
+  manual's ABC 802 appendix lists `SCR` among the omitted keywords, but
+  the ROM has it sharing `NEW`'s token and the machine accepts it. The
+  appendix is removing the ABC 806's high-resolution `SCR`, a different
+  keyword with the same spelling.
+
+The first parse was wrong in an instructive way — I read the token as
+*following* the keyword, which produced plausible-looking garbage
+(`'COS#'`, `'NUM$\''`) for about half the entries and clean names for the
+rest. Dumping forty bytes with the high bit marked per byte settled it in
+one look. Plausible-looking output from a wrong assumption is the failure
+mode to expect when decoding a table format.
+
+### The manual was still needed, and it is a good one
+
+Luxor's own *ABC 800 BASIC II* (English, © 1984) is on abc80.net with an
+OCR text layer, 155 pages, and — the part that makes it usable here at all
+— **an Appendix 5 devoted to the ABC 802's differences**. It supplied the
+error-message table, which the ROM cannot: this BASIC reports errors as
+bare numbers and contains exactly one relevant string, `Error`, at
+`0x3D6E`. There is no message text in the machine to extract.
+
+Sixteen of its error codes were then reproduced against the real ROM and
+marked as such, which was worth doing — it confirmed the OCR's two-column
+table had not slipped a row, which was the obvious risk. `CON` with
+nothing to continue really is 207, `VAL("ABC")` really is 210, `DOUBLE`
+after an assignment really is 211.
+
+### What direct execution found that neither source had
+
+- **`CHR$()` cannot substitute for an attribute word.** `PRINT GWHT;`
+  stores byte 23 in the screen cell; `PRINT CHR$(23);` stores 32, a space
+  — the print routine filters control codes. Found by peeking the cell
+  after each. This matters because turning on graphics mode for a row is
+  the *only* way to make `SET DOT` visible, and the obvious workaround
+  silently does nothing.
+- **The attribute words' tokens are their character codes plus `0x80`.**
+  Which means the whole 25-entry table decodes to the character-generator
+  attribute codes Milestone 3 already established, and a `PEEK` check on
+  seven of them confirmed it.
+- **`SET DOT` and `TXPOINT` do not cover the same area, and their origins
+  are at opposite corners.** Bisected: in 80 columns `SET DOT` accepts
+  position 0-159 and `TXPOINT` 0-157; in 40 columns, 0-79 and 0-77. The
+  manual gives 0-77 for both and 2-79 for `CLR DOT` in the same chapter,
+  so its numbers are not reliable at this granularity.
+- **BASIC II ignores spaces inside keywords.** `P RINT 6*7` prints 42.
+  This started as a check that ABC80's one-word `SETDOT` and `INPUTLINE`
+  were *absent* — they are not; they are accepted verbatim and re-listed
+  as `SET DOT` and `INPUT LINE`. A compatibility feature that would have
+  been documented backwards had it not been tested.
+- **A blank file is not a blank disk.** An all-zero 163,840-byte image is
+  accepted as an ABC830, but `SAVE` to it gives `Error 41` ("disk space
+  full") — an unformatted image has no free-list and there is no `FORMAT`
+  anywhere in the BASIC or DOS ROM. Worth stating in the document, since
+  `dd if=/dev/zero` is the obvious first thing to try.
+- **`MEM:`, the 32 KB RAM-floppy, does not work here.** `SAVE "MEM:1"`
+  reports no error; `LOAD "MEM:1"` gives `Error 37`, for every number
+  tried. Recorded as an observed limitation rather than diagnosed — it
+  lives in the RAM the ROM overlays, so a bank-selection path is the
+  likely cause.
+
+### Not done
+
+No disk images were available locally this session, so the disk section
+rests on the ROM's own device table, the manual, and the verified
+transcripts already in `ABC802_COMPLETED.md` from Milestones 5-7 rather
+than on a fresh round trip. The per-byte directory layout is described as
+ABC80-derived, because that is what it is — the ABC802's UFD-DOS has not
+been decoded to the same depth here, and the document says so rather than
+borrowing the confidence.
+
+---
+
 ## 2026-08-29 (later still) — regression suites for the machine targets
 
 Three machine targets, one covered by `make test`. Everything the ABC

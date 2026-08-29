@@ -88,8 +88,13 @@ machine: a programmable MC6845 CRTC instead of fixed video timing, three
 Z80 peripheral chips (CTC/SIO/DART) on an IM 2 daisy chain instead of a
 single periodic PIO interrupt, a 32K ROM that *overlays* the low half of
 a full 64K of RAM, and a serial keyboard rather than a scanned matrix.
-See `abc802/docs/ABC802_ROADMAP.md` for status and known gaps and
-`abc802/docs/ABC802_REFERENCE.md` for the hardware reference. As of
+See `abc802/docs/ABC802_ROADMAP.md` for status and known gaps,
+`abc802/docs/ABC802_REFERENCE.md` for the hardware reference, and
+`abc802/docs/ABC802_BASIC_REFERENCE.md` for the BASIC II language itself
+(commands, statements, functions, the disk devices and how a disk image
+is laid out) — the ABC800-family dialect, a substantially richer language
+than ABC80's, whose keyword tables that document reads out of the ROM
+images directly rather than transcribing a manual. As of
 Milestone 1 it boots the real, unmodified BASIC II ROM images (committed
 under `abc802/resources/rom/`, every one verified byte-for-byte against
 MAME's published CRC32 *and* SHA1) to a working prompt: `bin/abc802

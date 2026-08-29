@@ -1,8 +1,9 @@
 # ABC802 emulator roadmap
 
 Status and known gaps for `bin/abc802`, the Luxor ABC802 machine target.
-Hardware facts live in `ABC802_REFERENCE.md`; this file is about what
-works, what does not, and what was actually verified.
+Hardware facts live in `ABC802_REFERENCE.md` and the BASIC II language
+itself in `ABC802_BASIC_REFERENCE.md`; this file is about what works, what
+does not, and what was actually verified.
 
 ## Why a third machine target
 

@@ -195,9 +195,12 @@ CP/M-specific — see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
   [`ABC802_COMPLETED.md`](abc802/docs/ABC802_COMPLETED.md) for the
   finished milestones,
   [`ABC802_FLOPPY_SCOPING.md`](abc802/docs/ABC802_FLOPPY_SCOPING.md) for
-  the costed options on disk support, and
+  the costed options on disk support,
   [`ABC802_REFERENCE.md`](abc802/docs/ABC802_REFERENCE.md) for the
-  hardware.
+  hardware, and
+  [`ABC802_BASIC_REFERENCE.md`](abc802/docs/ABC802_BASIC_REFERENCE.md)
+  for the BASIC II language itself, including the disk drives and how a
+  disk is stored.
 - `cpm/gtk/` — an opt-in (`make gtk`) thin GTK4 launcher for `bin/z80`,
   attached to a pty with a `VteTerminal` doing the real terminal
   interpretation. See `cpm/gtk/README.md`.
