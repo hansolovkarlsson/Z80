@@ -17,6 +17,153 @@ in an entry here.
 
 ---
 
+## 2026-09-01 (last) — the right disk, and a bug that halved every one I made
+
+The user pointed at <https://www.abc80.net/archive/luxor/>. Its
+`640k/index.txt` transcribes the physical disk labels, so `grep -i ufd`
+found three ABC832 UFD-DOS system disks without downloading anything.
+`disk039.img` closed two items that had been open for three sessions.
+
+### LIB was never broken
+
+```
+-LIB
+** Library list **
+Drive MF0:
+SYSDIR  .SYS BASICINI.SYS ADDOPT  .ABS ...
+ 1960 av  2528 sektorer lediga.
+```
+
+Full listing, first try. The `0x2C`-vs-`0x2D` diagnosis was right and is
+now demonstrated rather than argued: give the DOS the controller it
+addresses and its own utility works.
+
+The same disk also settled `DR0:` by simply saying so at boot — `DOS är
+UFD-DOS ver. 20 / DR_: motsvarar MF_:`. Two sessions of inference about
+that mapping, answered by a sign-on message.
+
+### The bug it exposed
+
+`LIB` printed `1960 av 2528 sektorer lediga`. `bin/abcdisk` said the same
+disk had 170 clusters free. Those disagree: 1960/4 = 490.
+
+**`FORMAT_MF.usable_clusters` was 320 and should have been 640.** An
+ABC832 has 2560 sectors, four to a cluster; minus the eight-cluster system
+area that is 2528 sectors — exactly LIB's number. My value came from
+`sana23.dsk`, the single 640K image I had, whose pristine bitmap marks the
+upper half allocated. Atypical media, read as the format.
+
+So every disk `abcdisk create --type mf` has made was **half-size**, and
+nothing caught it: the round-trip test saves one small program, and the
+suite never asks how much space there is. Fixed, and verified the right
+way round — the real DOS's own `LIB`, on a disk the tool created, now
+reports `2528 av 2528 sektorer lediga`.
+
+**The test gap was closed too**, which matters more than the fix. The
+suite now asserts both drives' free-cluster counts, at `create` time and
+again through `list`, and the numbers are taken from the machines rather
+than from arithmetic: 632 from a 640K disk's own `LIB` line, 616 from the
+figure ABC80's suite already pins against real media. Re-introducing the
+exact `320` and re-running turns `abcdisk-create-mf` red, which is the
+only evidence worth having that a regression test works.
+
+A formatter can produce a perfectly working disk of the wrong size. Every
+functional check here passed throughout — save, load, list, round trip —
+because none of them asked how much room there was.
+
+That is the fourth time this week that ABC830-vs-ABC832 hid a defect, and
+the second where **one sample of 640K media was mistaken for the format**.
+The rule that keeps earning itself: a constant derived from a single
+artefact is a description of that artefact.
+
+### Also worth having
+
+`abcdisk list` on the three new disks agrees with the machine, which is
+independent confirmation of the cluster fix from the previous session —
+its start sectors are all multiples of four, and they resolve to real
+descriptors.
+
+### Still open
+
+`DOSGEN` on a 640K system now starts and reaches its media-verify pass,
+then walks cluster addresses far beyond the 2560 sectors an image has and
+calls each one bad. `LIB` on the same disk is fine, so it is specific to
+that pass rather than to the bus model. Recorded in the roadmap.
+
+And the archive is worth remembering as a *documentation* source, not just
+media — `doclist/`, `ABC80x/` and `Prom/` are all there, and the BASIC II
+manual that anchors the language reference came from it.
+
+---
+
+## 2026-09-01 (later) — the DOS's file-extent semantics, and a converted disk that boots
+
+Went back at the extent question. It is answered, and the proof is a
+160K disk converted to 640K that autoboots the real ORD 800 word
+processor.
+
+### The rules
+
+- **The allocation unit is the cluster, not the sector.** The descriptor's
+  `last` field is `start + clusters - 1`. On the ABC830 a cluster *is* a
+  sector, so it reads as `sectors - 1` and the distinction is invisible —
+  which is exactly why the first conversion attempt used sectors and made
+  the DOS read ten clusters where it should have read three. Confirmed
+  against 23 of the 25 files on real 640K media.
+- **Iteration is a flat logical index**: sector *i* is at cluster
+  `start + i/spc`, offset `i mod spc`. The trace shows it directly — `MO`
+  advances the cluster with offset always 0, `MF` runs the offset 0-3 then
+  advances.
+- **Per-sector framing is three bytes** — file id, sequence, zero — with
+  253 bytes of payload, and the first sector is a descriptor rather than
+  data.
+- **The directory's byte-length field is optional.** Some disks record it,
+  some leave it zero. When present the DOS honours it exactly: set it too
+  large and the load fails with `Error 38`, "sector number outside the
+  file".
+
+That last one is a nice property to have found by *over*-shooting. Setting
+a length that was correct-looking but too generous produced a different
+error from setting none at all, and the pair of errors bracketed the real
+semantics better than either alone would have.
+
+### The demonstration
+
+`ord800.dsk` converted to 640K boots ORD 800 Version 2.4. That is the
+whole model — cluster allocation, descriptor rebasing, directory slots
+preserved, free-list rebuilt — working end to end on real 1980s software.
+
+### Four hypotheses, three wrong
+
+Worth listing, because the wrong ones each looked convincing:
+
+1. *The length field is required for MF.* **Wrong** — stripping every
+   length from `ord800` and reconverting still boots. Tested by
+   deliberately zeroing the field rather than by reasoning about it.
+2. *Files with a partial last cluster over-read into the 0xE5 tail.*
+   **Wrong** — `PRESTART.BAC` is 7 sectors in 2 clusters and loads fine.
+3. *The system disks are special because they lack lengths.* **Wrong** —
+   four of their five `.BAC` files load cleanly from the conversion.
+4. *The allocation unit is the cluster.* **Right**, and it is the one that
+   actually mattered.
+
+The three wrong ones all had supporting evidence at the moment I formed
+them. What killed each was a control: strip the field and retest, pick a
+file with the opposite property, try every file instead of the first one.
+**The cheapest way to kill a plausible hypothesis is to construct the case
+it forbids** — considerably cheaper than reasoning about whether it is
+true.
+
+### Loose end
+
+On a converted system disk, `DIRCOPY.BAC` still fails to load while the
+other four `.BAC` files are fine. On the original it loads, and the trace
+shows the DOS reading its ten sectors and then two more elsewhere on the
+disk — sectors that the conversion has moved. Not isolated; noted in the
+roadmap rather than guessed at.
+
+---
+
 ## 2026-09-01 — converting 160K to 640K: the diagnosis holds, the image does not
 
 Converted `sys10sw.dsk` to a 640K ABC832 image to test whether `LIB` and

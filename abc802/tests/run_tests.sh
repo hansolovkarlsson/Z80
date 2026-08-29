@@ -256,16 +256,29 @@ fi
 #
 # Note the --interleave 0: abcdisk writes images in logical sector order,
 # which is the convention the MO default does *not* assume.
-for spec in "mo:160K:--interleave 0:MO0" "mf:640K::MF0"; do
-    type=${spec%%:*}; rest=${spec#*:}
-    label=${rest%%:*}; rest=${rest#*:}
-    flag=${rest%%:*}; dev=${rest#*:}
+#
+# The free-cluster counts are asserted because a formatter can produce a
+# perfectly working disk of the wrong size, and nothing else here would
+# notice: the round trip below saves one small program. `--type mf` really
+# did ship at half capacity once, from a `usable_clusters` derived from a
+# single atypical image.
+#
+# Both numbers come from the machine, not from arithmetic. A 640K disk's
+# own DOS reports "1960 av 2528 sektorer lediga", i.e. 2528/4 = 632
+# clusters usable after the 8-cluster system area; and 616 is the 160K
+# figure the ABC80 suite already pins from real media ("453 av 616
+# sektorer kvar").
+for spec in "mo:160K:--interleave 0:MO0:616" "mf:640K::MF0:632"; do
+    IFS=: read -r type label flag dev freeclusters <<<"$spec"
     image="$WORKDIR/blank-$type.dsk"
 
     out=$("$ABCDISK" create "$image" --type "$type" 2>&1)
     tl_begin "abcdisk-create-$type"
     tl_want "$out" "Created" "the image being written"
-    tl_want "$("$ABCDISK" list "$image" 2>&1)" "(empty)" "a fresh disk listing no files"
+    tl_want "$out" "$freeclusters free clusters" "the drive's full usable capacity"
+    listing=$("$ABCDISK" list "$image" 2>&1)
+    tl_want "$listing" "(empty)" "a fresh disk listing no files"
+    tl_want "$listing" "$freeclusters free" "the same capacity read back"
     tl_end "$out"
 
     # shellcheck disable=SC2086

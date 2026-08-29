@@ -68,12 +68,33 @@ The 640K `MF` drive defaults to no interleave, which happens to match the
 untouched. That is luck, not a rule: the two drives were each measured
 independently and need *opposite* settings.
 
+## Where to get more
+
+<https://www.abc80.net/archive/luxor/> — the same archive the committed
+ROMs come from. Disk images live under `sw/disk_images/ABC800/` in `160k/`
+and `640k/`, and **each directory has an `index.txt` that transcribes the
+physical disk labels**, so a system disk can be found without downloading
+anything: `grep -i ufd index.txt`.
+
+Three 640K UFD-DOS system disks are worth having, because they are the
+only media here that exercises the DOS layer properly — the 160K system
+disks cannot, since the DOS addresses select `0x2C` (ABC832) and they
+answer at `0x2D`:
+
+| Local name | Source | Label |
+|---|---|---|
+| `sys832-ufd.img` | `640k/disk039.img` | ABC832 SYSTEMSKIVA UFD-DOS EXP 1.6.13 |
+| `sys832-ufd62.img` | `640k/disk028.img` | SYSTEMSKIVA VER:6.2 FÖR UFD-DOS |
+| `sys832-ufd631.img` | `640k/disk031.img` | System skiva Ver 6.31 UFD |
+
+On any of them, `BYE` then `LIB` gives a full directory listing.
+
 ## What is here locally
 
-Ten images, none committed. Provenance is **not recorded** — these were
-supplied locally and the originating archive is unknown; fill in the
-source here if you know it. Checksums are listed so a re-download can be
-identified.
+None committed. Provenance for the `.dsk` files below is **not recorded**
+— they were supplied locally and the originating archive is unknown; fill
+in the source here if you know it. Checksums are listed so a re-download
+can be identified.
 
 | File | Size | MD5 |
 |---|---|---|

@@ -98,24 +98,16 @@ Real, understood, and deliberately not solved yet — not oversights.
   readable under either mapping, so only booting real media settles it.
   **Real software hits this, and it is the single cause of both known DOS
   failures** — see the `LIB`/`DOSGEN` entry below.
-- **The DOS's `LIB` and `DOSGEN` both fail, for one shared reason.** Not
-  two bugs: the DOS's logical drives map to select `0x2C`, the ABC832/834
-  controller, while every system disk here is a 160K ABC830 answering at
-  `0x2D` — and only one controller is fitted at a time. `DOSGEN`'s format
-  commands reach no card; `LIB`'s free-space read fails, is retried three
-  times and returns carry, so it skips its listing entirely. Both were
-  established on the bus, and `LIB.ABS` was disassembled out of RAM to
-  confirm the path (see `ABC802_BASIC_REFERENCE.md`'s "Leaving BASIC for
-  the DOS"). Fixing it means modelling two controllers simultaneously; a
-  640K system disk would sidestep it. Neither blocks anything —
-  `bin/abcdisk list` reads the same directory with no machine at all.
-  **Partly confirmed by converting a 160K system disk to 640K**: on the
-  `MF` controller `LIB` stops bailing and actually renders a listing, so
-  the select really is the blocker. The converted image is not fully valid
-  though — the DOS reads one sector too many per file and reports
-  `Error 37` — so this is evidence, not proof. Getting it right needs the
-  DOS's file-extent semantics pinned down, which the descriptor's
-  `last` field alone does not settle.
+- **`DOSGEN` scans past the end of the modeled drive.** On a real 640K
+  UFD-DOS system disk it now starts and reaches its media-verify pass, but
+  walks cluster addresses well beyond the 640 a 2560-sector image has and
+  reports each as `Sektor NNNN är dålig - borttagen!`. Whether the real
+  card answers a beyond-media address differently, or whether DOSGEN needs
+  a drive-geometry reply this controller does not give, is not known.
+  `LIB` on the same disk works fully, so this is specific to DOSGEN's
+  verify pass rather than to the bus model. Low-level formatting (its `F`
+  option) is out of scope for a synthetic controller in any case; the `-`
+  option, which writes only the filesystem, is the reachable one.
 - **The controller card itself is not emulated.** A real ABC830 is a
   complete second computer (its own Z80, Z80 DMA, FD1793 and firmware);
   what exists here models the *protocol* it speaks, not the card. Software
@@ -149,7 +141,9 @@ order and need `--interleave 0` — see
 [`../resources/disks/README.md`](../resources/disks/README.md).
 
 Five further checks need **no external media at all**, because
-`bin/abcdisk` builds it: two format a blank disk of each type, and two
+`bin/abcdisk` builds it: two format a blank disk of each type — asserting
+the drive's full usable capacity, 616 and 632 clusters, which is what
+would have caught the ABC832 formatter shipping at half size — and two
 `SAVE` a program to one and `LOAD`, `LIST` and `RUN` it back in a separate
 process. The fifth has `abcdisk` read a real image it did not write, which
 is what independently pins the directory's location — a writer and reader

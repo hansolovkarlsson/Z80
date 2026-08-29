@@ -51,9 +51,8 @@
 // 1 = allocated. Both drives have 640 clusters, so it is 80 bytes on
 // either - which is why the ABC832's four-sectors-per-cluster geometry
 // needs no separate bitmap size. Clusters past the usable end are marked
-// allocated permanently so the DOS never hands them out; on the ABC832
-// that is everything from cluster 320 up, i.e. this DOS uses only the
-// first half of a 640K disk, which is what its own real media shows.
+// allocated permanently so the DOS never hands them out - which for both
+// modeled drives means nothing, since both use all 640.
 //
 // Two details found by comparing real disks rather than guessed:
 //
@@ -120,7 +119,14 @@ static const Format FORMAT_MO = {
 static const Format FORMAT_MF = {
     .name = "mf",
     .sectors = 2560, .system_sectors = 32, .sectors_per_cluster = 4,
-    .usable_clusters = 320,
+    // All 640 clusters are usable: 2560 sectors / 4. Minus the 8-cluster
+    // system area that is 2528 sectors, which is exactly what the DOS's
+    // own LIB reports as the capacity of a real ABC832 system disk
+    // ("1960 av 2528 sektorer lediga"). An earlier value of 320 came from
+    // one archived image whose pristine bitmap marks the upper half
+    // allocated - atypical, not the format - and it silently halved every
+    // disk this tool created.
+    .usable_clusters = 640,
     .freelist_live = 14, .freelist_pristine = 15,
     .dir_first = 16, .dir_count = 16,
     .backup_first = 0, .backup_count = 0,

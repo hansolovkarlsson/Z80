@@ -796,43 +796,36 @@ byte-for-byte untouched. A real ABC802 could have an ABC830 and an ABC832
 on the bus together, which is what would be needed. See
 `ABC802_ROADMAP.md`'s "Two drive types, one card".
 
-**`LIB` lists nothing, and the cause is the same as `DOSGEN`'s.**
-Established by disassembling `LIB.ABS` out of the machine's own RAM. It
-loads at `0xC701`, with length-prefixed message strings and its entry at
-`0xC764`, and works like this:
+**`LIB` works — on media whose controller matches.** It was never broken.
+The DOS's logical drives map to select `0x2C`, the ABC832/834, so on a
+160K ABC830 system disk `LIB`'s free-space read finds no card, is retried
+three times and returns carry, and it skips its whole listing section.
+Given a real 640K UFD-DOS system disk it does exactly what it should:
 
-| Address | Holds |
-|---|---|
-| `0xC700` | LIB's control block; `(IX+3)` is the last drive to scan, plus one |
-| `0xFD50` | the drive `CMDINT` parsed from the command line — `0xFF` none, `0xFE` invalid |
-| `0xFD01` | the current drive in LIB's scan loop |
-| `0xFD12` | the DOS's sector-buffer pointer |
-| `0xFD18` | the ROM's read-retry counter, initialised to 3 |
+```
+-LIB
+** Library list **
+   Ver 6.03, 1983-02-10
 
-**With no argument it never even tries.** `0xFD50` is `0xFF`, so
-`(IX+3)` becomes `(0xFF AND 7) + 1` = 8, while `(0xFD01)` is already 8 —
-so the loop's own bounds check, `CP (IX+3)` / `JP NC`, exits before any
-I/O. That is why the earlier note recorded "issues no bus commands at
-all": true, but only of this case.
+Drive MF0:
 
-**With a drive it tries, on the wrong controller.** `LIB DR0:` sets
-`(0xFD01)` to 0 and `(IX+3)` to 1, and the loop runs once. Its first act
-is to read the free-space bitmap — `LD HL,(0FD12h)` then `CALL 6066h`, a
-real ROM vector to the read-sector path — and count free clusters for the
-`… av … sektorer lediga.` line. **That read selects `0x2C`, the
-ABC832/834 controller**, gets no answer from the fitted ABC830 at `0x2D`,
-is retried three times and returns carry. `LIB` takes the resulting
-`JP C` and skips the entire file-listing section, which is where the
-directory read (`CALL 600Fh`) lives. Verified on the bus: exactly three
-`0x2C` selects after the program loads, matching the retry counter, and
-`DR0:`, `DR1:` and `DR2:` all behave identically.
+SYSDIR  .SYS BASICINI.SYS ADDOPT  .ABS DEVDES  .REL OPTROSH .REL OPTROSL .SYS
+ISAMOPT .REL TERMOPT .REL SOFTOPT .REL CMDINT  .SYS SYSTEM  .ABS COPY    .ABS
+...
+ 1960 av  2528 sektorer lediga.
+```
 
-So this is not a separate defect. It is the **same "two drive types, one
-card" limitation `DOSGEN` hits**: the DOS's logical drives map to the
-ABC832, and this emulator fits one controller at a time. A real ABC802
-could carry an ABC830 and an ABC832 together. `LIB MO0:` is refused
-outright because LIB masks its drive number to three bits, and `MO0` is
-unit `0x0C`.
+Two things that settles. `DR0:` really is `MF0:` — a 640K system disk's
+own `BASICINI.SYS` announces `DOS är UFD-DOS ver. 20 / DR_: motsvarar
+MF_:` at boot, which is the mapping this document previously had to infer.
+And a 640K disk's capacity is **2528 sectors**, i.e. all 640 clusters less
+the eight-cluster system area — the number `bin/abcdisk` now agrees with,
+having briefly had it wrong.
+
+The same applies to `DOSGEN`: on a 640K system it starts and reaches its
+media-verify pass, where it currently scans past the end of the modeled
+drive and reports every sector beyond it as bad. That is a separate, open
+issue — see `ABC802_ROADMAP.md`.
 
 `bin/abcdisk list` reads the same directory correctly and needs no
 machine, so nothing is blocked by this.
@@ -911,6 +904,26 @@ easy to get wrong:
   every other sector is wrong. Only booting settles it.
 - **The `MF` drive uses four sectors per cluster**, the `MO` drive one,
   which changes how a command header's sector address decodes.
+
+#### How a file's extent is recorded
+
+Established by disassembly, bus tracing, and by converting a real 160K
+disk to 640K until it booted.
+
+- **The allocation unit is the cluster, not the sector.** The descriptor's
+  `last` field is `start + clusters - 1`. On the ABC830 a cluster is one
+  sector, so this reads as `sectors - 1` and the distinction is invisible;
+  on the ABC832 it is four. Checked against 23 of the 25 files on real
+  640K media.
+- **Iteration is a flat logical index.** Sector *i* of a file lives at
+  cluster `start + i/spc`, offset `i mod spc`. The bus trace shows exactly
+  that: on `MO` the cluster advances with the offset always 0, on `MF` the
+  offset runs 0-3 and then the cluster advances.
+- **The directory's byte-length field is optional.** Some disks record it
+  and some leave it zero — `bin/abcdisk list` prints "(size not
+  recorded)" for the latter. When present the DOS honours it exactly: set
+  it too large and a load fails with `Error 38`, "sector number outside
+  the file".
 
 **A file's own sectors carry a three-byte header** — a file id, a sequence
 number and a zero — leaving 253 bytes of payload each. The id is
