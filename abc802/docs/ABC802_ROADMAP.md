@@ -102,6 +102,17 @@ Real, understood, and deliberately not solved yet — not oversights.
   image — so its format commands reach no card at all and it silently
   writes nothing. Supporting two controllers simultaneously is what would
   fix it; a 640K system disk would also sidestep it.
+- **The DOS's own `LIB` utility lists nothing, cause unknown.** Both
+  `LIB.ABS` (under `BYE`) and `LIB.BAC` (from BASIC) load, print their
+  headers and report zero files, on every system disk tried and under both
+  DOS ROMs. A full bus trace rules out the obvious causes: `DR0:` resolves
+  correctly, the controller select is right, and — the odd part — **once
+  loaded, `LIB` issues no bus commands at all**, so it is not failing an
+  I/O but never attempting one. It appears to take its directory from a
+  DOS service or a resident copy that comes back empty. Going further
+  means disassembling third-party software off the media. Not blocking:
+  `bin/abcdisk list` reads the same directory without a machine. See
+  `ABC802_BASIC_REFERENCE.md`'s "Leaving BASIC for the DOS".
 - **The controller card itself is not emulated.** A real ABC830 is a
   complete second computer (its own Z80, Z80 DMA, FD1793 and firmware);
   what exists here models the *protocol* it speaks, not the card. Software

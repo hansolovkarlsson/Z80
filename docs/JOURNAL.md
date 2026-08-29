@@ -17,6 +17,71 @@ in an entry here.
 
 ---
 
+## 2026-08-31 (later) — why LIB lists nothing: not the reason I published
+
+Chased the `LIB` gap. It is still open, but three plausible explanations
+are now dead and one published claim was wrong.
+
+### The claim I got wrong
+
+The reference said `LIB` lists nothing because it defaults to `DR0:`, a
+logical name the system binds at boot, which never happens when the DOS
+is entered from a ROM-booted BASIC. That was a hypothesis, and it read as
+a finding.
+
+**A bus trace disproves it in one line.** `LOAD "DR0:LIB"` selects `0x2D`,
+addresses unit 0, and reads the directory at sector 16 — exactly like
+`MO0:`. `DR0:` resolves perfectly well. Corrected in the reference and
+recorded in the roadmap.
+
+Two sessions ago the same thing happened with `BYE`: a hypothesis
+("undiagnosed") hardened into documentation. The pattern is specific
+enough to name — **when something does not work and I write down why
+without testing the why, the guess inherits the credibility of the
+observation.** The observation was real both times; the explanation was
+invented both times.
+
+### What the trace actually shows
+
+Stranger than the guess. **Once loaded, `LIB` issues no ABC-bus commands
+at all.** Every read in the trace is `CMDINT` loading `LIB` itself
+(sectors 116-127 for `LIB.BAC`, 98-102 for `LIB.ABS`), and after the last
+sector of the program the bus goes quiet. It is not failing an I/O; it
+never attempts one.
+
+So it takes its directory from somewhere other than the disk — a DOS
+service call, or a resident copy the ROM populated when it loaded the
+program — gets an empty result, and prints its headers over zero rows.
+Option 3 even emits the `S = Skrivskyddad  R = Raderskyddad` legend that
+would head a real listing.
+
+### Ruled out
+
+- **Wrong controller.** Unlike `DOSGEN`, which always selects `0x2C`,
+  every `LIB` access is on `0x2D`, the fitted card.
+- **DOS ROM version.** `ABC802-dos.32-21.bin` behaves identically to the
+  default `32-31`.
+- **The disk.** `sys10sw` and `sys10fi` both do it, in Swedish and
+  Finnish respectively.
+- **Argument syntax.** `LIB MO0:` is refused outright with `Felaktigt
+  drivenummer`; `LIB DR0:`, `LIB *.*`, `LIB DR0:*.*` and the menu-driven
+  `LIB.BAC` all run and list nothing. The menu's "Drive:" prompt wants a
+  bare number — `0`, not `MO0:` — which the pty made it possible to
+  discover at all.
+
+### Where it stops
+
+Going further means disassembling `LIB.ABS`, which is third-party software
+on the media rather than anything in this repository's ROMs, and the
+payoff would be understanding someone else's 1981 utility rather than the
+machine. Left as a documented gap with the evidence attached, so the next
+person starts from "it does no I/O" instead of from scratch.
+
+Nothing is blocked by it: `bin/abcdisk list` reads the same directory
+correctly and needs no machine at all.
+
+---
+
 ## 2026-08-31 — BYE was never broken, and there *is* a formatter
 
 Chasing why `BYE` printed `Abort 48` took one command to answer and then

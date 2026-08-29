@@ -796,12 +796,33 @@ byte-for-byte untouched. A real ABC802 could have an ABC830 and an ABC832
 on the bus together, which is what would be needed. See
 `ABC802_ROADMAP.md`'s "Two drive types, one card".
 
-**Known gap:** `LIB` under the DOS runs but lists nothing, and `LIB MO0:`
-is refused with `Felaktigt drivenummer` ("incorrect drive number"). It
-defaults to `DR0:`, a *logical* device name the system binds at boot —
-which never happens when the DOS is reached from a ROM-booted BASIC rather
-than by booting the disk itself. Not chased further. The BASIC-side
-`RUN "MO0:LIB"` above works and does not depend on it.
+**Known gap: `LIB` lists nothing, and the reason is not what it looks
+like.** Both the DOS-side `LIB.ABS` and the BASIC-side `LIB.BAC` load,
+print their headers, and report no files at all, on every system disk
+tried and under both committed DOS ROMs.
+
+An earlier version of this document blamed `DR0:` being unbound. **That
+was wrong**, and a bus trace disproves it: `LOAD "DR0:LIB"` reaches the
+fitted controller normally (select `0x2D`, unit 0) and reads the
+directory at sector 16. `DR0:` resolves fine.
+
+What the trace actually shows is stranger. **Once loaded, `LIB` issues no
+ABC-bus commands whatsoever** — every read in the trace is `CMDINT`
+loading `LIB` itself, and after the last sector of the program there is
+nothing. So it is not failing an I/O; it never attempts one. It obtains a
+directory some other way — a DOS service call, or a memory-resident copy
+the ROM populated — gets an empty result, and prints its headers over
+zero rows. Option 3 even prints the `S = Skrivskyddad  R = Raderskyddad`
+legend that would head a real listing.
+
+Ruled out: the wrong controller (everything is on `0x2D`, unlike `DOSGEN`
+above), the DOS ROM version (`ABC802-dos.32-21.bin` behaves identically),
+and the disk (`sys10sw` and `sys10fi` both do it). Pinning it further
+means disassembling `LIB.ABS`, which is third-party software on the media
+rather than anything in this repository's ROMs.
+
+`bin/abcdisk list` reads the same directory correctly and needs no
+machine, so nothing is blocked by this.
 
 ### Data files
 
