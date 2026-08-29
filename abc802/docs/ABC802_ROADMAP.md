@@ -96,23 +96,19 @@ Real, understood, and deliberately not solved yet — not oversights.
   **Note for whoever adds `SF`/`HD`:** interleave cannot be inferred. The
   two working drives need *opposite* settings, and a directory sector is
   readable under either mapping, so only booting real media settles it.
-  **Real software now hits this.** `DOSGEN`, the DOS's own formatter,
-  always selects `0x2C` (the `MF` controller) whatever drive or density it
-  is told, while every disk here carrying `DOSGEN.ABS` is a 160K `MO`
-  image — so its format commands reach no card at all and it silently
-  writes nothing. Supporting two controllers simultaneously is what would
-  fix it; a 640K system disk would also sidestep it.
-- **The DOS's own `LIB` utility lists nothing, cause unknown.** Both
-  `LIB.ABS` (under `BYE`) and `LIB.BAC` (from BASIC) load, print their
-  headers and report zero files, on every system disk tried and under both
-  DOS ROMs. A full bus trace rules out the obvious causes: `DR0:` resolves
-  correctly, the controller select is right, and — the odd part — **once
-  loaded, `LIB` issues no bus commands at all**, so it is not failing an
-  I/O but never attempting one. It appears to take its directory from a
-  DOS service or a resident copy that comes back empty. Going further
-  means disassembling third-party software off the media. Not blocking:
-  `bin/abcdisk list` reads the same directory without a machine. See
-  `ABC802_BASIC_REFERENCE.md`'s "Leaving BASIC for the DOS".
+  **Real software hits this, and it is the single cause of both known DOS
+  failures** — see the `LIB`/`DOSGEN` entry below.
+- **The DOS's `LIB` and `DOSGEN` both fail, for one shared reason.** Not
+  two bugs: the DOS's logical drives map to select `0x2C`, the ABC832/834
+  controller, while every system disk here is a 160K ABC830 answering at
+  `0x2D` — and only one controller is fitted at a time. `DOSGEN`'s format
+  commands reach no card; `LIB`'s free-space read fails, is retried three
+  times and returns carry, so it skips its listing entirely. Both were
+  established on the bus, and `LIB.ABS` was disassembled out of RAM to
+  confirm the path (see `ABC802_BASIC_REFERENCE.md`'s "Leaving BASIC for
+  the DOS"). Fixing it means modelling two controllers simultaneously; a
+  640K system disk would sidestep it. Neither blocks anything —
+  `bin/abcdisk list` reads the same directory with no machine at all.
 - **The controller card itself is not emulated.** A real ABC830 is a
   complete second computer (its own Z80, Z80 DMA, FD1793 and firmware);
   what exists here models the *protocol* it speaks, not the card. Software

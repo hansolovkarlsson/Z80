@@ -17,6 +17,91 @@ in an entry here.
 
 ---
 
+## 2026-08-31 (last) — LIB disassembled: one cause, not two, and a third correction
+
+Disassembled `LIB.ABS` and found where it gets its directory. The answer
+folds `LIB` and `DOSGEN` into a single root cause, and corrects a claim
+committed a few hours earlier.
+
+### Getting the code
+
+The file on disk is not the program. Sectors carry a 6-byte header, and
+reconstructing the image from them left the disassembly 3 bytes out of
+frame — visible as long `DB` runs and as `CALL` targets landing mid-
+instruction. Two independent anchors (a string pointer and a known code
+pattern) gave contradictory bases, which was the signal to stop guessing.
+
+**The fix was to stop reading the file and read the machine.** A throwaway
+`--dump-mem` flag on `bin/abc802`, used once and reverted, produced the
+real 64K image with `LIB` resident. Everything after that was
+straightforward: load address `0xC701`, entry `0xC764`, and message
+strings that are *length-prefixed* — which is why `LD HL,0C716h` pointed
+at `0x13` and not at `A` of "ABC800 Library list", 19 characters long.
+
+Worth keeping: when a reconstruction and a disassembly disagree, the
+emulator is holding the ground truth and can simply be asked.
+
+### What LIB actually does
+
+| Address | Holds |
+|---|---|
+| `0xC700` | LIB's control block; `(IX+3)` = last drive to scan, plus one |
+| `0xFD50` | drive parsed by `CMDINT` — `0xFF` none, `0xFE` invalid |
+| `0xFD01` | current drive in LIB's scan loop |
+| `0xFD12` | the DOS's sector-buffer pointer |
+| `0xFD18` | the ROM's read-retry counter, set to 3 |
+
+With no argument, `0xFD50` is `0xFF`, so `(IX+3)` = `(0xFF AND 7) + 1` =
+8 while `(0xFD01)` is already 8 — and the loop's bounds check exits
+before any I/O at all.
+
+With `LIB DR0:` the loop runs once. Its first act is to read the
+free-space bitmap and count free clusters for the `… av … sektorer
+lediga.` line: `LD HL,(0FD12h)` then `CALL 6066h`, a genuine ROM vector
+into the read-sector path. That read **selects `0x2C`** — the ABC832/834 —
+gets nothing from the fitted ABC830 at `0x2D`, retries three times and
+returns carry. `LIB` takes the `JP C` and skips the whole listing section,
+which is where the directory read (`CALL 600Fh`) lives.
+
+Confirmed on the bus: exactly three `0x2C` selects after the program
+loads, matching the retry counter, and `DR0:`, `DR1:` and `DR2:` all
+identical.
+
+### One cause, not two
+
+That is precisely `DOSGEN`'s problem. **The DOS's logical drives map to
+the ABC832, every system disk here is an ABC830, and one controller is
+fitted at a time.** Two "separate" known gaps collapsed into one roadmap
+entry.
+
+### The third correction in three sessions
+
+The committed claim was "once loaded, LIB issues no ABC-bus commands
+whatsoever". That is true — of the no-argument case, which is what I
+traced. With a drive argument it *does* issue commands, on the wrong
+controller. I measured one case and wrote the sentence as though it
+described the feature.
+
+Three sessions, three corrections, and they rhyme:
+
+1. `BYE` "undiagnosed" — never tested the why.
+2. `LIB` "`DR0:` unbound" — hypothesis written as finding.
+3. `LIB` "issues no bus commands" — one case generalised to all.
+
+The first two were untested guesses. This one was worse in an interesting
+way: it *was* measured. The failure was scope — a measurement of the
+default invocation, stated as a property of the program. **A trace proves
+what the traced run did.** Varying the input before generalising costs one
+more run.
+
+### Not chased
+
+Whether a 640K system disk would make both work. There is no MF image here
+carrying DOS utilities, and converting a 160K one is not a copy — the
+geometry differs at four sectors per cluster.
+
+---
+
 ## 2026-08-31 (later) — why LIB lists nothing: not the reason I published
 
 Chased the `LIB` gap. It is still open, but three plausible explanations

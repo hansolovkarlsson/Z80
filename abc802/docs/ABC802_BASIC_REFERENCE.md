@@ -796,30 +796,43 @@ byte-for-byte untouched. A real ABC802 could have an ABC830 and an ABC832
 on the bus together, which is what would be needed. See
 `ABC802_ROADMAP.md`'s "Two drive types, one card".
 
-**Known gap: `LIB` lists nothing, and the reason is not what it looks
-like.** Both the DOS-side `LIB.ABS` and the BASIC-side `LIB.BAC` load,
-print their headers, and report no files at all, on every system disk
-tried and under both committed DOS ROMs.
+**`LIB` lists nothing, and the cause is the same as `DOSGEN`'s.**
+Established by disassembling `LIB.ABS` out of the machine's own RAM. It
+loads at `0xC701`, with length-prefixed message strings and its entry at
+`0xC764`, and works like this:
 
-An earlier version of this document blamed `DR0:` being unbound. **That
-was wrong**, and a bus trace disproves it: `LOAD "DR0:LIB"` reaches the
-fitted controller normally (select `0x2D`, unit 0) and reads the
-directory at sector 16. `DR0:` resolves fine.
+| Address | Holds |
+|---|---|
+| `0xC700` | LIB's control block; `(IX+3)` is the last drive to scan, plus one |
+| `0xFD50` | the drive `CMDINT` parsed from the command line — `0xFF` none, `0xFE` invalid |
+| `0xFD01` | the current drive in LIB's scan loop |
+| `0xFD12` | the DOS's sector-buffer pointer |
+| `0xFD18` | the ROM's read-retry counter, initialised to 3 |
 
-What the trace actually shows is stranger. **Once loaded, `LIB` issues no
-ABC-bus commands whatsoever** — every read in the trace is `CMDINT`
-loading `LIB` itself, and after the last sector of the program there is
-nothing. So it is not failing an I/O; it never attempts one. It obtains a
-directory some other way — a DOS service call, or a memory-resident copy
-the ROM populated — gets an empty result, and prints its headers over
-zero rows. Option 3 even prints the `S = Skrivskyddad  R = Raderskyddad`
-legend that would head a real listing.
+**With no argument it never even tries.** `0xFD50` is `0xFF`, so
+`(IX+3)` becomes `(0xFF AND 7) + 1` = 8, while `(0xFD01)` is already 8 —
+so the loop's own bounds check, `CP (IX+3)` / `JP NC`, exits before any
+I/O. That is why the earlier note recorded "issues no bus commands at
+all": true, but only of this case.
 
-Ruled out: the wrong controller (everything is on `0x2D`, unlike `DOSGEN`
-above), the DOS ROM version (`ABC802-dos.32-21.bin` behaves identically),
-and the disk (`sys10sw` and `sys10fi` both do it). Pinning it further
-means disassembling `LIB.ABS`, which is third-party software on the media
-rather than anything in this repository's ROMs.
+**With a drive it tries, on the wrong controller.** `LIB DR0:` sets
+`(0xFD01)` to 0 and `(IX+3)` to 1, and the loop runs once. Its first act
+is to read the free-space bitmap — `LD HL,(0FD12h)` then `CALL 6066h`, a
+real ROM vector to the read-sector path — and count free clusters for the
+`… av … sektorer lediga.` line. **That read selects `0x2C`, the
+ABC832/834 controller**, gets no answer from the fitted ABC830 at `0x2D`,
+is retried three times and returns carry. `LIB` takes the resulting
+`JP C` and skips the entire file-listing section, which is where the
+directory read (`CALL 600Fh`) lives. Verified on the bus: exactly three
+`0x2C` selects after the program loads, matching the retry counter, and
+`DR0:`, `DR1:` and `DR2:` all behave identically.
+
+So this is not a separate defect. It is the **same "two drive types, one
+card" limitation `DOSGEN` hits**: the DOS's logical drives map to the
+ABC832, and this emulator fits one controller at a time. A real ABC802
+could carry an ABC830 and an ABC832 together. `LIB MO0:` is refused
+outright because LIB masks its drive number to three bits, and `MO0` is
+unit `0x0C`.
 
 `bin/abcdisk list` reads the same directory correctly and needs no
 machine, so nothing is blocked by this.
