@@ -912,6 +912,21 @@ easy to get wrong:
 - **The `MF` drive uses four sectors per cluster**, the `MO` drive one,
   which changes how a command header's sector address decodes.
 
+**A file's own sectors carry a three-byte header** — a file id, a sequence
+number and a zero — leaving 253 bytes of payload each. The id is
+`0x10 × (directory slot + 1)`, so moving a file to a different directory
+slot invalidates every one of its sectors. The file's *first* sector is a
+descriptor rather than data: `id, 00, 00, FF, last(2), FF, FF`, where
+`last` is the start field plus the number of sectors after the descriptor.
+
+**Start positions are cluster addresses, not sector numbers.** The
+directory field's top 11 bits are a cluster and its low 5 bits an offset;
+the real sector is `cluster × sectors-per-cluster + offset`. On the ABC830
+a cluster is one sector so the two coincide, which is exactly why this is
+easy to get wrong — `bin/abcdisk` reported the raw field as a sector and
+was a factor of four out on ABC832 media until this was noticed. Reading a
+file, the DOS steps the offset `0`-`3` and then advances the cluster.
+
 The directory itself is a list of fixed-size entries holding an
 eight-character name, a three-character extension and a start position,
 kept in two copies. That description comes from this project's analysis of

@@ -283,7 +283,12 @@ static int cmd_list(const char *path) {
             for (int i = 7; i >= 0 && name[i] == ' '; i--) name[i] = '\0';
             for (int i = 2; i >= 0 && ext[i] == ' '; i--) ext[i] = '\0';
             if (!name[0]) continue;
-            unsigned start = (unsigned)((r[0] << 8) | r[1]) >> 5;
+            // The directory's start field is a *cluster*, not a sector: it
+            // only looked like a sector on the ABC830, where a cluster is
+            // one sector. On the ABC832 a cluster is four, so reporting
+            // the raw field there is off by a factor of four.
+            unsigned cluster = (unsigned)((r[0] << 8) | r[1]) >> 5;
+            unsigned start = cluster * f->sectors_per_cluster;
             unsigned length = (unsigned)((r[2] << 8) | r[3]);
             if (length)
                 printf("  %-8s %-3s  sector %-5u %u bytes\n",

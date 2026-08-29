@@ -17,6 +17,78 @@ in an entry here.
 
 ---
 
+## 2026-09-01 — converting 160K to 640K: the diagnosis holds, the image does not
+
+Converted `sys10sw.dsk` to a 640K ABC832 image to test whether `LIB` and
+`DOSGEN` work once an `MF` controller is fitted. Partial result, one real
+bug found in committed code, and the file format finally understood.
+
+### The result
+
+**On `MF` media, `LIB` stops bailing and renders a listing** — the "Drive
+0" header and a full grid of rows, where on `MO` it printed a banner and
+returned. The `0x2C`-vs-`0x2D` diagnosis is therefore right: the select
+was the blocker.
+
+**But the converted image is not valid.** The rows are filled with `e`
+(0xE5 padding read as names), and BASIC gets `Error 37` loading files from
+it: the DOS reads one sector *more* per file than the file has. So this is
+evidence for the diagnosis, not proof of the claim that a genuine 640K
+system disk would work.
+
+### Three format facts, each found by a failure
+
+The conversion failed twice before getting this far, and each failure
+taught the format:
+
+1. **`Abort 48`** — I had sorted the directory by start sector. Every data
+   sector carries a file id of `0x10 × (slot + 1)`, so reordering the
+   directory invalidates every sector of every file that moved. Preserve
+   slots.
+2. **`Abort 37`** — the first sector of a file is a *descriptor*
+   (`id, 00, 00, FF, last(2), FF, FF`) whose `last` field is the start
+   address plus the sector count. Copied verbatim, it still pointed into
+   the old layout. Rebasing it fixed that error and produced a real
+   listing.
+3. **Still `Error 37`** — the remaining gap. `last - start` is exactly
+   `len - 1` on every original file, and my rebased value matches, yet the
+   DOS reads 11 sectors for a 10-sector file on `MF`. Its end-of-file test
+   is not the simple count the descriptor suggests. Left there.
+
+### The header is three bytes, not six
+
+The most useful by-product. A file's sectors carry `id, seq, 00` and 253
+bytes of payload — not the six-byte header I had assumed when
+reconstructing `LIB.ABS` from the disk. **That is exactly the three-byte
+framing error** that made the earlier disassembly disagree with itself and
+sent me to a RAM dump. The RAM dump was still the right call, but the file
+could have been read correctly with this known.
+
+### A real bug in bin/abcdisk
+
+Directory start fields are **cluster** addresses, not sector numbers: the
+real sector is `cluster × sectors-per-cluster`. On the ABC830 a cluster is
+one sector, so the two coincide — and `abcdisk list` reported the raw
+field as a sector, which was silently a factor of four out on every
+ABC832 image. Fixed and verified against the machine: a file BASIC just
+saved to a fresh `MF` disk now reports sector 32, which is where the bus
+trace shows the DOS actually wrote it.
+
+This is the third time this week that ABC830-vs-ABC832 has hidden a defect
+by making a wrong formula look right. The interleave was the first, the
+directory-on-a-track-boundary the second, and `cluster == sector` the
+third. **On this machine, anything verified only against 160K media is
+half-verified.**
+
+### Scope
+
+Stopped here. Making the converted image fully valid means reverse-
+engineering the DOS's file-extent semantics, which is a different project
+from "convert and test" and would be reverse-engineering someone else's
+1981 filesystem rather than the machine.
+
+---
+
 ## 2026-08-31 (last) — LIB disassembled: one cause, not two, and a third correction
 
 Disassembled `LIB.ABS` and found where it gets its directory. The answer

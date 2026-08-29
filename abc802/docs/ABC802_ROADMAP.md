@@ -109,6 +109,13 @@ Real, understood, and deliberately not solved yet — not oversights.
   the DOS"). Fixing it means modelling two controllers simultaneously; a
   640K system disk would sidestep it. Neither blocks anything —
   `bin/abcdisk list` reads the same directory with no machine at all.
+  **Partly confirmed by converting a 160K system disk to 640K**: on the
+  `MF` controller `LIB` stops bailing and actually renders a listing, so
+  the select really is the blocker. The converted image is not fully valid
+  though — the DOS reads one sector too many per file and reports
+  `Error 37` — so this is evidence, not proof. Getting it right needs the
+  DOS's file-extent semantics pinned down, which the descriptor's
+  `last` field alone does not settle.
 - **The controller card itself is not emulated.** A real ABC830 is a
   complete second computer (its own Z80, Z80 DMA, FD1793 and firmware);
   what exists here models the *protocol* it speaks, not the card. Software
