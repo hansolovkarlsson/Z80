@@ -204,10 +204,11 @@ CP/M-specific — see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
   disk is stored.
 - `abcbus/` — the synthetic ABC-bus floppy controller shared by both ABC
   targets, plus `bin/abcdisk`, which creates formatted, empty disk images
-  and lists what is on one. Neither machine's ROM has a `FORMAT` command,
-  and a zero-filled file of the right size is not a blank disk — it is
-  recognized and then refuses every `SAVE` — so this is the only way to
-  get writable media without already having some. Both the 160K ABC830
+  and lists what is on one. A zero-filled file of the right size is not a
+  blank disk — it is recognized and then refuses every `SAVE`. The
+  machine's own formatter, `DOSGEN`, is a program on a Luxor system disk
+  rather than anything in ROM, so on real hardware you need a working disk
+  to make a disk; this breaks that circularity with no machine involved. Both the 160K ABC830
   and 640K ABC832/834 formats are verified by a `SAVE`/`LOAD` round trip
   through the ABC802's real ROM; the ABC80 mounts the same media and its
   own DOS keeps its directory in the same place, but that path has not

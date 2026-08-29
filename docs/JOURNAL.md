@@ -17,6 +17,104 @@ in an entry here.
 
 ---
 
+## 2026-08-31 — BYE was never broken, and there *is* a formatter
+
+Chasing why `BYE` printed `Abort 48` took one command to answer and then
+opened up the whole other half of the machine.
+
+### The answer
+
+`Abort 48` was the wrong interleave. The `BYE` test was written *before*
+the logical-vs-physical dump discovery, so it ran without `--interleave 0`
+and `CMDINT.SYS` was read from the wrong sectors. Error 48 is "failure in
+system data", which was telling the exact truth. With the right mapping:
+
+```
+ABC800 DISC OPERATING SYSTEM
+VERS 1.01  Feb '81
+*   R E A D Y   *
+```
+
+and `$BAS` returns to BASIC. The reference had recorded `BYE` as broken
+and undiagnosed; that entry has been replaced.
+
+**The lesson is about blast radius.** One wrong constant did not just
+break file reads — it made a whole subsystem look unimplemented, and it
+got written into the documentation as a defect. Every observation made
+before that fix deserved re-testing, not just the ones that obviously
+touched sectors. Two more were wrong for the same reason: several disks
+*do* autoboot (`red800.dsk` comes up as BOKFÖRING 800 v 2.0), which had
+been recorded as "reaches a bare prompt".
+
+### There is a FORMAT after all
+
+The DOS's command set turns out to be simply the `.ABS` programs on the
+disk — an unknown name answers `Förstår ej`, and `SYSTEM` prints the
+inventory. On a Luxor system disk that includes **`DOSGEN — Formattering`**.
+
+So six places in the docs saying "neither ROM has a FORMAT command" were
+literally true and materially misleading. There is a real formatter; it
+lives on a disk rather than in ROM. Corrected everywhere, and the honest
+framing is better for `bin/abcdisk` than the old one was: on real hardware
+**you need a working disk to make a disk**, and the tool breaks that
+circularity — which is exactly the situation someone with a bare checkout
+and a few downloaded images is in.
+
+Worth noticing how the wrong claim survived: it was verified (no FORMAT
+keyword is in either ROM - true), it was repeated across six files, and
+none of the repetitions re-checked it. Verifying the *literal* statement
+is not the same as verifying the impression it leaves.
+
+### Trying to run DOSGEN, and two mistakes on the way
+
+The prize would have been a byte-for-byte comparison of a disk formatted
+by the real DOSGEN against one built by `bin/abcdisk` — the strongest
+possible check on a format that was reverse-engineered rather than
+documented. It did not happen, and the two dead ends are both worth
+recording.
+
+**First attempt: I answered the tool wrong.** DOSGEN asks "Enkel eller
+dubbel densitet?" and I said D. Double density is the 640K ABC832, so it
+went looking for a card that was not fitted. That was visible in one line
+of bus trace — `[out] 01 <- 2C`, `[in ] 01 -> FF` — and invisible on
+screen, where it printed `Skivan formatteras !` and appeared to work.
+
+**Second attempt, with E for single density: identical.** So it was not
+the density answer. DOSGEN selects `0x2C` — the `MF` controller —
+*always*, whatever drive number or density it is given; answering
+"Drivenhet? 0" produces the same select. Every disk here that carries
+`DOSGEN.ABS` is a 160K ABC830, which fits an `MO` controller at `0x2D`,
+and this emulator models one controller at a time. Its format commands
+reach no card, and the image is left byte-for-byte untouched — verified by
+md5 before and after.
+
+So this is **the first time real software has hit the documented
+"two drive types, one card" limitation**, which until now was a
+theoretical note in the roadmap. A real ABC802 could carry an ABC830 and
+an ABC832 at once. Recorded there and in the reference.
+
+Two process notes. The screen said `Skivan formatteras !` in every failed
+run — **the only thing that distinguished success from silent no-op was
+hashing the file**, which is why the third run started from
+`/dev/urandom` rather than a blank image: against a zero-filled target,
+"nothing was written" and "it was formatted" can look alike. And the bus
+trace answered in seconds what staring at the screen could not, which
+argues for reaching for `ABC802_TRACE_IO=1` earlier than I did.
+
+### Still open
+
+`LIB` under the DOS runs but lists nothing, and `LIB MO0:` is refused with
+`Felaktigt drivenummer`. It defaults to `DR0:`, a logical device name the
+system binds at boot — which never happens when the DOS is reached from a
+ROM-booted BASIC instead of by booting the disk. Recorded as a known gap.
+The BASIC-side `RUN "MO0:LIB"` does not depend on it and works.
+
+The DOSGEN comparison stays open too. It needs either two controllers
+modelled at once, or a 640K system disk — and the one 640K image here
+carries no DOS utilities.
+
+---
+
 ## 2026-08-30 (last) — driving the real thing, and what a live session found
 
 `bin/abcdisk` and `--interleave` were both verified through scripted runs.

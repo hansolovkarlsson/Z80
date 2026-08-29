@@ -96,6 +96,12 @@ Real, understood, and deliberately not solved yet — not oversights.
   **Note for whoever adds `SF`/`HD`:** interleave cannot be inferred. The
   two working drives need *opposite* settings, and a directory sector is
   readable under either mapping, so only booting real media settles it.
+  **Real software now hits this.** `DOSGEN`, the DOS's own formatter,
+  always selects `0x2C` (the `MF` controller) whatever drive or density it
+  is told, while every disk here carrying `DOSGEN.ABS` is a 160K `MO`
+  image — so its format commands reach no card at all and it silently
+  writes nothing. Supporting two controllers simultaneously is what would
+  fix it; a 640K system disk would also sidestep it.
 - **The controller card itself is not emulated.** A real ABC830 is a
   complete second computer (its own Z80, Z80 DMA, FD1793 and firmware);
   what exists here models the *protocol* it speaks, not the card. Software

@@ -44,6 +44,7 @@ Nothing here is asserted from memory of "how BASICs usually work."
 - [Attributes and colour words](#attributes-and-colour-words)
 - [Graphics](#graphics)
 - [Disk drives and storage](#disk-drives-and-storage)
+  - [Leaving BASIC for the DOS](#leaving-basic-for-the-dos)
 - [Error codes](#error-codes)
 - [Differences from ABC80 BASIC](#differences-from-abc80-basic)
 - [How the keyword tables were read](#how-the-keyword-tables-were-read)
@@ -739,13 +740,68 @@ DART holds a single received byte, so every keystroke typed while the
 program is not reading is discarded, and `--type-at` offers only one delay
 point in a run.
 
-`BYE` is the other route — it leaves BASIC for the disk's own command
-interpreter, with `$BAS` returning. The two system files involved are
-named in the DOS ROM itself as `BASICINI.SYS` (boot-time init) and
-`CMDINT.SYS` (the interpreter). Both are present on real system disks, but
-`BYE` has not been made to work here: against a system disk it prints
-`Abort 48` repeatedly (error 48 is "failure in system data"), and that has
-not been diagnosed.
+`BYE` is the other route — see below.
+
+### Leaving BASIC for the DOS
+
+`BYE` hands control to the disk's own command interpreter (`CMDINT.SYS`,
+named in the DOS ROM alongside `BASICINI.SYS`), and `$BAS` hands it back.
+**(verified)**, against a real Luxor system disk:
+
+```
+BYE
+
+ABC800 DISC OPERATING SYSTEM
+
+VERS 1.01  Feb '81
+
+*   R E A D Y   *
+```
+
+**If `BYE` prints `Abort 48` instead, the interleave is wrong.** Error 48
+is "failure in system data", and it is telling the exact truth: with the
+wrong sector mapping, `CMDINT.SYS` is read from the wrong places and *is*
+garbage. This document previously recorded `BYE` as broken and
+undiagnosed; it was only ever the `--interleave 0` that `.dsk` images
+need.
+
+**The DOS's commands are the `.ABS` programs on the disk**, not a fixed
+built-in set — an unrecognized name answers `Förstår ej` ("don't
+understand"). `SYSTEM` prints the inventory of whatever the disk carries;
+on a Luxor system disk that is:
+
+| Command | Swedish | What it does |
+|---|---|---|
+| `COPY` | Kopiering en fil | copy one file |
+| `COPYLIB` | Kopiering flera filer | copy several files |
+| `DELETE` | Radering flera filer | delete several files |
+| `DISCHECK` | Testning | test the media |
+| `DOSGEN` | Formattering | **format a disk** |
+| `ERRCOPY` | Kopiering felaktig fil | copy a damaged file |
+| `LIB` | Bibliotek | directory listing |
+
+`DOSGEN` is the machine's real formatter, and it is why the claim "there
+is no `FORMAT`" needs qualifying: there is one, it just lives on a disk
+rather than in ROM, so you need a working system disk to make a disk.
+`bin/abcdisk` exists to break that circularity.
+
+**`DOSGEN` does not run under `bin/abc802` today**, and the reason is
+worth knowing because it is not a defect in the program. Traced on the
+bus, it always selects `0x2C` — the ABC832/834 (`MF`) controller —
+whatever drive number or density it is given. Every disk here that carries
+`DOSGEN.ABS` is a 160K ABC830, which fits an `MO` controller at `0x2D`, and
+this emulator models **one controller at a time**. So its format commands
+reach no card: it prints `Skivan formatteras !` and the image is left
+byte-for-byte untouched. A real ABC802 could have an ABC830 and an ABC832
+on the bus together, which is what would be needed. See
+`ABC802_ROADMAP.md`'s "Two drive types, one card".
+
+**Known gap:** `LIB` under the DOS runs but lists nothing, and `LIB MO0:`
+is refused with `Felaktigt drivenummer` ("incorrect drive number"). It
+defaults to `DR0:`, a *logical* device name the system binds at boot —
+which never happens when the DOS is reached from a ROM-booted BASIC rather
+than by booting the disk itself. Not chased further. The BASIC-side
+`RUN "MO0:LIB"` above works and does not depend on it.
 
 ### Data files
 
@@ -863,11 +919,16 @@ bin/abc802 --disk 1:work.img                 # pin to drive 1, no drive 0
   reports what is in force:
   `ABC-bus: mo floppy controller, 1 drive attached, interleave 0 (overridden)`.
 
-**Neither ROM has a `FORMAT` command**, so a blank disk cannot be made
-from inside the machine — and an all-zero file of the right size is *not*
-a blank disk: it attaches and is recognized, then fails every `SAVE` with
-`Error 41` ("disk space full"), because an unformatted image has no
-free-list to allocate from. **(verified.)**
+An all-zero file of the right size is *not* a blank disk: it attaches and
+is recognized, then fails every `SAVE` with `Error 41` ("disk space
+full"), because an unformatted image has no free-list to allocate from.
+**(verified.)**
+
+**Neither ROM has a `FORMAT` command.** The machine's real formatter is
+`DOSGEN`, a program on a Luxor system disk reached by leaving BASIC with
+`BYE` — see [Leaving BASIC for the DOS](#leaving-basic-for-the-dos). That
+means a real ABC802 needs a working system disk before it can make a disk.
+`bin/abcdisk` breaks the circularity:
 
 `bin/abcdisk` writes a real, formatted, empty one:
 

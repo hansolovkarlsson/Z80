@@ -10,10 +10,15 @@
 // empty file, which is the trap this tool exists to close: a zero-filled
 // image of the right size attaches fine, is recognized as an ABC830, and
 // then fails every SAVE with "Error 41" (disk space full), because an
-// unformatted image has no free-list for the DOS to allocate out of. There
-// is no FORMAT command in either the BASIC or the DOS ROM to build one, so
-// before this tool the only way to get a writable disk was to already have
-// one.
+// unformatted image has no free-list for the DOS to allocate out of.
+//
+// Real hardware does have a formatter, but not in either ROM: it is
+// DOSGEN, a program (DOSGEN.ABS) that ships on a Luxor system disk and is
+// reached by leaving BASIC with BYE. So on a real ABC802 you need a
+// working system disk in order to make a disk. That circularity is what
+// this tool breaks - it needs no machine, no system disk and no ROM at
+// all, which is exactly the situation someone starting from a bare
+// checkout and a few downloaded images is in.
 //
 // THE FORMAT WAS DERIVED, NOT DOCUMENTED. Every constant below was read
 // out of real Luxor media by inspection and then confirmed the only way
@@ -312,7 +317,9 @@ static void usage(const char *prog) {
     printf("Creates a formatted, empty ABC-bus floppy image that the DOS can\n");
     printf("write to. A zero-filled file of the right size is NOT one: it\n");
     printf("attaches and is recognized, then fails every SAVE with Error 41,\n");
-    printf("because it has no free-list. Neither ROM has a FORMAT command.\n");
+    printf("because it has no free-list. The machine's own formatter is\n");
+    printf("DOSGEN, which lives on a system disk rather than in ROM - so\n");
+    printf("without this you need a working disk to make a disk.\n");
     printf("\n");
     printf("  --type mo   ABC830, 640 sectors, 163840 bytes (160K) - default\n");
     printf("  --type mf   ABC832/834, 2560 sectors, 655360 bytes (640K)\n");

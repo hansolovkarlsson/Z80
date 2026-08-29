@@ -20,8 +20,10 @@ the synthetic ABC-bus floppy controller, plus `mkdisk.c` → `bin/abcdisk`,
 which *creates* formatted blank images and lists what is on one — the
 on-disk format was derived by inspecting real Luxor media and confirmed
 by a `SAVE`/`LOAD` round trip through the real ROM on both drive types,
-and it matters because neither ROM has a `FORMAT` command, so before it
-the only writable media was media you already had) is at the repo root on
+and it matters because the machine's own formatter, `DOSGEN`, is a program
+on a Luxor system disk rather than anything in either ROM — so on real
+hardware you need a working disk to make a disk, and before this tool the
+only writable media here was media you already had) is at the repo root on
 exactly those terms and for exactly that reason: the ABC bus is a bus, not a
 machine, and both `abc80/` and `abc802/` drive the same card with the same
 four-byte command header and the same status bits. It started life under

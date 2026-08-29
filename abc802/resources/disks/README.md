@@ -109,9 +109,14 @@ directly, so no emulator and no correct interleave setting are needed):
 
 ## Making a blank disk
 
-Neither ROM has a `FORMAT` command, and a zero-filled file of the right
-size is not a formatted disk — it attaches, is recognized, and then fails
-every `SAVE` with `Error 41`. `bin/abcdisk` writes a real one:
+A zero-filled file of the right size is not a formatted disk — it
+attaches, is recognized, and then fails every `SAVE` with `Error 41`.
+
+The machine's own formatter is **`DOSGEN`**, and it is not in either ROM:
+it is a program (`DOSGEN.ABS`) that ships on a Luxor system disk, reached
+by leaving BASIC with `BYE`. So on real hardware you need a working system
+disk to make a disk. `bin/abcdisk` breaks that circularity — no machine,
+no system disk, no ROM:
 
 ```
 bin/abcdisk create work.dsk               # 160K ABC830 (MO)
