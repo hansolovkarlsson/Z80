@@ -21,6 +21,82 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (4) — chasing the ABC806's memory switch, and eliminating most of it
+
+The user's read of entry (3) was that the low address space must be
+switched between ROM and framebuffer. That is right, and saying it out loud
+sharpened the argument into something I could actually test:
+
+> The ROM would not `memset` 30K into its own EPROM, so the low 32K has to
+> be DRAM at that moment. BASIC's interpreter demonstrably reads its own
+> data down there afterwards, so it has to be ROM later. Both cannot be
+> true without a switch.
+
+So I went looking for the switch. I did not find it, but I eliminated most
+of the places it could be, which is worth as much.
+
+- **Not the 74ALS259.** A graphics command issues no I/O that a bare `REM`
+  does not — same ports, same values, same counts. And in all 32K of ROM
+  there is exactly one immediate-form latch write: `LD A,80h / OUT (36h),A`
+  at `0x00DC`. **EME goes on once at boot and is never turned off.**
+- **Not the page map.** All 256 entries are written by the loop at
+  `0x00D2` — which clears the map and `hrc` together — every one `0x00`,
+  never touched again. And a uniformly-zero map is degenerate under every
+  reading of the entry format: "zero diverts" aliases all sixteen pages
+  onto one, "zero does not divert" disables it. There is no third reading
+  that makes a constant map into a switch.
+- **Not KEYDTR.** One WR5 write, `0x68`, ever.
+- **Not symmetric reads**, and not symmetric reads with the executing
+  instruction's own bytes excluded. Both kill the machine.
+
+### The thing that made the first experiment mislead me
+
+That second variant deserves its own note, because the reason it was worth
+trying at all is a fact about *this project's core* rather than about the
+ABC806.
+
+Instrumenting `bus_read` shows **11.2 million "data reads below `0x8000`"
+in a boot-plus-`REM` run**, essentially all at page `0x05`. They are not
+data reads. They are **instruction operand fetches**: address `0x054D` read
+with PC sitting at `0x054E`.
+
+`fetch_byte()` indexes the flat array directly and deliberately bypasses
+`bus_read_hook` — that is the documented arrangement every ABC target
+relies on — but immediate operands go through `z80_read_byte()` and so
+*do* reach the hook. A naive "divert data reads to the plane" therefore
+diverts most of the instruction stream's operands too, and the machine dies
+on a garbage jump thousands of instructions from the cause. Which is
+exactly what happened, and I briefly read it as evidence about the ABC806
+when it was evidence about the emulator.
+
+Worth adding: real hardware could not use that split either. Only the
+opcode fetch is an M1 cycle on a Z80; operand fetches are ordinary memory
+reads. So the M1 idea is not merely awkward to implement here, it is
+probably wrong about the machine.
+
+### Two hardware facts fell out sideways
+
+**Port `0x37`'s one write is a DIP switch being read.** At `0x0418` the ROM
+reads DART channel B's RR0, tests bit 5 — CTS — and writes `09` or `0A` to
+port `0x37` accordingly. That is the same channel, and one of the same two
+pins, that the ABC802's reference already documents as carrying
+configuration switches. Pleasing to have it turn up independently on the
+other machine.
+
+**The latch encoding is confirmed rather than assumed.** `LD A,08h / RRA`
+at `0x7543` rotates the carry into bit 7 and leaves `0x04` beneath it, so
+the index is `value & 7` and the state is bit 7. I had it right, but I had
+it right by inheritance from the ABC802; now it is right by evidence, on a
+family that does not use one convention throughout.
+
+### Where this leaves it
+
+No software-visible trigger exists in this ROM, so the switch is
+structural. Settling it needs the schematic or MAME's own `abc806` memory
+handler; the ROM alone has given up everything it is going to. That is a
+better place to stop than another hypothesis — and the roadmap now lists
+the eliminations, which is the part that saves the next attempt time.
+
 ## 2026-08-30 (3) — the ABC806 does draw, into a framebuffer I was throwing away
 
 Picked up yesterday's open question and got most of the way through it.

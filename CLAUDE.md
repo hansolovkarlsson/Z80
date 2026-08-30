@@ -307,9 +307,21 @@ the plane makes them land, but the clear's `LDIR` and the plot both *read*
 that region too, and making reads symmetric kills the machine (the
 interrupt vectors and the ROM's data tables are down there). The open
 question is what distinguishes a ROM data read from a plane data read at
-the same address; KEYDTR is written once and never changes, EME is on but
-the page map is 256 uniformly-zero entries, and there is no bank-switching
-`OUT` anywhere in the graphics path. Two diagnostics established all of
+the same address. Switching must exist (the ROM would not `memset` 30K into
+its own EPROM, yet the interpreter reads its data down there afterwards),
+but **no software-visible trigger exists in this ROM** and most candidates
+are eliminated: EME is turned on once at `0x00DC` and never off, the page
+map's 256 entries are written once at boot and are all zero (degenerate
+under every reading of the format), KEYDTR's WR5 is written once, and a
+graphics command issues no I/O a bare `REM` does not. Settling it needs the
+schematic or MAME's `abc806` memory handler.
+
+One trap for anyone attempting it: **most "data reads below `0x8000`" are
+instruction operand fetches** - 11.2M of them in a boot run, because
+`fetch_byte()` bypasses `bus_read_hook` while immediate operands go through
+`z80_read_byte()` and reach it. Diverting "data reads" therefore diverts the
+instruction stream's operands too, and the machine dies on a garbage jump
+far from the change. Two diagnostics established all of
 this and are kept: `ABC806_TRACE_WRITES=1` (every CPU write with the
 EME/KEYDTR/HRS state, and every dropped one with its PC) and
 `ABC806_PROFILE_ALL=1` (with `--profile`, for differential profiling).

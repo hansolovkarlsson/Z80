@@ -62,6 +62,7 @@ static bool eme = false;
 // how the ROM gets at the high-resolution plane.
 static bool keydtr = true;
 static bool trace_writes = false;
+static bool trace_reads = false;
 
 static uint8_t attr_latch = 0;
 static uint8_t hrs = 0;
@@ -125,6 +126,7 @@ bool abc806_memory_init(Z80 *cpu, const char *rom_dir, const char *dos_rom_name)
     eme = false;
     keydtr = true;
     trace_writes = getenv("ABC806_TRACE_WRITES") != NULL;
+    trace_reads = getenv("ABC806_TRACE_READS") != NULL;
 
     // The firmware is physically resident, for the reason in the header.
     memcpy(cpu->memory, rom, ABC806_ROM_SIZE);
@@ -147,7 +149,10 @@ static bool is_char_ram_access(uint16_t addr) {
 }
 
 static uint8_t bus_read(Z80 *cpu, uint16_t addr, uint8_t stored_value) {
-    (void)cpu;
+    // Only ever data reads: z80core's fetch_byte() indexes the flat array
+    // directly and never consults this hook.
+    if (trace_reads && addr < 0x8000)
+        fprintf(stderr, "[r] %04X pc=%04X\n", addr, cpu ? cpu->pc : 0);
 
     // EME diverts a page to the high-resolution plane through the map.
     //

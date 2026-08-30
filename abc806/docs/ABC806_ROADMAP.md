@@ -447,38 +447,72 @@ the classic Z80 fill-with-a-constant idiom. So:
 Routing low-32K *writes* into the plane was tried. It makes them land, and
 it is almost certainly half the answer. It is **not committed**, because
 half a model that produces knowably wrong data is worse in the source than
-an honest gap:
+an honest gap: both the clear and the plot need their *reads* to come from
+the plane too. `LDIR` reads the region it fills; the plot reads `(HL)`
+twice. With reads still answering from ROM, the clear propagates a ROM byte
+instead of zero and the plot writes ROM-derived values — exactly what the
+trace shows (`4500 <- C9`, `4501 <- FD`).
 
-**Both the clear and the plot need their *reads* to come from the plane
-too.** `LDIR` reads `(HL)` in the same region it writes; the plot reads
-`(HL)` twice. With reads still answering from ROM, the clear propagates a
-ROM byte instead of zero and the plot writes ROM-derived values — which is
-exactly what the trace shows (`4500 <- C9`, `4501 <- FD`, `4502 <- CB`).
+**Something must switch.** The ROM would not `memset` 30K into its own
+EPROM, so the low 32K has to be DRAM at that moment; and BASIC's
+interpreter demonstrably reads its own data down there afterwards, so it
+has to be ROM later. Both cannot be true at once without a switch.
 
-Making reads symmetric was also tried, and **breaks the machine**: the
-interrupt vectors and the ROM's own data tables are down there too, and it
-dies on `ED 00` at `0x0084` immediately. So the question is not "are reads
-diverted" but **what distinguishes a ROM data read from a plane data read
-at the same address**. Neither of the two mechanisms already modelled
-answers it:
+What follows is what has been **ruled out**, which is most of the search
+space:
 
-- **KEYDTR never changes.** DART channel B's WR5 is written once, `0x68`,
-  which deasserts DTR-B, and never again.
-- **EME is on and the page map is uniformly zero.** The map is written 256
-  times at boot — the index is the high address byte, so all 256 values of
-  B — every one of them `0x00`. No interpretation of a uniformly-zero map
-  yields a sensible per-page mapping, so the map is not what is diverting.
-- **There is no bank-switching `OUT` in the graphics path at all.** The
-  whole of `0x7DB0`-`0x7E38` contains none, and the option PROM's only
-  latch writes are the pair at `0x7546`/`0x754D` (below).
+- **The 74ALS259 latch.** A graphics command issues *no* I/O that a bare
+  `REM` does not — identical port writes, identical values, identical
+  counts. And across all 32K of ROM there is exactly one immediate-form
+  latch write, `LD A,80h / OUT (36h),A` at `0x00DC`: **EME is turned on
+  once at boot and never turned off.**
+- **The page map.** All 256 entries are written at boot by the loop at
+  `0x00D2` (which clears the map and `hrc` together), every one `0x00`, and
+  never touched again. A uniformly-zero map is degenerate under *every*
+  reading of the entry format: "zero means divert" sends all sixteen pages
+  to the same physical page, "zero means do not divert" disables it
+  entirely. So the map is not what is switching.
+- **KEYDTR.** DART channel B's WR5 is written once, `0x68`, and never
+  again.
+- **Symmetric low-32K reads.** Tried; the machine dies immediately.
+- **Symmetric reads with the current instruction's own bytes excluded.**
+  Also tried, also dies — see the operand-fetch note below, which is why
+  the first attempt failed so violently and why this one was worth
+  separating out.
 
-The most promising remaining shape is an **M1-style split — instruction
-fetch from ROM, data access to the plane** — which is the mechanism this
-target already implements for the character-RAM window, and which
-`fetch_byte()`'s deliberate bypass of `bus_read_hook` would make nearly
-free. It is *not* recorded as the answer: the ROM demonstrably performs
-data reads in the low 32K that must return ROM, and how those coexist is
-unexplained. Settle that before writing code.
+So in this ROM there is **no software-visible trigger at all**, which
+points at something structural rather than something programmed. Settling
+it needs the ABC806 schematic or MAME's own `abc806` memory handler;
+guessing further from the ROM alone has reached its limit.
+
+### An emulator fact that matters for any attempt at this
+
+**Most "data reads below `0x8000`" are not data reads.** Instrumenting
+`bus_read` shows 11.2 million of them in a boot-plus-`REM` run, 11.2
+million of those at page `0x05` — and they are *instruction operand
+fetches*. Address `0x054D` read with PC at `0x054E`, and so on.
+
+That is a property of the shared core: `fetch_byte()` indexes the flat
+array directly and bypasses `bus_read_hook`, but immediate operands go
+through `z80_read_byte()` and therefore *do* reach the hook. So a
+naive "divert data reads to the plane" experiment diverts most of the
+instruction stream's operands as well, and the machine dies on a garbage
+jump nowhere near the change. Anyone trying an M1-style split here has to
+account for that first — and note that it is also not what real hardware
+could be doing, since only the opcode fetch is an M1 cycle on a real Z80.
+
+### And two hardware facts found along the way
+
+- **Port `0x37`'s single write is a DIP-switch reading.** At `0x0418` the
+  ROM reads DART channel B's RR0, tests bit 5, and writes `09` or `0A` to
+  port `0x37` accordingly. Bit 5 of RR0 is CTS — which is exactly where
+  [the ABC802 documents one of its two configuration switches](../../abc802/docs/ABC802_REFERENCE.md).
+  The port is currently modelled as read-only; the write is dropped.
+- **The latch's encoding is confirmed from the ROM's own idiom**, not
+  assumed: `LD A,08h / RRA` at `0x7543` places the carry in bit 7 and
+  leaves `0x04` below it, so the index is `value & 7` and the state is
+  bit 7. Worth recording because the ABC800 family does not use one
+  convention throughout.
 
 ### A separate finding: HRU II needs two latch bits, not one
 
