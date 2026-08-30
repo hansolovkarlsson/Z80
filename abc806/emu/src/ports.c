@@ -421,6 +421,10 @@ static bool hru2_a8 = false;
 // The 16-entry high-resolution colour lookup, written through port 0x07.
 static uint8_t hrc[16];
 
+// The high-resolution colour lookup, for the renderer. Sixteen entries,
+// each holding *two* pixels' worth of output: see chargen.c's HR section.
+const uint8_t *abc806_hrc(void) { return hrc; }
+
 static void sto_write(uint8_t value) {
     int bit = value & 0x07;
     bool state = (value & 0x80) != 0;

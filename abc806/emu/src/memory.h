@@ -68,6 +68,8 @@ uint8_t abc806_get_attr_latch(void);
 
 // The high-resolution video RAM, banked 16 ways by the HRS register.
 #define ABC806_VIDEO_RAM_SIZE 0x20000
+// The whole high-resolution plane, for the renderer.
+const uint8_t *abc806_video_ram(void);
 uint8_t abc806_videoram_read(uint32_t addr);
 void abc806_videoram_write(uint32_t addr, uint8_t value);
 void abc806_set_hrs(uint8_t value);

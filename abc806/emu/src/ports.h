@@ -20,6 +20,10 @@ void abc806_ports_tick(Z80 *cpu, int cycles);
 // MC6845 register file, for the renderer.
 uint8_t abc806_crtc_reg(int index);
 
+// The 16-entry high-resolution colour lookup (port 7, indexed by register
+// B). Each entry holds two pixels of output; see chargen.c.
+const uint8_t *abc806_hrc(void);
+
 // The character-RAM address the CRTC's cursor is on, or -1 when R10's
 // cursor-mode bits say it is not displayed.
 int abc806_cursor_address(void);

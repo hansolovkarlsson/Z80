@@ -132,6 +132,58 @@ int abc806_decode_row(const Abc806Screen *s, int row, Abc806Cell *cells, int max
     return n;
 }
 
+
+// The high-resolution plane, composited over the text layer.
+//
+// Reimplemented from MAME's abc806_state::hr_update(). The shape is not
+// guessable and is worth stating outright:
+//
+// 1. **The displayed bank is HRS's *low* nibble** (VM15-VM18), while the
+//    bank the CPU writes through is the *high* nibble (F15-F18). They are
+//    independent on purpose - the machine can draw into one area while
+//    showing another - so using the wrong nibble works perfectly until
+//    something double-buffers.
+//
+// 2. **One byte becomes four pixels, via two lookups.** Each nibble
+//    indexes hrc[], and each hrc entry is *itself* two pixels: four bits
+//    each, of which bit 3 is "opaque" and bits 2:0 are the pen. So the
+//    palette carries the horizontal resolution - program both halves of an
+//    entry alike and you get 240 wide, differently and you get 480.
+//
+// 3. **The layer is not simply on top.** A high-resolution pixel is drawn
+//    where its opaque bit is set, *or* where the text layer left black.
+//    Text therefore punches through its own foreground, which is how the
+//    two planes coexist without either needing a mask.
+//
+// With hrc all zeros - its state after the ROM clears it at boot - every
+// dot is pen 0 with opaque clear, so nothing is drawn anywhere text is not
+// already black. The layer disables itself, which is why this needs no
+// enable flag.
+static void render_hr(const Abc806Screen *s, uint8_t *pixels, int w, int h) {
+    if (!s->video_ram || !s->hrc) return;
+
+    uint32_t addr = (uint32_t)(s->hrs & 0x0F) << 15;
+
+    for (int y = 0; y < ABC806_HR_ROWS && y < h; y++) {
+        for (int sx = 0; sx < ABC806_HR_BYTES_PER_ROW; sx++) {
+            uint8_t data = s->video_ram[addr++ & (ABC806_VIDEO_RAM_SIZE - 1)];
+            uint16_t dot = (uint16_t)((s->hrc[data >> 4] << 8) |
+                                       s->hrc[data & 0x0F]);
+
+            for (int pixel = 0; pixel < ABC806_HR_PIXELS_PER_BYTE; pixel++) {
+                int x = ABC806_HR_X_OFFSET +
+                        sx * ABC806_HR_PIXELS_PER_BYTE + pixel;
+                if (x >= 0 && x < w) {
+                    bool opaque = (dot & 0x8000) != 0;
+                    if (opaque || pixels[y * w + x] == 0)
+                        pixels[y * w + x] = (uint8_t)((dot >> 12) & 0x07);
+                }
+                dot = (uint16_t)(dot << 4);
+            }
+        }
+    }
+}
+
 bool abc806_render_pixels(const Abc806Screen *s, uint8_t *pixels, size_t size) {
     if (!s || s->columns <= 0 || s->rows <= 0 || s->scanlines <= 0) return false;
 
@@ -197,5 +249,7 @@ bool abc806_render_pixels(const Abc806Screen *s, uint8_t *pixels, size_t size) {
             pen_x += ABC806_CHAR_WIDTH * rep_count;
         }
     }
+
+    render_hr(s, pixels, w, h);
     return true;
 }

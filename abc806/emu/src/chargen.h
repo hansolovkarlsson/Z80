@@ -43,7 +43,29 @@ typedef struct {
     int cursor_addr;           // -1 when the cursor is off screen
     bool flash_on;             // the flash clock's current phase
     bool forty;                // the 74ALS259's 40-column line
+
+    // The high-resolution plane, composited over the text layer. NULL to
+    // render text only - which is what bin/abc806-chargen-dump does, since
+    // its subject is the character decode.
+    const uint8_t *video_ram;  // the whole plane; hrs picks the bank shown
+    const uint8_t *hrc;        // 16 entries, two pixels of output each
+    uint8_t hrs;               // bits 0-3 = displayed bank (bits 4-7 are the CPU's)
 } Abc806Screen;
+
+// The high-resolution plane's shape. 128 bytes per row, each byte becoming
+// four pixels through the hrc lookup, 240 rows.
+#ifndef ABC806_VIDEO_RAM_SIZE
+#define ABC806_VIDEO_RAM_SIZE 0x20000
+#endif
+
+#define ABC806_HR_BYTES_PER_ROW 128
+#define ABC806_HR_ROWS          240
+#define ABC806_HR_PIXELS_PER_BYTE 4
+
+// The plane starts 16 pixels left of text column 0. MAME draws text at
+// `hbp + (column + 4) * 6` and high-resolution at `hbp + 24 - 16 + ...`, so
+// the difference is what matters and the shared porch offset cancels.
+#define ABC806_HR_X_OFFSET      (-16)
 
 // One cell as the attribute walk resolved it: the character to draw, the
 // colours in force at that point in the row, and how wide it is. Only

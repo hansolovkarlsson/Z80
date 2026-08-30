@@ -29,6 +29,9 @@ void abc806_current_screen(Abc806Screen *out, bool flash_on) {
     out->cursor_addr = abc806_cursor_address();
     out->flash_on   = flash_on;
     out->forty      = !abc806_80_column();
+    out->video_ram  = abc806_video_ram();
+    out->hrc        = abc806_hrc();
+    out->hrs        = abc806_get_hrs();
 }
 
 void abc806_render_text_screen(FILE *out) {

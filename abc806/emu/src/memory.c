@@ -325,6 +325,8 @@ const uint8_t *abc806_hru2_prom(void) { return hru2_prom; }
 void abc806_set_attr_latch(uint8_t value) { attr_latch = value; }
 uint8_t abc806_get_attr_latch(void) { return attr_latch; }
 
+const uint8_t *abc806_video_ram(void) { return video_ram; }
+
 uint8_t abc806_videoram_read(uint32_t addr) {
     return video_ram[addr & (ABC806_VIDEO_RAM_SIZE - 1)];
 }

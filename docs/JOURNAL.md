@@ -21,6 +21,71 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (6) — the ABC806's picture, and a palette that hides it
+
+`bin/abc806 --screenshot` now draws the high-resolution plane. A
+`FGLINE` from (10,10) to (100,100) renders as a clean white diagonal
+beneath the ROM's text, rising left to right — which is what that line
+looks like once y is flipped. Milestone 5 is done.
+
+### The layer was invisible for a while, correctly
+
+The renderer worked before I could see anything from it. The plane had its
+91 pixels, the code was MAME's own loop, and the screenshot was blank.
+
+**`hrc` was all zeros**, which is the state the ROM boots in. Every nibble
+looks up an entry of 0, so every dot is a *transparent* pen 0 and nothing
+is drawn. `FGCTL` is what programs the palette — any non-zero argument but
+128 writes three or four entries — and without it a perfectly drawn line is
+genuinely invisible on real hardware too.
+
+That is a nice property rather than a nuisance: a zero palette disables the
+layer, so the renderer needs no enable flag.
+
+### Three things about the decode worth writing down
+
+- **The displayed bank is HRS's *low* nibble; the CPU writes through the
+  *high* one.** Independent on purpose, so the machine can draw into one
+  area while showing another — and a renderer reading the wrong nibble
+  works perfectly until something double-buffers.
+- **One byte becomes four pixels through two lookups**, because each `hrc`
+  entry is itself two pixels of four bits (bit 3 opaque, bits 2:0 pen). So
+  **the palette carries the horizontal resolution**: both halves alike
+  gives 240 wide, different gives 480. That is a genuinely clever piece of
+  hardware and not something I would have guessed from a memory map.
+- **The layer is not on top.** A dot draws where its opaque bit is set *or*
+  where the text left black, so text punches through its own foreground and
+  neither plane needs a mask.
+
+### The fixture, and why it is not optional
+
+Same argument as every other visual thing on this machine, for the fourth
+time: the ROM draws no high-resolution graphics on its own, so a boot
+screen validates none of this. `bin/abc806-chargen-dump` now renders a
+synthetic plane beside its synthetic text, covering the four things that
+break independently — the bank nibble, the four-pixel expansion, the opaque
+rule, and the −16 pixel offset between plane and text column 0.
+
+The opaque row is the one I like: `hrc[2] = 0xA0` is opaque pen 2 followed
+by transparent pen 0, so alternate pixels let the character glyphs show
+through and the fixture shows `272727...` interleaved with the text
+underneath. All three sabotages red it.
+
+### What the picture then told me
+
+Four lines drawn with pens 1, 2, 4 and 7 came out **white, and two of them
+did not appear at all**. Pens landing on `hrc` entries that `FGCTL` never
+programmed are transparent, so they vanish.
+
+So the third argument to `FGLINE` is not a pen index, and the mapping from
+it through `hrc` is still unknown — the routine at `0x7677` duplicates a
+nibble into both halves of a byte and something further masks it. Recorded
+as open. It is a BASIC/ROM-level question rather than a renderer one, and
+the renderer is right by three independent checks regardless.
+
+Worth noting how that was found: by *looking at the picture*. The count of
+non-zero plane bytes was correct in every one of those four runs.
+
 ## 2026-08-30 (5) — the ABC806 draws, and the switch was not a switch
 
 The ABC806 now draws into its high-resolution plane. `FGPOINT 10,10,7` then

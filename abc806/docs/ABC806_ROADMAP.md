@@ -368,7 +368,7 @@ the top, so each assertion is made against a screen that still holds it —
 it failed that way first. Both were verified by breaking the ABC-bus card
 select on purpose, which reds them along with the RTC check.
 
-## Milestone 5: the machine draws — the memory mechanism, found
+## Milestone 5: high-resolution graphics — done
 
 **The ABC806 now draws into its high-resolution plane.** From BASIC:
 
@@ -381,8 +381,22 @@ writes exactly 91 bytes into the plane, and replaying them gives a clean
 `(10,10)`→`(100,100)` in BASIC's coordinates, with y flipped (`239 − y`)
 and an +8 viewport origin the ROM keeps at `0xFEF8`.
 
-The renderer is still unwritten — nothing puts these pixels on screen yet —
-but the hard part, the part two sessions failed to find, is done.
+and `--screenshot` now draws it:
+
+```
+$ bin/abc806 --cycles 400000000 \
+      --type $'FGCTL 1:FGPOINT 10,10,7:FGLINE 100,100,7\r' \
+      --screenshot line.png
+```
+
+renders the ROM's text with a clean white diagonal beneath it, rising
+left-to-right — which is what a `(10,10)`→`(100,100)` line looks like once
+y is flipped.
+
+**`FGCTL` is what turns the layer on.** It programs the `hrc` colour
+lookup; without it every entry is zero, every dot is transparent pen 0,
+and a perfectly drawn line is invisible. Any non-zero argument except 128
+programs three or four entries.
 
 ### The mechanism: where the code runs from *is* the switch
 
@@ -469,15 +483,53 @@ range reds `graphics-fgline-draws`; widening the fetch-PC bound reds
 runs with `hrs = 0`. That last one is an honest gap, recorded below rather
 than papered over.
 
-### Still to do for this milestone
+### The renderer, and three things about it that are not guessable
 
-- **The renderer.** 240×240 at 4bpp, 128-byte pitch, through the 16-entry
-  `hrc` colour lookup, composited with the text layer, with `HRU-I` and
-  `V50` placing it on screen.
-- **The pen encoding.** `FGLINE x,y,7` produces nibbles of `0xF`, so the
-  third argument is not simply a pen index; the routine at `0x7677`
-  duplicates a nibble into both halves of the byte and something further
-  masks it. Settle this when the renderer can show colours.
+Reimplemented from MAME's `abc806_state::hr_update()`:
+
+1. **The displayed bank is HRS's *low* nibble** (VM15-VM18) while the bank
+   the CPU writes through is the *high* nibble (F15-F18). They are
+   independent on purpose — the machine can draw into one area while
+   showing another — so reading the wrong nibble works right up until
+   something double-buffers.
+2. **One byte becomes four pixels, through two lookups.** Each nibble
+   indexes `hrc[]`, and each `hrc` entry is *itself* two pixels of four
+   bits: bit 3 opaque, bits 2:0 the pen. **The palette carries the
+   horizontal resolution** — program both halves of an entry alike and the
+   plane is 240 wide, differently and it is 480.
+3. **The layer is not simply on top.** A dot is drawn where its opaque bit
+   is set *or* where the text layer left black, so text punches through its
+   own foreground and neither plane needs a mask.
+
+The plane sits **16 pixels left of text column 0** (MAME draws text at
+`hbp + (column + 4) * 6` and the plane at `hbp + 24 - 16`, so the shared
+porch cancels and only the difference matters).
+
+A zero `hrc` makes every dot transparent pen 0, so the layer disables
+itself and needs no enable flag — which is exactly the state the machine
+boots in.
+
+### Verified
+
+`bin/abc806-chargen-dump` now renders a synthetic plane alongside its
+synthetic text, and the committed fixture covers the four things that can
+break independently: the bank nibble (the plane is written in bank 1 with
+`hrs = 0x01`, so a renderer reading the high nibble shows nothing), the
+four-pixel expansion, the opaque rule (one row uses `hrc[2] = 0xA0` —
+opaque pen 2 then *transparent* pen 0 — so alternate pixels let the text
+show through), and the −16 offset (the 24-byte run ends at x=79, not 95).
+Each of the three was broken on purpose and reds the check.
+
+### Still open
+
+- **The pen encoding.** `FGLINE x,y,n` does not map `n` to a pen index
+  directly: four lines drawn with pens 1, 2, 4 and 7 come out white, and
+  two of them vanish entirely — pens landing on `hrc` entries `FGCTL` did
+  not program are transparent. The routine at `0x7677` duplicates a nibble
+  into both halves of a byte and something further masks it. This is a
+  BASIC/ROM-level question rather than a renderer one.
+- **`HRU-I` and `V50`** remain unused. They place the plane on a real
+  screen; the offsets here come from MAME's constants instead.
 
 ## Known gaps
 
@@ -495,10 +547,9 @@ Everything below is expected at this point: two milestones in, of five.
   supplies the phase.
 - **The high-resolution plane is not rendered.** `--screenshot` draws the
   text layer only.
-- **The high-resolution plane is written but never displayed.** The
-  machine draws into it correctly; no renderer turns it into pixels yet,
-  and `--screenshot` still draws the text layer only. `HRU-I` and `V50`
-  remain committed and unused.
+- **Colour is not right yet.** The plane renders, but the mapping from a
+  `FG*` command's pen argument through `hrc` is not understood — see
+  milestone 5's "still open".
 - **The HRS bank select is untested.** Every check runs with `hrs = 0`, so
   a wrong shift in the plane's physical-address calculation would pass
   silently. Needs a case that actually banks.

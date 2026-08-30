@@ -314,7 +314,21 @@ RAM, which diverted two DOS reads at `0xC178`/`0xC32A` and corrupted its
 sign-on), and note that **the HRS bank shift is covered by no test**, since
 everything here runs with `hrs = 0`.
 
-Nothing renders the plane yet; `--screenshot` still draws text only.
+`--screenshot` renders the plane over the text, and three parts of that
+decode are not guessable either. **The displayed bank is HRS's low nibble
+while the CPU writes through the high one** (independent on purpose, so the
+machine can draw into one area while showing another). **One byte becomes
+four pixels through two `hrc` lookups**, each entry being itself two pixels
+of four bits - bit 3 opaque, bits 2:0 pen - so *the palette carries the
+horizontal resolution*: both halves alike gives 240 wide, different gives
+480. And **the layer is not on top**: a dot draws where its opaque bit is
+set *or* where text left black, so text punches through its own foreground.
+The plane sits 16 pixels left of text column 0. A zero `hrc` makes every
+dot transparent, so the layer disables itself and needs no enable flag -
+which is the state the machine boots in, and why `FGCTL` (which programs
+`hrc`) is required before anything drawn becomes visible. Colour is still
+wrong: a `FG*` command's pen argument does not map to a pen index directly
+and unprogrammed `hrc` entries make whole lines vanish.
 
 Three further ABC806 facts worth knowing before touching that target, none
 guessable. **Its memory map is decided by a PAL16L8** (`ABC-P4-1.bin`,

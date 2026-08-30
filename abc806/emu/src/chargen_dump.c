@@ -116,7 +116,34 @@ int main(int argc, char **argv) {
         .columns = COLUMNS, .rows = ROWS, .scanlines = SCANLINES,
         .start_addr = 0, .cursor_addr = -1,
         .flash_on = false, .forty = false,
+        .video_ram = NULL, .hrc = NULL, .hrs = 0,
     };
+
+    // A synthetic high-resolution plane, because nothing the ROM draws by
+    // itself exercises this and a boot screen never will. It covers the
+    // four things the decode can get wrong independently:
+    //
+    //   - the *displayed* bank coming from HRS's low nibble (the plane is
+    //     written in bank 1 and HRS says bank 1, so a renderer reading the
+    //     high nibble shows an empty screen);
+    //   - one byte expanding to four pixels through two hrc lookups;
+    //   - the opaque bit selecting whether a dot covers text or only
+    //     shows through black;
+    //   - the -16 pixel offset between the plane and text column 0.
+    static uint8_t plane[ABC806_VIDEO_RAM_SIZE];
+    uint8_t hrc[16] = {0};
+    // Entry 1: both halves opaque pen 1. Entry 2: opaque pen 2 then a
+    // transparent pen 0, so one dot of the pair drops out over text.
+    hrc[1] = 0x99;   // 1001 1001 -> opaque pen 1, opaque pen 1
+    hrc[2] = 0xA0;   // 1010 0000 -> opaque pen 2, transparent pen 0
+    const uint32_t bank1 = 1u << 15;
+    for (int x = 0; x < 24; x++)
+        plane[bank1 + 4 * ABC806_HR_BYTES_PER_ROW + x] = 0x11;   // row 4
+    for (int x = 0; x < 24; x++)
+        plane[bank1 + 6 * ABC806_HR_BYTES_PER_ROW + x] = 0x22;   // row 6
+    s.video_ram = plane;
+    s.hrc = hrc;
+    s.hrs = 0x01;    // displayed bank 1; CPU bank (high nibble) deliberately 0
 
     static uint8_t pixels[ABC806_MAX_PIXELS];
     if (!abc806_render_pixels(&s, pixels, sizeof pixels)) {
