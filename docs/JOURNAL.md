@@ -21,6 +21,97 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (5) — the ABC806 draws, and the switch was not a switch
+
+The ABC806 now draws into its high-resolution plane. `FGPOINT 10,10,7` then
+`FGLINE 100,100,7` writes 91 bytes, and replaying them gives a clean 45°
+diagonal — x from 108 down to 18 as y runs 139 to 229, which is
+`(10,10)`→`(100,100)` with y flipped and the +8 viewport origin the ROM
+keeps at `0xFEF8`.
+
+### The answer was in MAME after all — as a TODO it doesn't implement
+
+Entry (4) ended by saying this needed the schematic or MAME's own handler
+and that the ROM had given up everything it was going to. The right move
+was therefore to go *read* MAME, which I had not done: the whole ABC800
+family lives in one file, `src/mame/luxor/abc80x.cpp`, and
+`abc806_state::read_pal_p4()` carries this commented out:
+
+```c
+/*
+    if (!m1l && (offset < 0x7800)
+    {
+        TODO 0..30k read from videoram if fetch opcode from 7800-7fff
+        ...
+    }
+*/
+```
+
+**When the executing instruction was fetched from `0x7800`-`0x7FFF`,
+accesses below `0x7800` go to the plane instead of ROM.** Where the code
+runs from *is* the switch. Nothing is switched — which is exactly why two
+sessions of hunting for a software trigger found nothing, and why every
+elimination in entry (4) was correct and yet led nowhere. I was looking for
+a thing that does not exist.
+
+Everything that had refused to fit falls into place at once. The ROM's
+30,720-byte memset lives at `0x7CAC`, inside the window, so its `LDIR`
+reads *and* writes reach the plane and the propagate works. `FGLINE`'s
+plotter at `0x7E31` is in the window. `FGPOINT`'s executor at `0x763B` is
+not — and `FGPOINT` correctly draws nothing. The interpreter's data reads
+run from code all over the low 32K, outside the window, so they still get
+ROM.
+
+In entry (3) I wrote that the clear routine sitting immediately above the
+region it clears was "not where you would put a fill routine by accident."
+That was the mechanism, visible a day before I could read it.
+
+### The lesson I actually want to keep
+
+Entry (4) is a good piece of work — five mechanisms eliminated, each with
+evidence — and it ends with "the ROM alone has given up everything it is
+going to", which was true. What it should have ended with is *going to the
+other source right then*. I had named the source myself, in writing, in the
+previous session's roadmap, and then spent a whole turn doing more of what
+had already stopped paying.
+
+**Naming what would settle a question is not the same as trying it.** The
+eliminations were not wasted — they are why I trusted the MAME sketch
+immediately instead of doubting it — but they were the expensive way round.
+
+Worth noting the sketch is self-contradictory: its condition tests `!m1l`
+(*this access is an opcode fetch*) while its comment describes the opposite
+(divert because the opcode *was* fetched from `0x7800`-`0x7FFF`). The
+comment matches the hardware; implemented as written the condition does
+nothing. Presumably that is why it is still a TODO — and implementing it
+correctly is one of the places the scoping document hoped this project
+would exceed its reference.
+
+### A one-sided bounds check broke the disk
+
+First version tested only `current_fetch_pc < 0x7800`, which admits all of
+high RAM. Two reads by DOS code at `0xC178` and `0xC32A` got diverted into
+the plane, and the DOS's sign-on came back as `Ver 6.00` with a truncated
+date instead of `Ver 6.20`. A missing upper bound in the graphics path,
+surfacing as text corruption in the disk operating system.
+
+`dos-runs-lib` caught it — the check added yesterday, for an unrelated
+milestone, against media the repository does not even ship.
+
+### What the tests do and do not cover
+
+Two new media-free checks: `graphics-fgline-draws` asserts **exactly 91**
+bytes (90 Bresenham steps plus the start point, one byte each because the
+line is diagonal at a 128-byte pitch — an exact count makes it a geometry
+check), and `graphics-plane-clears` asserts the plane comes up zero, which
+only holds if the memset's reads reach the plane.
+
+Three sabotages. Narrowing the window's address range reds the first.
+Widening the fetch-PC bound reds `dos-runs-lib` and nothing else. And
+**changing the HRS bank shift is caught by nothing at all**, because every
+test runs with `hrs = 0` — recorded as a gap rather than left to be
+discovered by someone else.
+
 ## 2026-08-30 (4) — chasing the ABC806's memory switch, and eliminating most of it
 
 The user's read of entry (3) was that the low address space must be

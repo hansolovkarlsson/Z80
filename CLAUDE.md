@@ -287,46 +287,34 @@ UFD-DOS — `BYE` reaches the DOS command shell and the shell loads and runs
 program on the disk rather than a shell built-in. No high-resolution
 graphics and no GTK front-end yet.
 
-**Milestone 5 (high-resolution graphics) is investigated but not started,
-and what the investigation found is worth knowing before repeating it.**
-The option PROM's keyword table holds `FGPOINT`, `FGLINE`, `FGFILL`,
-`FGCTL`, `FGPAINT` and `FGPICTURE`, and they do draw - into a framebuffer
-this emulator throws away. **The high-resolution plane is CPU-addressed at
-`0x0000`-`0x77FF`: 240 rows of a 128-byte pitch at 4 bits per pixel, 30,720
-bytes, ending exactly where character RAM begins at `0x7800`.** That is not
-from a datasheet but from the ROM: it clears the region with
-`LD (HL),0` + `LDIR` at `0x7CB2`, from code sitting at `0x7CAC` - *above*
-the framebuffer, the only part of the low 32K that could still be ROM while
-the plane covers the rest - and `FGPOINT`'s range check is `LD HL,00EFh`,
-239 being 240-1. `FGLINE`'s plot at `0x7E31` is a masked read-modify-write
-stepping `0x80` at a time.
+**The machine draws into its high-resolution plane**, and the mechanism is
+the least guessable thing in this target. **When the instruction currently
+executing was fetched from `0x7800`-`0x7FFF`, accesses below `0x7800` go to
+the plane instead of ROM.** Nothing is switched - no port, no latch bit, no
+bank register - so hunting for a software trigger finds nothing, which cost
+two sessions before the rule was found. It is why the ROM's own
+30,720-byte plane-clearing memset (`LD (HL),0` then `LDIR` at `0x7CB2`)
+sits at `0x7CAC`, *inside* the window so its reads and writes both land in
+the plane, and why `FGLINE`'s plotter at `0x7E31` is in the window while
+`FGPOINT`'s executor at `0x763B` is not - `FGPOINT` only moves the graphics
+cursor and correctly draws nothing. The plane is **240x240 at 4 bits per
+pixel, 128 bytes per row, 30,720 bytes, ending exactly where character RAM
+begins**; BASIC's coordinates are y-flipped (`239 - y`) with a +8 viewport
+origin the ROM keeps at `0xFEF8`. `abc806_note_instruction_fetch()` already
+supplied the latched-M1 information this needs, from milestone 1.
 
-`memory.c` currently drops every write below `0x8000`, which is **known to
-be wrong and deliberately left rather than half-fixed**: routing writes to
-the plane makes them land, but the clear's `LDIR` and the plot both *read*
-that region too, and making reads symmetric kills the machine (the
-interrupt vectors and the ROM's data tables are down there). The open
-question is what distinguishes a ROM data read from a plane data read at
-the same address. Switching must exist (the ROM would not `memset` 30K into
-its own EPROM, yet the interpreter reads its data down there afterwards),
-but **no software-visible trigger exists in this ROM** and most candidates
-are eliminated: EME is turned on once at `0x00DC` and never off, the page
-map's 256 entries are written once at boot and are all zero (degenerate
-under every reading of the format), KEYDTR's WR5 is written once, and a
-graphics command issues no I/O a bare `REM` does not. Settling it needs the
-schematic or MAME's `abc806` memory handler.
+This rule exists in MAME only as a **commented-out TODO** in
+`abc806_state::read_pal_p4()` ("0..30k read from videoram if fetch opcode
+from 7800-7fff"), and the sketch contradicts itself - its condition tests
+`!m1l`, meaning *this* access is an opcode fetch, while its comment
+describes diverting because the opcode *was* fetched from that window. The
+comment matches the hardware. Two cautions from implementing it: **bound
+the fetch PC on both sides** (testing only `>= 0x7800` admits all of high
+RAM, which diverted two DOS reads at `0xC178`/`0xC32A` and corrupted its
+sign-on), and note that **the HRS bank shift is covered by no test**, since
+everything here runs with `hrs = 0`.
 
-One trap for anyone attempting it: **most "data reads below `0x8000`" are
-instruction operand fetches** - 11.2M of them in a boot run, because
-`fetch_byte()` bypasses `bus_read_hook` while immediate operands go through
-`z80_read_byte()` and reach it. Diverting "data reads" therefore diverts the
-instruction stream's operands too, and the machine dies on a garbage jump
-far from the change. Two diagnostics established all of
-this and are kept: `ABC806_TRACE_WRITES=1` (every CPU write with the
-EME/KEYDTR/HRS state, and every dropped one with its PC) and
-`ABC806_PROFILE_ALL=1` (with `--profile`, for differential profiling).
-**Diff write *counts*, not the set of addresses** - the coarser comparison
-produced a confident wrong conclusion once already.
+Nothing renders the plane yet; `--screenshot` still draws text only.
 
 Three further ABC806 facts worth knowing before touching that target, none
 guessable. **Its memory map is decided by a PAL16L8** (`ABC-P4-1.bin`,

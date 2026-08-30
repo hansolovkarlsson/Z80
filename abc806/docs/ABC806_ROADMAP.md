@@ -368,190 +368,116 @@ the top, so each assertion is made against a screen that still holds it —
 it failed that way first. Both were verified by breaking the ABC-bus card
 select on purpose, which reds them along with the RTC check.
 
-## Milestone 5: high-resolution graphics — investigated, not started
+## Milestone 5: the machine draws — the memory mechanism, found
 
-Not built. What follows is what the investigation established, recorded
-because it is the starting point and because two of its facts are not
-guessable.
-
-### The machine's graphics commands, read out of the option PROM
-
-`ABC806-option.76-11` carries a keyword table holding **`FGPOINT`,
-`FGLINE`, `FGFILL`, `FGCTL`, `FGPAINT` and `FGPICTURE`** — recovered the
-same way the ABC802's BASIC keywords were, by dumping the table with the
-high-bit token markers made visible rather than transcribing a manual.
-
-They are live in the running machine, not dead table entries. `FGPOINT
-10,10` and `FGLINE 100,100` are accepted; `FGCTL 1,1` gives `Error 221`
-and `FGLINE TO 100,100` gives `"," saknas` — real parser diagnostics, so
-the argument syntax above is the machine's own answer rather than a guess.
-
-They are also *enabled*: the dispatcher at `0x763B` gates the whole package
-on a flag at `0xFEF4`, bailing to `0x0012` when it is zero, and
-`PRINT PEEK(65268)` reads back **1**. The commands are not being skipped.
-
-### They draw, into a framebuffer this emulator throws away
-
-The plane stays at `0/131072 bytes nonzero` after every command. That is
-not the commands failing: it is this emulator discarding their output.
-
-**Correcting the previous account.** An earlier version of this section
-said the graphics commands "write to no address a bare `REM` does not".
-That was wrong, and wrong because the instrument was too coarse: it
-compared the *set of distinct addresses* written, so any address also
-touched during boot cancelled out. Comparing write **counts** per address
-shows `FGPOINT 10,10` writing `0xFEFC`-`0xFEFF` exactly once more than the
-baseline — the graphics cursor being set, which is all `FGPOINT` is
-supposed to do. It never draws. The command I had chosen as the test could
-not have produced a pixel.
-
-`FGLINE` does draw, and the trail is unambiguous:
-
-- **`FGLINE 100,100` after `FGPOINT 10,10` writes `0xF155`-`0xF158` about
-  91 times each** — a Bresenham loop running one iteration per step.
-- **Its plot is at `0x7E31`**, and it is a masked read-modify-write:
-  `LD A,D / XOR (HL) / AND E / XOR (HL) / LD (HL),A`, the standard
-  "replace the masked bits, keep the rest" idiom.
-- **Every one of those 91 writes is discarded** by `memory.c`'s
-  `if (addr < 0x8000) return 1`. Their targets are `0x4589`, `0x4609`,
-  `0x4689`, … — **`0x80` apart**.
-
-### The framebuffer's geometry, from the ROM rather than a datasheet
-
-That `0x80` stride is a 128-byte row pitch: 240 pixels at 4 bits per pixel
-is 120 bytes, padded to 128. And the ROM says the rest itself.
-
-At boot, a single instruction at `0x7CB4` performs **30,719 discarded
-writes covering `0x0000`-`0x77FF` evenly**. The code is:
+**The ABC806 now draws into its high-resolution plane.** From BASIC:
 
 ```
-7CAC: LD DE,0001h
-7CAF: LD BC,77FFh
-7CB2: LD (HL),00h      ; HL = 0000
-7CB4: LDIR             ; propagate that zero forward
+FGPOINT 10,10,7:FGLINE 100,100,7
 ```
 
-the classic Z80 fill-with-a-constant idiom. So:
+writes exactly 91 bytes into the plane, and replaying them gives a clean
+45° diagonal: x from 108 down to 18 as y runs 139 to 229. That is
+`(10,10)`→`(100,100)` in BASIC's coordinates, with y flipped (`239 − y`)
+and an +8 viewport origin the ROM keeps at `0xFEF8`.
 
-- **The high-resolution framebuffer is CPU-addressed at `0x0000`-`0x77FF`**
-  — 30,720 bytes, exactly 240 rows of 128, **ending precisely where
-  character RAM begins at `0x7800`**.
-- **`FGPOINT`'s own range check confirms the height**: `LD HL,00EFh` at
-  `0x76A1`, compared against the Y coordinate. 239 is 240 − 1.
-- **The clearing code lives at `0x7CAC`, above the framebuffer** — which
-  is the only part of the low 32K that could still be ROM while the plane
-  is mapped over the rest. That placement is unlikely to be a coincidence.
+The renderer is still unwritten — nothing puts these pixels on screen yet —
+but the hard part, the part two sessions failed to find, is done.
 
-### The open question, stated precisely
+### The mechanism: where the code runs from *is* the switch
 
-Routing low-32K *writes* into the plane was tried. It makes them land, and
-it is almost certainly half the answer. It is **not committed**, because
-half a model that produces knowably wrong data is worse in the source than
-an honest gap: both the clear and the plot need their *reads* to come from
-the plane too. `LDIR` reads the region it fills; the plot reads `(HL)`
-twice. With reads still answering from ROM, the clear propagates a ROM byte
-instead of zero and the plot writes ROM-derived values — exactly what the
-trace shows (`4500 <- C9`, `4501 <- FD`).
+**When the instruction currently executing was fetched from
+`0x7800`-`0x7FFF`, accesses below `0x7800` go to the high-resolution plane
+instead of ROM.** Nothing is switched. No port is written, no latch bit
+changes, no bank register moves. That is why two sessions of looking for a
+software trigger found nothing: there isn't one.
 
-**Something must switch.** The ROM would not `memset` 30K into its own
-EPROM, so the low 32K has to be DRAM at that moment; and BASIC's
-interpreter demonstrably reads its own data down there afterwards, so it
-has to be ROM later. Both cannot be true at once without a switch.
+It explains every fact that had refused to fit:
 
-What follows is what has been **ruled out**, which is most of the search
-space:
+- **The ROM's 30,720-byte memset** (`LD (HL),0` then `LDIR` at `0x7CB2`)
+  is a clear of the plane — and it lives at `0x7CAC`, *inside* the window,
+  so both its reads and its writes land there. The `LDIR` propagate only
+  works because its reads reach the plane too. Earlier this smeared ROM
+  bytes across the plane; now it leaves it genuinely zeroed.
+- **`FGLINE`'s plotter at `0x7E31`** is in the window. Its masked
+  read-modify-write reads and writes real pixels.
+- **`FGPOINT`'s executor at `0x763B` is not** — and `FGPOINT` correctly
+  draws nothing, only moving the graphics cursor.
+- **The interpreter's data reads at `0x05xx`** run from code all over the
+  low 32K, outside the window, so they still read ROM.
 
-- **The 74ALS259 latch.** A graphics command issues *no* I/O that a bare
-  `REM` does not — identical port writes, identical values, identical
-  counts. And across all 32K of ROM there is exactly one immediate-form
-  latch write, `LD A,80h / OUT (36h),A` at `0x00DC`: **EME is turned on
-  once at boot and never turned off.**
-- **The page map.** All 256 entries are written at boot by the loop at
-  `0x00D2` (which clears the map and `hrc` together), every one `0x00`, and
-  never touched again. A uniformly-zero map is degenerate under *every*
-  reading of the entry format: "zero means divert" sends all sixteen pages
-  to the same physical page, "zero means do not divert" disables it
-  entirely. So the map is not what is switching.
-- **KEYDTR.** DART channel B's WR5 is written once, `0x68`, and never
-  again.
-- **Symmetric low-32K reads.** Tried; the machine dies immediately.
-- **Symmetric reads with the current instruction's own bytes excluded.**
-  Also tried, also dies — see the operand-fetch note below, which is why
-  the first attempt failed so violently and why this one was worth
-  separating out.
+The placement of that clear routine at `0x7CAC`, immediately above the
+30,720-byte region it clears, was noted as "unlikely to be a coincidence"
+before the mechanism was known. It wasn't one.
 
-So in this ROM there is **no software-visible trigger at all**, which
-points at something structural rather than something programmed. Settling
-it needs the ABC806 schematic or MAME's own `abc806` memory handler;
-guessing further from the ROM alone has reached its limit.
+### Found in MAME — as a TODO it does not implement
 
-### An emulator fact that matters for any attempt at this
+`abc806_state::read_pal_p4()` carries this, commented out:
 
-**Most "data reads below `0x8000`" are not data reads.** Instrumenting
-`bus_read` shows 11.2 million of them in a boot-plus-`REM` run, 11.2
-million of those at page `0x05` — and they are *instruction operand
-fetches*. Address `0x054D` read with PC at `0x054E`, and so on.
-
-That is a property of the shared core: `fetch_byte()` indexes the flat
-array directly and bypasses `bus_read_hook`, but immediate operands go
-through `z80_read_byte()` and therefore *do* reach the hook. So a
-naive "divert data reads to the plane" experiment diverts most of the
-instruction stream's operands as well, and the machine dies on a garbage
-jump nowhere near the change. Anyone trying an M1-style split here has to
-account for that first — and note that it is also not what real hardware
-could be doing, since only the opcode fetch is an M1 cycle on a real Z80.
-
-### And two hardware facts found along the way
-
-- **Port `0x37`'s single write is a DIP-switch reading.** At `0x0418` the
-  ROM reads DART channel B's RR0, tests bit 5, and writes `09` or `0A` to
-  port `0x37` accordingly. Bit 5 of RR0 is CTS — which is exactly where
-  [the ABC802 documents one of its two configuration switches](../../abc802/docs/ABC802_REFERENCE.md).
-  The port is currently modelled as read-only; the write is dropped.
-- **The latch's encoding is confirmed from the ROM's own idiom**, not
-  assumed: `LD A,08h / RRA` at `0x7543` places the carry in bit 7 and
-  leaves `0x04` below it, so the index is `value & 7` and the state is
-  bit 7. Worth recording because the ABC800 family does not use one
-  convention throughout.
-
-### A separate finding: HRU II needs two latch bits, not one
-
-The option PROM's only writes to the 74ALS259 are at `0x7546` and
-`0x754D`, and they bracket a read of port `0x37`:
-
-```
-7541: ADD A,A
-7542: LD B,A
-7543: LD A,08h
-7545: RRA              ; A = 04h | (carry << 7)  -> latch bit 4
-7546: OUT (36h),A
-7548: SLA B
-754A: LD A,04h
-754C: RRA              ; A = 02h | (carry << 7)  -> latch bit 2
-754D: OUT (36h),A
-754F: LD C,37h         ; then read the PROM
+```c
+/*
+    if (!m1l && (offset < 0x7800)
+    {
+        TODO 0..30k read from videoram if fetch opcode from 7800-7fff
+        romd = 1;
+        hre = 1;
+        mux = 0;
+    }
+*/
 ```
 
-So the HRU II palette PROM's address is extended by **latch bits 2 *and*
-4**, driven from two bits of a value. `ports.c` currently models bit 2 as
-`hru2_a8` and drops bit 4 as "TXOFF". That is very likely wrong, and it is
-recorded rather than fixed because nothing yet reads the palette for real,
-so there would be no way to tell a correct change from a plausible one.
+Note that the sketch contradicts itself: the condition tests `!m1l` — *this
+access is an opcode fetch* — while the comment describes the opposite,
+diverting because the opcode *was* fetched from `0x7800`-`0x7FFF`. The
+comment is the one that matches the hardware; implemented as written, the
+condition does nothing useful. Presumably that is why it was left
+unfinished.
 
-### The renderer is also still to write
+So this is one of the places [`ABC806_SCOPING.md`](ABC806_SCOPING.md) hoped
+for: behaviour the reference implementation documents but does not do. The
+physical address is MAME's own `mux = 0` form,
+`(m_hrs & 0xf0) << 11 | (offset & 0x7fff)` — the same expression the
+KEYDTR path already used.
 
-Independently of the above, nothing yet turns video RAM into pixels. The
-geometry is no longer guesswork — **240×240 at 4 bits per pixel, 128 bytes
-per row**, established from the ROM's own clear loop and range check above
-— banked by `hrs` through the 16-entry `hrc` colour lookup, with `HRU-I`
-and `V50` placing it on screen. `hrs` and `hrc` are already latched
-(`ports.c`, ports 6 and 7 of the ABC-bus range) and the plane is already
-addressable from `memory.c`; what is missing is the decode and its
-composition with the text layer.
+`abc806_note_instruction_fetch()` already supplied exactly the latched-M1
+information this needs; it was added for the character-RAM window in
+milestone 1 and needed no change.
 
-When it is written it will need a fixture, for the reason
-[milestone 3 gives](#the-colour-path-needed-a-fixture-for-the-reason-the-postmortem-gives)
-and the boot screen cannot: there is no ROM output that exercises it.
+### Found the hard way
+
+**A one-sided bounds check broke the disk.** The first version tested only
+`current_fetch_pc < 0x7800`, which admits every address in high RAM as
+well. Two reads made by DOS code running at `0xC178` and `0xC32A` were
+diverted into the plane, and the DOS's sign-on came out as
+`** Disc operating system - Ver 6.00 **` with a truncated date instead of
+`Ver 6.20` — a corruption in a completely unrelated subsystem, from a
+missing upper bound. `dos-runs-lib` caught it.
+
+### Verified
+
+Two media-free checks. `graphics-fgline-draws` asserts **exactly 91**
+bytes: 90 Bresenham steps plus the start point, one byte each because the
+line is diagonal at a 128-byte pitch. An exact count makes it a geometry
+check rather than a "something happened" check.
+`graphics-plane-clears` asserts the plane comes up genuinely zero, which
+only holds if the memset's *reads* reach the plane.
+
+Three deliberate regressions were tried. Narrowing the window's address
+range reds `graphics-fgline-draws`; widening the fetch-PC bound reds
+`dos-runs-lib` and nothing else, so that check is its only cover; and
+**changing the HRS bank shift is caught by nothing**, because every test
+runs with `hrs = 0`. That last one is an honest gap, recorded below rather
+than papered over.
+
+### Still to do for this milestone
+
+- **The renderer.** 240×240 at 4bpp, 128-byte pitch, through the 16-entry
+  `hrc` colour lookup, composited with the text layer, with `HRU-I` and
+  `V50` placing it on screen.
+- **The pen encoding.** `FGLINE x,y,7` produces nibbles of `0xF`, so the
+  third argument is not simply a pen index; the routine at `0x7677`
+  duplicates a nibble into both halves of the byte and something further
+  masks it. Settle this when the renderer can show colours.
 
 ## Known gaps
 
@@ -569,10 +495,13 @@ Everything below is expected at this point: two milestones in, of five.
   supplies the phase.
 - **The high-resolution plane is not rendered.** `--screenshot` draws the
   text layer only.
-- **No high-resolution graphics.** Milestone 5, and see its section above
-  for how far the investigation got. `HRU-I` and `V50` are committed and
-  unused; `RAD` and `HRU-II` are in use, though HRU II only as a port
-  `0x37` read-back rather than to colour anything.
+- **The high-resolution plane is written but never displayed.** The
+  machine draws into it correctly; no renderer turns it into pixels yet,
+  and `--screenshot` still draws the text layer only. `HRU-I` and `V50`
+  remain committed and unused.
+- **The HRS bank select is untested.** Every check runs with `hrs = 0`, so
+  a wrong shift in the plane's physical-address calculation would pass
+  silently. Needs a case that actually banks.
 - **The PAL fuse map is not evaluated.** `ABC-P4-1.bin` is a well-formed
   JEDEC dump and the memory decode currently follows MAME's behavioural
   approximation instead — inheriting its `abc806 30K banking` gap. See

@@ -90,6 +90,36 @@ else
     tl_end "$(diff "$FIXTURES/chargen.txt" <("$CHARGEN_DUMP" 2>&1) | head -20)"
 fi
 
+# --- High-resolution graphics ------------------------------------------
+#
+# The machine drawing into its own high-resolution plane, from BASIC. This
+# is the only check on the fetch-window rule in memory.c: accesses below
+# 0x7800 reach the plane when the executing instruction was fetched from
+# 0x7800-0x7FFF, which is where both the ROM's own plane-clearing memset
+# and FGLINE's plotter live.
+#
+# 91 is not a round number chosen to match: a line from (10,10) to
+# (100,100) is 90 Bresenham steps plus its start point, one byte written
+# per step at a 128-byte pitch, and every one lands in a distinct byte
+# because the line is diagonal. Asserting the exact count is what makes
+# this a geometry check rather than a "something happened" check.
+out=$("$ABC806" --cycles 300000000 --type $'FGPOINT 10,10,7:FGLINE 100,100,7\r' 2>&1)
+tl_begin "graphics-fgline-draws"
+tl_want "$out" "High-resolution plane: 91/131072 bytes nonzero" \
+        "FGLINE plotting exactly 91 pixels into the plane"
+tl_end "$out"
+
+# The plane must also come up *clear*. The ROM zeroes all 30,720 bytes at
+# boot with LD (HL),0 followed by LDIR, and that propagate only works if
+# its reads reach the plane too - with reads still answering from ROM it
+# smears ROM bytes across the whole plane instead, which is exactly the
+# symptom that led here.
+out=$("$ABC806" --cycles 60000000 2>&1)
+tl_begin "graphics-plane-clears"
+tl_want "$out" "High-resolution plane: 0/131072 bytes nonzero" \
+        "the ROM's own memset leaving the plane genuinely zeroed"
+tl_end "$out"
+
 # --- The real-time clock, on real media ---------------------------------
 #
 # The only end-to-end check of the E0516, and it needs a disk: nothing in

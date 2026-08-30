@@ -148,6 +148,42 @@ static bool is_char_ram_access(uint16_t addr) {
     return true;
 }
 
+
+// The high-resolution window.
+//
+// **When the instruction currently executing was fetched from
+// 0x7800-0x7FFF, accesses below 0x7800 go to the high-resolution plane
+// rather than to ROM.** That is the whole mechanism, and it is not
+// software-controlled: nothing is switched, no port is written, no latch
+// bit changes. Where the code *runs from* is the switch.
+//
+// It explains the two things that made no sense otherwise. The ROM's own
+// 30,720-byte clear (LD (HL),0 then LDIR at 0x7CB2) is a memset of the
+// plane, and it lives at 0x7CAC - inside the window, so its reads and
+// writes both land there. FGLINE's plot at 0x7E31 is in the window too.
+// FGPOINT's executor at 0x763B is *not*, which is consistent: it only
+// moves the graphics cursor and never touches a pixel.
+//
+// Found in MAME, where it is an unimplemented TODO in
+// abc806_state::read_pal_p4() - commented out, with the note "0..30k read
+// from videoram if fetch opcode from 7800-7fff". So this is one of the
+// places the scoping document hoped for: behaviour the reference
+// implementation describes but does not do.
+//
+// The physical address is MAME's own mux=0 form, (m_hrs & 0xf0) << 11 |
+// (offset & 0x7fff) - the same expression the KEYDTR path already uses.
+static bool hr_window_access(uint16_t addr, uint32_t *phys) {
+    if (addr >= 0x7800) return false;
+    // The window is 0x7800-0x7FFF exactly. Testing only the lower bound
+    // admits every address in high RAM too, which quietly diverted two
+    // reads made by DOS code running at 0xC178/0xC32A and corrupted its
+    // sign-on - a one-sided bounds check that broke a completely unrelated
+    // subsystem.
+    if (current_fetch_pc < 0x7800 || current_fetch_pc > 0x7FFF) return false;
+    *phys = ((uint32_t)(hrs & 0xF0) << 11) | (addr & 0x7FFF);
+    return true;
+}
+
 static uint8_t bus_read(Z80 *cpu, uint16_t addr, uint8_t stored_value) {
     // Only ever data reads: z80core's fetch_byte() indexes the flat array
     // directly and never consults this hook.
@@ -177,6 +213,12 @@ static uint8_t bus_read(Z80 *cpu, uint16_t addr, uint8_t stored_value) {
     if (!keydtr && addr < 0x8000) {
         uint32_t phys = ((uint32_t)((hrs >> 4) & 0x0F) << 15) | (addr & 0x7FFF);
         return video_ram[phys & (ABC806_VIDEO_RAM_SIZE - 1)];
+    }
+
+    {
+        uint32_t phys;
+        if (hr_window_access(addr, &phys))
+            return video_ram[phys & (ABC806_VIDEO_RAM_SIZE - 1)];
     }
 
     if (is_char_ram_access(addr)) {
@@ -223,8 +265,16 @@ static int bus_write(Z80 *cpu, uint16_t addr, uint8_t value) {
         return 1;
     }
 
+    {
+        uint32_t phys;
+        if (hr_window_access(addr, &phys)) {
+            video_ram[phys & (ABC806_VIDEO_RAM_SIZE - 1)] = value;
+            return 1;
+        }
+    }
+
     if (addr < 0x8000) {
-        // Dropped, and known to be wrong - deliberately left that way
+        // Dropped, and correct: outside the high-resolution window above - deliberately left that way
         // rather than half-fixed. See ABC806_ROADMAP.md's milestone 5
         // section for the evidence; the short version is that the
         // high-resolution framebuffer is CPU-addressed at 0x0000-0x77FF
