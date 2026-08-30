@@ -390,56 +390,130 @@ They are also *enabled*: the dispatcher at `0x763B` gates the whole package
 on a flag at `0xFEF4`, bailing to `0x0012` when it is zero, and
 `PRINT PEEK(65268)` reads back **1**. The commands are not being skipped.
 
-### And they draw nothing
+### They draw, into a framebuffer this emulator throws away
 
-The high-resolution plane stays at `0/131072 bytes nonzero` after every
-command and every `FGCTL` argument from 0 to 255. This is not the commands
-failing silently — a differential profile (`ABC806_PROFILE_ALL=1`, once
-with the graphics line and once with a bare `REM`, then diffing the
-executed-address sets) shows **994 addresses executed only in the graphics
-run**, spread across the BASIC ROM and the option PROM. Real code runs.
+The plane stays at `0/131072 bytes nonzero` after every command. That is
+not the commands failing: it is this emulator discarding their output.
 
-Where its writes go is the finding. `ABC806_TRACE_WRITES=1` puts every CPU
-write on stderr with the three bits that decide its destination, and they
-land in ordinary high RAM — `0xF3xx` most heavily, then `0xFFxx`, `0xF1xx`,
-`0xF4xx`. **The CPU never opens a window onto the plane at all**: KEYDTR
-never changes state for the life of the run, and every page-map entry stays
-zero, which with the inverted polarity means "do not divert". The 74ALS259
-is written exactly three times during boot and never again, so neither EME
-nor KEYDTR is touched by the drawing code.
+**Correcting the previous account.** An earlier version of this section
+said the graphics commands "write to no address a bare `REM` does not".
+That was wrong, and wrong because the instrument was too coarse: it
+compared the *set of distinct addresses* written, so any address also
+touched during boot cancelled out. Comparing write **counts** per address
+shows `FGPOINT 10,10` writing `0xFEFC`-`0xFEFF` exactly once more than the
+baseline — the graphics cursor being set, which is all `FGPOINT` is
+supposed to do. It never draws. The command I had chosen as the test could
+not have produced a pixel.
 
-### What that leaves open
+`FGLINE` does draw, and the trail is unambiguous:
 
-The honest statement is that **the path by which drawing reaches the plane
-has not been found**, and that is the first thing milestone 5 has to
-answer. Three leads, in the order they look worth pursuing:
+- **`FGLINE 100,100` after `FGPOINT 10,10` writes `0xF155`-`0xF158` about
+  91 times each** — a Bresenham loop running one iteration per step.
+- **Its plot is at `0x7E31`**, and it is a masked read-modify-write:
+  `LD A,D / XOR (HL) / AND E / XOR (HL) / LD (HL),A`, the standard
+  "replace the masked bits, keep the rest" idiom.
+- **Every one of those 91 writes is discarded** by `memory.c`'s
+  `if (addr < 0x8000) return 1`. Their targets are `0x4589`, `0x4609`,
+  `0x4689`, … — **`0x80` apart**.
 
-1. **Port `0x37` is read during the graphics commands and not otherwise**
-   (`[in] 37 -> 0F`, three times). That port is the HRU II PROM's low
-   nibble, and this emulator addresses the PROM with register B plus the
-   74ALS259's A8 line. If that addressing is wrong the ROM may be reading a
-   palette or a capability word and concluding something false.
-2. **The drawing may be building a display list in RAM** for a later blit
-   that these command sequences never trigger. `FGPICTURE` has not been
-   exercised.
-3. **The high-resolution unit may need the option board to announce
-   itself** in a way this emulator does not, in which case the code would
-   run to completion and write its output nowhere — which is what is
-   observed.
+### The framebuffer's geometry, from the ROM rather than a datasheet
 
-None of these is claimed as the answer. Writing down an untested
-hypothesis as though it were a finding is a mistake this project has made
-twice and recorded both times; this section is deliberately shaped to
-avoid a third.
+That `0x80` stride is a 128-byte row pitch: 240 pixels at 4 bits per pixel
+is 120 bytes, padded to 128. And the ROM says the rest itself.
+
+At boot, a single instruction at `0x7CB4` performs **30,719 discarded
+writes covering `0x0000`-`0x77FF` evenly**. The code is:
+
+```
+7CAC: LD DE,0001h
+7CAF: LD BC,77FFh
+7CB2: LD (HL),00h      ; HL = 0000
+7CB4: LDIR             ; propagate that zero forward
+```
+
+the classic Z80 fill-with-a-constant idiom. So:
+
+- **The high-resolution framebuffer is CPU-addressed at `0x0000`-`0x77FF`**
+  — 30,720 bytes, exactly 240 rows of 128, **ending precisely where
+  character RAM begins at `0x7800`**.
+- **`FGPOINT`'s own range check confirms the height**: `LD HL,00EFh` at
+  `0x76A1`, compared against the Y coordinate. 239 is 240 − 1.
+- **The clearing code lives at `0x7CAC`, above the framebuffer** — which
+  is the only part of the low 32K that could still be ROM while the plane
+  is mapped over the rest. That placement is unlikely to be a coincidence.
+
+### The open question, stated precisely
+
+Routing low-32K *writes* into the plane was tried. It makes them land, and
+it is almost certainly half the answer. It is **not committed**, because
+half a model that produces knowably wrong data is worse in the source than
+an honest gap:
+
+**Both the clear and the plot need their *reads* to come from the plane
+too.** `LDIR` reads `(HL)` in the same region it writes; the plot reads
+`(HL)` twice. With reads still answering from ROM, the clear propagates a
+ROM byte instead of zero and the plot writes ROM-derived values — which is
+exactly what the trace shows (`4500 <- C9`, `4501 <- FD`, `4502 <- CB`).
+
+Making reads symmetric was also tried, and **breaks the machine**: the
+interrupt vectors and the ROM's own data tables are down there too, and it
+dies on `ED 00` at `0x0084` immediately. So the question is not "are reads
+diverted" but **what distinguishes a ROM data read from a plane data read
+at the same address**. Neither of the two mechanisms already modelled
+answers it:
+
+- **KEYDTR never changes.** DART channel B's WR5 is written once, `0x68`,
+  which deasserts DTR-B, and never again.
+- **EME is on and the page map is uniformly zero.** The map is written 256
+  times at boot — the index is the high address byte, so all 256 values of
+  B — every one of them `0x00`. No interpretation of a uniformly-zero map
+  yields a sensible per-page mapping, so the map is not what is diverting.
+- **There is no bank-switching `OUT` in the graphics path at all.** The
+  whole of `0x7DB0`-`0x7E38` contains none, and the option PROM's only
+  latch writes are the pair at `0x7546`/`0x754D` (below).
+
+The most promising remaining shape is an **M1-style split — instruction
+fetch from ROM, data access to the plane** — which is the mechanism this
+target already implements for the character-RAM window, and which
+`fetch_byte()`'s deliberate bypass of `bus_read_hook` would make nearly
+free. It is *not* recorded as the answer: the ROM demonstrably performs
+data reads in the low 32K that must return ROM, and how those coexist is
+unexplained. Settle that before writing code.
+
+### A separate finding: HRU II needs two latch bits, not one
+
+The option PROM's only writes to the 74ALS259 are at `0x7546` and
+`0x754D`, and they bracket a read of port `0x37`:
+
+```
+7541: ADD A,A
+7542: LD B,A
+7543: LD A,08h
+7545: RRA              ; A = 04h | (carry << 7)  -> latch bit 4
+7546: OUT (36h),A
+7548: SLA B
+754A: LD A,04h
+754C: RRA              ; A = 02h | (carry << 7)  -> latch bit 2
+754D: OUT (36h),A
+754F: LD C,37h         ; then read the PROM
+```
+
+So the HRU II palette PROM's address is extended by **latch bits 2 *and*
+4**, driven from two bits of a value. `ports.c` currently models bit 2 as
+`hru2_a8` and drops bit 4 as "TXOFF". That is very likely wrong, and it is
+recorded rather than fixed because nothing yet reads the palette for real,
+so there would be no way to tell a correct change from a plausible one.
 
 ### The renderer is also still to write
 
-Independently of the above, nothing yet turns video RAM into pixels: 240×240
-at 4 bits per pixel, banked 16 ways by `hrs`, through the 16-entry `hrc`
-colour lookup, with `HRU-I` and `V50` placing it on screen. `hrs` and
-`hrc` are already latched (`ports.c`, on ports 6 and 7 of the ABC-bus
-range) and the plane is already addressable from `memory.c`; what is
-missing is the decode and its composition with the text layer.
+Independently of the above, nothing yet turns video RAM into pixels. The
+geometry is no longer guesswork — **240×240 at 4 bits per pixel, 128 bytes
+per row**, established from the ROM's own clear loop and range check above
+— banked by `hrs` through the 16-entry `hrc` colour lookup, with `HRU-I`
+and `V50` placing it on screen. `hrs` and `hrc` are already latched
+(`ports.c`, ports 6 and 7 of the ABC-bus range) and the plane is already
+addressable from `memory.c`; what is missing is the decode and its
+composition with the text layer.
 
 When it is written it will need a fixture, for the reason
 [milestone 3 gives](#the-colour-path-needed-a-fixture-for-the-reason-the-postmortem-gives)

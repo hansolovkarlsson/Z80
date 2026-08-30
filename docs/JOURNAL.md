@@ -21,6 +21,104 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (3) — the ABC806 does draw, into a framebuffer I was throwing away
+
+Picked up yesterday's open question and got most of the way through it.
+Also had to correct yesterday's own conclusion, which was wrong in a way
+worth recording.
+
+### The correction first
+
+Entry (2) said the graphics commands "write to no address a bare `REM`
+does not". That was wrong, and the reason is instrument design rather than
+reasoning: I compared the **set of distinct addresses** written, so every
+address also touched during boot cancelled out. Comparing write **counts**
+per address shows `FGPOINT 10,10` writing `0xFEFC`-`0xFEFF` exactly once
+more than the baseline.
+
+Which is correct behaviour. `FGPOINT` sets the graphics cursor; it does not
+draw. **The command I had picked as my test could not have produced a pixel
+even on perfect hardware.** A diff that came back empty felt like a strong
+negative result, and it was an artifact twice over.
+
+### What FGLINE actually does
+
+`FGLINE 100,100` after `FGPOINT 10,10` writes four bytes at `0xF155` about
+91 times each — a Bresenham loop, one iteration per step of a 90-pixel
+line. Its plot is at `0x7E31` and is a masked read-modify-write:
+`LD A,D / XOR (HL) / AND E / XOR (HL) / LD (HL),A`.
+
+And **every one of those 91 writes was being discarded** by
+`if (addr < 0x8000) return 1` in `memory.c`. Their targets are `0x4589`,
+`0x4609`, `0x4689` — `0x80` apart.
+
+### The geometry, read out of the ROM
+
+That stride is the whole answer to a question I had expected to need a
+datasheet for. 128 bytes per row; 240 pixels at 4bpp is 120, padded to 128.
+
+The ROM confirms the rest itself. A single instruction at `0x7CB4` does
+**30,719 discarded writes covering `0x0000`-`0x77FF`**, and the code is
+
+```
+7CAC: LD DE,0001h
+7CAF: LD BC,77FFh
+7CB2: LD (HL),00h
+7CB4: LDIR
+```
+
+— the classic fill-with-a-constant idiom. So the framebuffer is at
+`0x0000`-`0x77FF`: 30,720 bytes, 240 rows of 128, **ending exactly where
+character RAM begins**. `FGPOINT`'s own range check (`LD HL,00EFh`, 239)
+confirms the height independently.
+
+The detail I liked most: **the clearing routine sits at `0x7CAC`, above the
+framebuffer** — the only part of the low 32K that could still be ROM while
+the plane covers the rest. That is not where you would put a fill routine
+by accident.
+
+### And where I stopped
+
+I tried routing low-32K writes into the plane. They land, and it is almost
+certainly half the answer. I did not commit it.
+
+The reason is that **both the clear and the plot need their *reads* to come
+from the plane too** — `LDIR` reads the region it fills, the plot reads
+`(HL)` twice — and with reads still answering from ROM, the clear
+propagates a ROM byte instead of zero and the plot writes ROM-derived
+values. The trace shows exactly that: `4500 <- C9`, `4501 <- FD`.
+
+Making reads symmetric breaks the machine outright: the interrupt vectors
+and the ROM's data tables live down there too, and it dies on `ED 00` at
+`0x0084`. So the question is not whether reads divert but **what
+distinguishes a ROM data read from a plane data read at the same address**,
+and none of the three mechanisms I have modelled answers it. KEYDTR is
+written once and never changes. EME is on but the page map is uniformly
+zero — 256 entries, all `0x00` — and no reading of a uniformly-zero map
+gives a sensible per-page mapping. And there is **no bank-switching `OUT`
+anywhere in the graphics path**.
+
+Committing the write half alone would have left the source implementing a
+model I already know produces wrong data, which is worse than an honest
+gap: the next person would see writes working and assume the rest was
+right. So the drop stays, with the evidence written at that exact line and
+the full trail in the roadmap.
+
+### Two things found sideways
+
+**The option PROM's only latch writes** (`0x7546`, `0x754D`) bracket a read
+of port `0x37` and set latch bits **2 and 4** from two bits of a value. So
+the HRU II palette PROM's address needs both, where `ports.c` models bit 2
+as `hru2_a8` and drops bit 4 as "TXOFF". Recorded, not fixed: nothing reads
+the palette for real yet, so there is no way to tell a correct change from
+a plausible one — which is the same discipline the rest of this entry is
+about.
+
+**`0x7502` is FGCTL's tokenizer, not its executor.** It calls a vector
+dispatcher at `0x762F` that reads its target from `(0x001E)+2`, then writes
+token bytes. Worth knowing before profiling one of these commands again and
+concluding from the address list that it "ran".
+
 ## 2026-08-30 (2) — the ABC806's disk milestone was already done, and its graphics are not where I expected
 
 Two milestones looked at today. One turned out to be finished; the other

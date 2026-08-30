@@ -218,7 +218,31 @@ static int bus_write(Z80 *cpu, uint16_t addr, uint8_t value) {
         return 1;
     }
 
-    if (addr < 0x8000) return 1;   // ROM: writes are dropped
+    if (addr < 0x8000) {
+        // Dropped, and known to be wrong - deliberately left that way
+        // rather than half-fixed. See ABC806_ROADMAP.md's milestone 5
+        // section for the evidence; the short version is that the
+        // high-resolution framebuffer is CPU-addressed at 0x0000-0x77FF
+        // (128-byte pitch, 240 rows, ending exactly where character RAM
+        // begins), and both the ROM's own clear and the line plotter
+        // read *and* write there.
+        //
+        // Routing writes here into the plane was tried. It makes the
+        // writes land, and it is almost certainly half of the answer -
+        // but the clear at 0x7CB2 is `LD (HL),0` followed by `LDIR`
+        // propagating that byte forward, and the plot at 0x7E31 is a
+        // masked read-modify-write. Both need their *reads* to come from
+        // the plane too, and making reads symmetric breaks the ROM
+        // instead: its interrupt vectors and data tables live down here
+        // as well. What distinguishes a ROM data read from a plane data
+        // read at the same address has not been established, so no half
+        // of the model is committed.
+        if (trace_writes)
+            fprintf(stderr, "[drop] %04X <- %02X pc=%04X\n",
+                    addr, value, cpu ? cpu->pc : 0);
+        return 1;
+    }
+
     (void)cpu;
     return 0;                      // ordinary RAM: let the core store it
 }

@@ -577,6 +577,8 @@ static int io_out(Z80 *cpu, uint8_t port, uint8_t value) {
         case DEV_MAP:
             // OUT (C),r puts B on A8-A15, and the page map takes its entry
             // number from there rather than from the port number.
+            // The index is the *high address byte*, so a trace has to show B.
+            if (getenv("ABC806_TRACE_MAP")) fprintf(stderr, "[map] b=%02X <- %02X\n", cpu->b, value);
             abc806_set_map(cpu->b & 0x0F, value);
             break;
         case DEV_ATTR:

@@ -287,89 +287,34 @@ UFD-DOS — `BYE` reaches the DOS command shell and the shell loads and runs
 program on the disk rather than a shell built-in. No high-resolution
 graphics and no GTK front-end yet.
 
-**Milestone 5 (high-resolution graphics) has been investigated but not
-started, and the investigation's result is worth knowing before repeating
-it.** The option PROM's own keyword table holds `FGPOINT`, `FGLINE`,
-`FGFILL`, `FGCTL`, `FGPAINT` and `FGPICTURE`; they parse, they pass their
-enable gate at `0xFEF4` (the dispatcher at `0x763B` bails to `0x0012` when
-it is zero, and `PRINT PEEK(65268)` reads 1), a differential profile shows
-994 addresses executing only during them - and the plane stays entirely
-zero. **The CPU never opens a window onto it**: KEYDTR never changes, every
-page-map entry stays zero, and the 74ALS259 is written three times during
-boot and never again. The path by which drawing is supposed to reach the
-plane is the open question; `ABC806_TRACE_WRITES=1` (every CPU write with
-the EME/KEYDTR/HRS state) and `ABC806_PROFILE_ALL=1` (with `--profile`, for
-differential profiling) are the two instruments that established this and
-are the ones to reach for next.
-See `abc806/docs/ABC806_ROADMAP.md` for status and
-`abc806/docs/ABC806_SCOPING.md` for the feasibility review written before
-any of it - which now carries an outcome section comparing what it
-predicted against what happened, the same shape
-`ABC802_FLOPPY_SCOPING.md` uses.
+**Milestone 5 (high-resolution graphics) is investigated but not started,
+and what the investigation found is worth knowing before repeating it.**
+The option PROM's keyword table holds `FGPOINT`, `FGLINE`, `FGFILL`,
+`FGCTL`, `FGPAINT` and `FGPICTURE`, and they do draw - into a framebuffer
+this emulator throws away. **The high-resolution plane is CPU-addressed at
+`0x0000`-`0x77FF`: 240 rows of a 128-byte pitch at 4 bits per pixel, 30,720
+bytes, ending exactly where character RAM begins at `0x7800`.** That is not
+from a datasheet but from the ROM: it clears the region with
+`LD (HL),0` + `LDIR` at `0x7CB2`, from code sitting at `0x7CAC` - *above*
+the framebuffer, the only part of the low 32K that could still be ROM while
+the plane covers the rest - and `FGPOINT`'s range check is `LD HL,00EFh`,
+239 being 240-1. `FGLINE`'s plot at `0x7E31` is a masked read-modify-write
+stepping `0x80` at a time.
 
-**The ROM's sign-on renders**, but only because DART channel B's RI is
-driven. The option PROM's routine at `0x7617` is a *delay*: it samples
-RR0 and spins until **bit 4 changes** (`IN A,(C) / XOR B / AND 10h / JR
-Z`). Bit 4 is the DART's RI, and with nothing driving it the machine waits
-there forever having booted perfectly - which is where this target sat for
-two milestones. `ports.c` drives it from a 50 Hz square wave; that is
-inference, not something read out of MAME, which drives channel A's RI and
-channel B's CTS and leaves this alone.
-
-That is also why `bin/abc806-chargen-dump` is not optional cover but the
-*only* check on the character decode, and why milestone 2's gate was
-rewritten: the scoping document asked for the ROM's sign-on banner, and
-there is none to render. Its replacement - a synthetic screen exercising
-colours, underline, flash, blank, keep-previous and double width - is the
-boot-screen postmortem's own conclusion reached from a new direction. That
-tool now checks the *terminal* renderer too, and for the identical reason:
-this ROM's screen is white on black using one attribute, so a live session
-renders it perfectly with the colour mapping inverted. Which is why the
-drawing lives in a deliberately pure `abc806/emu/src/text.c` (screen struct
-in, characters out, no live machine) while `render.c` keeps only the half
-that reaches for the CRTC and the RAM planes - the split is what lets a
-fixture pin the colours down, and the committed fixture carries the real
-escape codes. Two further things to know before touching that path.
-**`--screen` collapses double-width cells**, so it shows `ABC806` where
-character RAM holds `AABBCC880066`; asserting on the collapsed form is
-*stronger*, since collapsing at all requires decoding the attribute plane.
-And **the eight-pen palette is already in ANSI's order** (black, red,
-green, yellow, blue, magenta, cyan, white), so a pen is `30 + index` with
-no mapping table - a coincidence, not an oversight.
-
-Both renderers walk the screen through `abc806_decode_row()` (`chargen.c`)
-rather than each carrying its own copy of the attribute state machine.
-They had a copy each for a day, disagreed over double width, and that
-disagreement is what found two real bugs.
-
-**The ABC806's text attributes share nothing with the ABC802's.** That
-machine hides them in the character generator's output byte; this one has
-a parallel 2K attribute plane plus the `RAD` PROM. An attribute byte whose
-foreground and background *match* is a command rather than a colour (keep
-previous / reserved / blank / double width), so black-on-black is
-unreachable as an ordinary attribute - which is what makes the encoding
-work. Underline, flash and double height are never drawn: they index `RAD`
-for a *scanline address* and the font is addressed with that instead of
-the real row, the cursor being the same trick at scanline `0x0F`. Double
-width is described by the cell *before* it. And the glyph is six bits from
-the top of the font byte after a two-place left shift.
-
-It also **boots real UFD-DOS off `--disk` media and shows the right date
-and time**, which is the E050-16 RTC (`abc806/emu/src/rtc.c`). That chip
-has no bus at all: three bits of the 74ALS259 at port `0x36` drive chip
-select, clock and a bidirectional data line, and the line reads back as
-**bit 7 of port `0x37`**, sharing that port with the HRU II PROM's low
-nibble - so returning a constant there is not "unimplemented" but a data
-line stuck high, which is what made the DOS print `19é5-é5-é5`. Two
-details are not tidy-uppable: **reads move on the falling clock edge and
-writes on the rising one** (wrong, and the value is plausibly shaped and
-off by one bit), and **CS is inverted between the latch and the chip**.
-The ABC806 ties OUTSEL high, deleting the chip's hi-Z read state - a
-simplification belonging to this board, not the chip. The DOS's own date
-line is the whole regression test, and a strong one: every digit is a BCD
-nibble clocked through a shift register, so a correct date means the
-command encoding, register order, clock edges and bit order are all right
-at once.
+`memory.c` currently drops every write below `0x8000`, which is **known to
+be wrong and deliberately left rather than half-fixed**: routing writes to
+the plane makes them land, but the clear's `LDIR` and the plot both *read*
+that region too, and making reads symmetric kills the machine (the
+interrupt vectors and the ROM's data tables are down there). The open
+question is what distinguishes a ROM data read from a plane data read at
+the same address; KEYDTR is written once and never changes, EME is on but
+the page map is 256 uniformly-zero entries, and there is no bank-switching
+`OUT` anywhere in the graphics path. Two diagnostics established all of
+this and are kept: `ABC806_TRACE_WRITES=1` (every CPU write with the
+EME/KEYDTR/HRS state, and every dropped one with its PC) and
+`ABC806_PROFILE_ALL=1` (with `--profile`, for differential profiling).
+**Diff write *counts*, not the set of addresses** - the coarser comparison
+produced a confident wrong conclusion once already.
 
 Three further ABC806 facts worth knowing before touching that target, none
 guessable. **Its memory map is decided by a PAL16L8** (`ABC-P4-1.bin`,
