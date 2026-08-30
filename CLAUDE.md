@@ -324,7 +324,9 @@ two sessions before the rule was found. It is why the ROM's own
 sits at `0x7CAC`, *inside* the window so its reads and writes both land in
 the plane, and why `FGLINE`'s plotter at `0x7E31` is in the window while
 `FGPOINT`'s executor at `0x763B` is not - `FGPOINT` only moves the graphics
-cursor and correctly draws nothing. The plane is **240x240 at 4 bits per
+cursor and draws nothing in its two-argument form (`FGPOINT x,y,pen`, with
+a pen, does plot a dot - the pen argument is what makes any `FG` command
+draw). The plane is **240x240 at 4 bits per
 pixel, 128 bytes per row, 30,720 bytes, ending exactly where character RAM
 begins**; BASIC's coordinates are y-flipped (`239 - y`) with a +8 viewport
 origin the ROM keeps at `0xFEF8`. `abc806_note_instruction_fetch()` already

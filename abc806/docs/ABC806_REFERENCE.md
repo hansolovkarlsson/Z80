@@ -3,6 +3,8 @@
 Consolidated hardware reference for the Luxor ABC806 (1983), the top of the
 ABC800 family and the machine `bin/abc806` emulates. Companion to
 [`ABC806_ROADMAP.md`](ABC806_ROADMAP.md) (status and open gaps),
+[`ABC806_BASIC_REFERENCE.md`](ABC806_BASIC_REFERENCE.md) (the BASIC dialect
+and its graphics commands, from a programmer's side),
 [`ABC806_COMPLETED.md`](ABC806_COMPLETED.md) (how each fact below was
 established, and what was wrong first), and
 [`../../abc802/docs/ABC802_REFERENCE.md`](../../abc802/docs/ABC802_REFERENCE.md)
@@ -85,7 +87,9 @@ Consequences worth knowing before touching anything here:
   lives at `0x7CAC`, *inside* the window, so its reads and writes both
   land in the plane and the propagate works.
 - `FGLINE`'s plotter at `0x7E31` is in the window; `FGPOINT`'s executor at
-  `0x763B` is not, and `FGPOINT` correctly draws nothing.
+  `0x763B` is not — consistent with two-argument `FGPOINT x,y`, which only
+moves the cursor. The three-argument form does plot, via code inside the
+window.
 - **Bound the fetch PC on both sides.** Testing only `>= 0x7800` admits all
   of high RAM and diverts ordinary RAM code's reads.
 
@@ -290,8 +294,15 @@ The plane sits **16 pixels left of text column 0**.
 the option PROM's own keyword table.
 
 Coordinates are y-flipped (`239 − y`) with a +8 viewport origin the ROM
-keeps at `0xFEF8`. **A pen argument is masked to two bits and selects the
-plane nibble `0xC | (pen & 3)`** — a four-colour mode, so pen 4 wraps onto
+keeps at `0xFEF8`, and both axes run 0-239.
+
+**The pen argument is what makes a command draw.** `FGPOINT x,y` moves the
+graphics cursor and plots nothing; `FGPOINT x,y,pen` plots a single dot.
+The parser at `0x763B` tests for the second comma (`CP 2Ch`) and branches
+to a cursor-only path when it is absent.
+
+**A pen argument is masked to two bits and selects the plane nibble
+`0xC | (pen & 3)`** — a four-colour mode, so pen 4 wraps onto
 pen 0's nibble. `FGCTL 1` programs `hrc[D..F]` all to `FF`, which is white
 for every pen; `FGCTL 2` gives pens 1, 2 and 3.
 

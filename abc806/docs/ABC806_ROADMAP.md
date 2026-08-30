@@ -4,6 +4,8 @@ Status and known gaps for `bin/abc806`, the Luxor ABC806 machine target —
 what works, what does not, and what is next.
 
 Hardware facts live in [`ABC806_REFERENCE.md`](ABC806_REFERENCE.md), the
+BASIC dialect and its graphics commands in
+[`ABC806_BASIC_REFERENCE.md`](ABC806_BASIC_REFERENCE.md), the
 finished milestone write-ups in
 [`ABC806_COMPLETED.md`](ABC806_COMPLETED.md), and the feasibility review
 written before any of this existed in

@@ -422,8 +422,10 @@ It explains every fact that had refused to fit:
   bytes across the plane; now it leaves it genuinely zeroed.
 - **`FGLINE`'s plotter at `0x7E31`** is in the window. Its masked
   read-modify-write reads and writes real pixels.
-- **`FGPOINT`'s executor at `0x763B` is not** — and `FGPOINT` correctly
-  draws nothing, only moving the graphics cursor.
+- **`FGPOINT`'s executor at `0x763B` is not** — consistent with the
+  two-argument `FGPOINT x,y`, which only moves the graphics cursor. (The
+  *three*-argument form `FGPOINT x,y,pen` does plot, through the drawing
+  code that is in the window.)
 - **The interpreter's data reads at `0x05xx`** run from code all over the
   low 32K, outside the window, so they still read ROM.
 
