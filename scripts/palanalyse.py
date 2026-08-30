@@ -90,16 +90,32 @@ the ROM-overlay-over-DRAM arrangement `memory.c` implements (reads from
 ROM, writes through to the DRAM beneath), arrived at behaviourally, and the
 array corroborates it.
 
+## Why evaluating this PAL alone cannot give the memory map
+
+Its two main outputs leave the board. `ROMD` (pin 12) goes to **P2-4,
+labelled ROMDIS**, and `RAMD` (pin 19) to **P1-7, RAMDIS**, each with a
+330 ohm pull-up to Vcc (R10, R11). They are inter-board **disable** lines
+from the video unit to the processor unit, not local chip selects.
+
+That resolves what had looked like a gap in the array: no product term
+enables ROM between `0x4000` and `0x77FF`, and it does not need to. The
+processor board performs its own decode; this PAL only *intervenes* in it.
+So the full memory map is a property of two boards, and reading one of them
+was never going to reproduce it.
+
+The practical consequence is that `emu/src/memory.c` should not be rewritten
+"from the PAL". What the array is good for - and has already delivered - is
+settling specific questions: the fetch-window latch, and RAM being selected
+across the whole low 32K.
+
 ## What is not known
 
-**`I3` (pin 1)** still. It leaves this sheet to the right and was not
-traced further.
-
-And one thing does not yet add up: with `ENL` held at 1 no product term
-enables ROM between `0x4000` and `0x77FF`, which the machine demonstrably
-does. `ENL` is per-page, so holding it constant is likely the flaw in the
-evaluation rather than in the reading - but that is a hypothesis, and it is
-recorded as one.
+- **`I3` (pin 1)** leaves sheet 5 and was not traced further.
+- **The polarity of ROMDIS/RAMDIS.** The pull-ups mean the idle level is
+  high, which for a line named "disable" should be the *inactive* state, so
+  the names are presumably active-low. MAME's approximation reads its own
+  `romd` the other way round. Nothing here depends on it yet, and it is
+  left as a question rather than settled by preference.
 
 Usage:  scripts/palanalyse.py abc806/resources/rom/ABC-P4-1.bin
 """

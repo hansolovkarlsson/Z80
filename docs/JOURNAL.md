@@ -71,12 +71,36 @@ assumptions failed, and the natural reading — "the thing under test is
 wrong" — is exactly the one that keeps being false. Printing the equations
 instead of scoring them is what broke the deadlock both times.
 
+### The apparent gap was not a gap
+
+I nearly closed this entry saying "no term enables ROM between `0x4000` and
+`0x77FF`, which the machine demonstrably does — probably `ENL` being
+per-page." One more crop, of the PAL's *output* side, and that hypothesis
+was unnecessary.
+
+`ROMD` (pin 12) goes to **P2-4, labelled ROMDIS**; `RAMD` (pin 19) to
+**P1-7, RAMDIS**; each with a 330 ohm pull-up to Vcc. They are inter-board
+**disable** lines from the video unit to the processor unit, not local chip
+selects.
+
+So the memory map is a property of *two boards*. The processor board
+decodes ROM across the low 32K by itself, and this PAL only intervenes.
+There was never anything missing from the array — I had been expecting one
+board to answer a question that belongs to two.
+
+Which also settles what the fuse map is *for*, here. It is not a
+replacement for `emu/src/memory.c`: reading one board's PAL could not
+reproduce a two-board decode even done perfectly. It is an instrument for
+settling specific questions, and it has now settled two — the fetch-window
+latch, and RAM being selected across the whole low 32K.
+
 ### What is left
 
-`I3` (pin 1) leaves sheet 5 and I did not trace it. And with `ENL` held
-constant, no term enables ROM between `0x4000` and `0x77FF`, which the
-machine demonstrably does; `ENL` being per-page is the obvious candidate,
-but after the above I am not writing that down as the answer.
+`I3` (pin 1), untraced beyond sheet 5. And the polarity of ROMDIS/RAMDIS:
+the pull-ups make the idle level high, which for a line named "disable"
+ought to be the inactive state, so the names are presumably active-low —
+while MAME's approximation reads its own `romd` the other way round.
+Nothing depends on it yet, so it stays a question.
 
 ## 2026-08-30 (12) — the fetch-window rule, confirmed in the silicon
 

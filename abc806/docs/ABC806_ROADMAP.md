@@ -75,10 +75,17 @@ No milestone is outstanding. In rough order of value:
    the bare literal `A15'`, so RAM is selected across the whole low 32K and
    `ROMD` only decides whether ROM overrides on a read.
 
-   Two things remain. **`I3` (pin 1)** leaves that sheet untraced. And with
-   `ENL` held constant no term enables ROM between `0x4000` and `0x77FF`,
-   which the machine demonstrably does — `ENL` being per-page is the likely
-   explanation, but that is a hypothesis rather than a result.
+   **And it explains why the array alone cannot give the memory map.**
+   `ROMD` goes to P2-4 "ROMDIS" and `RAMD` to P1-7 "RAMDIS", each with a
+   330 ohm pull-up: they are inter-board *disable* lines to the processor
+   unit, not local chip selects. So no term needs to enable ROM between
+   `0x4000` and `0x77FF` — the processor board decodes that itself and this
+   PAL only intervenes. `memory.c` should therefore not be rewritten "from
+   the PAL"; the array's value is settling specific questions, which it has
+   now done twice.
+
+   Genuinely open: **`I3` (pin 1)**, untraced beyond sheet 5, and the
+   polarity of ROMDIS/RAMDIS.
 
 2. **The remaining graphics modes.** Only the four-colour mode is
    exercised; `FGCTL`'s other arguments program the palette differently.

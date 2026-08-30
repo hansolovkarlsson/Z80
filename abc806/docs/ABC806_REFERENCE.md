@@ -141,6 +141,14 @@ PAL at position 2D — its pinout matches MAME's comment exactly):
 
 `I3` (pin 1) leaves that sheet and has not been traced.
 
+**The two main outputs leave the board.** `ROMD` (pin 12) goes to **P2-4,
+labelled ROMDIS**, and `RAMD` (pin 19) to **P1-7, RAMDIS**, each with a
+330 ohm pull-up to Vcc. They are inter-board *disable* lines from the video
+unit to the processor unit rather than local chip selects — so the memory
+map is a property of two boards, and this PAL only intervenes in the
+processor board's own decode. That is why no product term enables ROM
+between `0x4000` and `0x77FF`: it does not need to.
+
 ### The page map and EME
 
 A 16-entry map at port `0x34`, indexed by the **high address byte** (which
