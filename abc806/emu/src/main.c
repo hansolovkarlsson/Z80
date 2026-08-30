@@ -210,6 +210,10 @@ static void usage(const char *argv0) {
     printf("  ABC806_TRACE_IO=1      log every I/O port access to stderr\n");
     printf("  ABC806_TRACE_WRITES=1  log every CPU write, with the EME/KEYDTR/HRS\n");
     printf("                         state that decides where it lands\n");
+    printf("  ABC806_TRACE_HRC=1     log writes to the high-resolution palette\n");
+    printf("  ABC806_TRACE_MAP=1     log page-map writes with their index (register B)\n");
+    printf("  ABC806_TRACE_READS=1   log data reads below 0x8000 - note that most\n");
+    printf("                         are instruction operand fetches, not data\n");
     printf("  ABC806_PROFILE_ALL=1   with --profile, dump every executed address\n");
     printf("                         and its count, for a differential profile\n");
 }
@@ -454,8 +458,23 @@ int main(int argc, char **argv) {
         int hr_nonzero = 0;
         for (int i = 0; i < ABC806_VIDEO_RAM_SIZE; i++)
             if (abc806_videoram_read((uint32_t)i)) hr_nonzero++;
-        printf("High-resolution plane: %d/%d bytes nonzero\n",
+        // The distinct byte values too, not just the count. A graphics
+        // command's pen argument selects the *nibble* it writes
+        // (0xC | (pen & 3)), and the count alone cannot tell one pen from
+        // another - which is exactly the confusion that made a working
+        // renderer look broken.
+        bool seen[256] = {false};
+        for (int i = 0; i < ABC806_VIDEO_RAM_SIZE; i++) {
+            uint8_t v = abc806_videoram_read((uint32_t)i);
+            if (v) seen[v] = true;
+        }
+        printf("High-resolution plane: %d/%d bytes nonzero, values:",
                hr_nonzero, ABC806_VIDEO_RAM_SIZE);
+        int shown = 0;
+        for (int v = 1; v < 256 && shown < 8; v++)
+            if (seen[v]) { printf(" %02X", v); shown++; }
+        if (!shown) printf(" none");
+        printf("\n");
     }
 
     // One snapshot, assembled in one place (render.c), so --screen,

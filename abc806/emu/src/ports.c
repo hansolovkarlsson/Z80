@@ -625,7 +625,7 @@ static int io_out(Z80 *cpu, uint8_t port, uint8_t value) {
             // On this machine 0x06 and 0x07 are video registers on write,
             // overlapping the ABC-bus range; reads there stay with the bus.
             if (index == 6) { abc806_set_hrs(value); break; }
-            if (index == 7) { hrc[cpu->b & 0x0F] = value; break; }
+            if (index == 7) { if (getenv("ABC806_TRACE_HRC")) fprintf(stderr, "[hrc] %X <- %02X\n", cpu->b & 0x0F, value); hrc[cpu->b & 0x0F] = value; break; }
             // Port 1 is CS: it selects which expansion card listens. The
             // ROM masks the select to 6 bits itself (AND 3Fh at 0x6172);
             // masking again here keeps the card honest if some other

@@ -520,16 +520,47 @@ opaque pen 2 then *transparent* pen 0 — so alternate pixels let the text
 show through), and the −16 offset (the 24-byte run ends at x=79, not 95).
 Each of the three was broken on purpose and reds the check.
 
+Six further checks pin the pen encoding, asserting the plane's *full* set
+of byte values (`C0 CC` for pen 0, and so on — a horizontal line writes
+whole bytes along its body and a half byte at each end). Matching only the
+leading value let a write path that masked off the low nibble pass; with
+both asserted, that sabotage reds seven checks instead of one.
+
+### The pen encoding — solved, and it is a four-colour mode
+
+**A `FG*` command's pen argument is masked to two bits and selects the
+plane nibble `0xC | (pen & 3)`.** Pen 0 writes `C`, pen 1 `D`, pen 2 `E`,
+pen 3 `F` — and pen 4 wraps back onto `C`, pen 7 onto `F`. `FGCTL` supplies
+the palette for exactly those four entries: `FGCTL 1` sets `hrc[D..F]` to
+`FF` (everything white), `FGCTL 2` sets `99`/`AA`/`BB` (pens 1, 2, 3).
+
+Colour works. Three lines drawn under `FGCTL 2` render red, green and
+yellow — confirmed by reading the PNG's pixels, `#FF0000`, `#00FF00`,
+`#FFFF00`.
+
+**This section previously said colour was broken. It was not**, and the two
+observations behind that claim were both misread:
+
+- *"Four lines came out white."* They were drawn under `FGCTL 1`, whose
+  palette is white for every pen. Under `FGCTL 2` they are properly
+  coloured. The screenshot was small and I judged it by eye rather than by
+  sampling it.
+- *"Two lines vanished."* One used pen 4, which wraps onto nibble `C` —
+  unprogrammed under `FGCTL 1`, therefore transparent. The other was at a
+  screen row still covered by text, and the high-resolution layer only
+  shows through where text is black. Both are correct behaviour.
+
+`bin/abc806`'s summary now prints the plane's distinct byte values, not
+just a count, because a count cannot tell one pen from another — which is
+precisely what allowed a working renderer to look broken.
+
 ### Still open
 
-- **The pen encoding.** `FGLINE x,y,n` does not map `n` to a pen index
-  directly: four lines drawn with pens 1, 2, 4 and 7 come out white, and
-  two of them vanish entirely — pens landing on `hrc` entries `FGCTL` did
-  not program are transparent. The routine at `0x7677` duplicates a nibble
-  into both halves of a byte and something further masks it. This is a
-  BASIC/ROM-level question rather than a renderer one.
 - **`HRU-I` and `V50`** remain unused. They place the plane on a real
   screen; the offsets here come from MAME's constants instead.
+- **Only the four-colour mode is exercised.** `FGCTL 64` and `FGCTL 255`
+  program `hrc[C]` as well and with different values, so other modes exist
+  and none is tested.
 
 ## Known gaps
 
@@ -547,9 +578,9 @@ Everything below is expected at this point: two milestones in, of five.
   supplies the phase.
 - **The high-resolution plane is not rendered.** `--screenshot` draws the
   text layer only.
-- **Colour is not right yet.** The plane renders, but the mapping from a
-  `FG*` command's pen argument through `hrc` is not understood — see
-  milestone 5's "still open".
+- **Only one graphics mode is exercised.** The four-colour mode works and
+  is tested; `FGCTL`'s other arguments program the palette differently and
+  are not covered.
 - **The HRS bank select is untested.** Every check runs with `hrs = 0`, so
   a wrong shift in the plane's physical-address calculation would pass
   silently. Needs a case that actually banks.

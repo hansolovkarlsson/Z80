@@ -326,9 +326,15 @@ set *or* where text left black, so text punches through its own foreground.
 The plane sits 16 pixels left of text column 0. A zero `hrc` makes every
 dot transparent, so the layer disables itself and needs no enable flag -
 which is the state the machine boots in, and why `FGCTL` (which programs
-`hrc`) is required before anything drawn becomes visible. Colour is still
-wrong: a `FG*` command's pen argument does not map to a pen index directly
-and unprogrammed `hrc` entries make whole lines vanish.
+`hrc`) is required before anything drawn becomes visible. Colour works, and the pen
+encoding is a **four-colour mode**: a `FG*` command's pen argument is
+masked to two bits and selects the plane nibble `0xC | (pen & 3)`, so pen 4
+wraps onto pen 0's nibble and `FGCTL` supplies the palette for exactly
+those four entries. `FGCTL 1` colours all of them white, which is why
+lines drawn under it look monochrome; under `FGCTL 2` they render red,
+green and yellow. `bin/abc806`'s summary prints the plane's distinct byte
+values rather than only a count, because a count cannot tell one pen from
+another.
 
 Three further ABC806 facts worth knowing before touching that target, none
 guessable. **Its memory map is decided by a PAL16L8** (`ABC-P4-1.bin`,

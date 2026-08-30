@@ -120,6 +120,27 @@ tl_want "$out" "High-resolution plane: 0/131072 bytes nonzero" \
         "the ROM's own memset leaving the plane genuinely zeroed"
 tl_end "$out"
 
+# The pen encoding: a FG command's pen argument is masked to two bits and
+# selects the plane nibble 0xC | (pen & 3), which FGCTL's palette then
+# colours. Four pens, and pen 4 wraps back onto pen 0's nibble.
+#
+# Asserting on the byte *values* rather than a pixel count is the point.
+# A count cannot tell one pen from another, and not being able to tell is
+# what made a correct renderer look broken - three lines that were really
+# red, green and yellow were read as "all white" off a small screenshot.
+# Both values are asserted, not just the first: a horizontal line writes
+# whole bytes along its body and a half byte at the ends, so "C0 CC" is the
+# full signature. Matching only the leading value let a write path that
+# masked off the low nibble slip through.
+for pen_case in "0:C0 CC" "1:D0 DD" "2:E0 EE" "3:F0 FF" "4:C0 CC" "7:F0 FF"; do
+    pen="${pen_case%%:*}"; want="${pen_case#*:}"
+    out=$("$ABC806" --cycles 500000000 \
+          --type "FGCTL 2"$'\r'"FGPOINT 20,20,$pen:FGLINE 200,20,$pen"$'\r' 2>&1)
+    tl_begin "graphics-pen-$pen"
+    tl_want "$out" "values: $want" "pen $pen writing plane nibble ${want%% *}"
+    tl_end "$out"
+done
+
 # --- The real-time clock, on real media ---------------------------------
 #
 # The only end-to-end check of the E0516, and it needs a disk: nothing in

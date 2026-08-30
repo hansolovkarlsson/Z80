@@ -21,6 +21,68 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (7) — the colours were right; I was reading a small picture by eye
+
+Entry (6) ended by reporting that colour was broken: four lines drawn with
+pens 1, 2, 4 and 7 "came out white, and two of them did not appear at all".
+Both halves of that are wrong, and the way they are wrong is worth keeping.
+
+### What is actually true
+
+**A `FG*` command's pen argument is masked to two bits and selects the
+plane nibble `0xC | (pen & 3)`.** Pen 0 writes `C`, pen 1 `D`, pen 2 `E`,
+pen 3 `F`; pen 4 wraps back onto `C` and pen 7 onto `F`. It is a
+four-colour mode, and `FGCTL` programs the palette for exactly those four
+entries.
+
+Three lines drawn under `FGCTL 2` render **red, green and yellow** —
+`#FF0000`, `#00FF00`, `#FFFF00`, read out of the PNG's own pixels.
+
+### Why I thought otherwise
+
+- **"All white."** They were drawn under `FGCTL 1`, whose palette sets
+  `hrc[D..F]` to `FF` — white for every pen. Nothing was wrong; I picked
+  the one mode that makes every pen look identical, then judged the result
+  by eye off a 480×250 screenshot rendered small in a terminal.
+- **"Two vanished."** One used pen 4, which wraps onto nibble `C`,
+  unprogrammed under `FGCTL 1` and therefore transparent — correct. The
+  other was at a screen row still covered by text, and the layer only shows
+  through where text is black — also correct, and a rule I had implemented
+  and written up myself an hour earlier.
+
+So the renderer was right, the ROM was right, and the report was wrong.
+
+### The specific mistake
+
+Entry (6) says, approvingly, that this was "found by *looking at the
+picture*" and that the byte counts had been correct in all four runs. That
+was the right instinct and I then stopped one step too early: I looked at
+the picture instead of **sampling** it. Twelve lines of Python reading the
+PNG's pixels would have said `#FF0000` immediately.
+
+The general shape is familiar from this project's own postmortems: an
+observation was real (the lines did look uniform), a conclusion was
+attached to it without a second measurement, and the conclusion inherited
+the observation's credibility. I have now done this with a *visual* check
+after doing it twice with textual ones.
+
+The fix is in the tooling rather than in resolve. `bin/abc806`'s summary
+now prints the plane's **distinct byte values**, not only a count, because
+a count cannot tell one pen from another — which is exactly the gap that
+let a correct renderer look broken.
+
+### Tests, and one that was weaker than it looked
+
+Six checks pin the encoding, one per pen. They assert the plane's *full*
+value set — `C0 CC` for pen 0, `D0 DD` for pen 1 — because a horizontal
+line writes whole bytes along its body and a half byte at each end.
+
+The first version asserted only the leading value, and a sabotage that
+masked the low nibble off every plane write sailed through all six. With
+both values asserted the same sabotage reds seven checks. Worth noticing
+that the weak version *looked* thorough: six checks, one per pen, all
+passing.
+
 ## 2026-08-30 (6) — the ABC806's picture, and a palette that hides it
 
 `bin/abc806 --screenshot` now draws the high-resolution plane. A
@@ -76,6 +138,12 @@ underneath. All three sabotages red it.
 Four lines drawn with pens 1, 2, 4 and 7 came out **white, and two of them
 did not appear at all**. Pens landing on `hrc` entries that `FGCTL` never
 programmed are transparent, so they vanish.
+
+> **Corrected in [entry (7)](#2026-08-30-7--the-colours-were-right-i-was-reading-a-small-picture-by-eye).**
+> The colours were right — three lines under `FGCTL 2` render red, green
+> and yellow. The four "white" lines were drawn under `FGCTL 1`, whose
+> palette is white for every pen, and the two that "vanished" were one
+> transparent pen and one hidden behind text. Both correct.
 
 So the third argument to `FGLINE` is not a pen index, and the mapping from
 it through `hrc` is still unknown — the routine at `0x7677` duplicates a
