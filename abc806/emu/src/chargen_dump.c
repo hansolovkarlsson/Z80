@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "chargen.h"
+#include "text.h"
 #include "memory.h"
 #include "png.h"
 
@@ -133,6 +134,26 @@ int main(int argc, char **argv) {
             putchar(p ? (char)('0' + p) : '.');
         }
         putchar('\n');
+    }
+
+    // The same screen as characters, and as the ANSI frame --interactive
+    // draws. ESC is printed as `\e` so the fixture stays a diffable text
+    // file; every other byte is verbatim, so the committed colour codes
+    // are the ones a terminal would actually receive.
+    printf("\n--- text ---\n");
+    abc806_text_screen(stdout, &s);
+    printf("\n--- ansi frame ---\n");
+    {
+        char buf[65536];
+        FILE *mem = fmemopen(buf, sizeof buf, "w");
+        if (!mem) { fprintf(stderr, "fmemopen failed\n"); return 1; }
+        abc806_ansi_frame(mem, &s);
+        long n = ftell(mem);
+        fclose(mem);
+        for (long i = 0; i < n; i++) {
+            if (buf[i] == 0x1B) printf("\\e");
+            else putchar(buf[i]);
+        }
     }
 
     if (png_path) {

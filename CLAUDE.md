@@ -276,11 +276,13 @@ CP/M program silently produced no output at all - a failure a plain
 `abc806/` is a *fourth* machine target - the Luxor ABC806 (1983), the top
 of the ABC800 family - added on the terms the other two established: it
 links the same `z80core/z80.o`/`alu.o` and mounts the same `abcbus/` card.
-It is at **milestone 2**: `bin/abc806` (opt-in, `make abc806`) boots the
-real 32K firmware, programs the MC6845 for 80x25, clears the screen and
-parks polling the keyboard; `--screen` dumps the text screen and
-`--screenshot` writes a real PNG in the machine's eight colours. No live
-session or high-resolution graphics yet.
+It is at **milestone 3**: `bin/abc806` (opt-in, `make abc806`) boots the
+real 32K firmware, programs the MC6845 for 80x25, and runs a genuine live
+session — `--interactive` gives real 3 MHz pacing, a live keyboard and a
+screen redrawn at 30fps *in colour*, on the terms `bin/abc80 --interactive`
+established. `--type` answers `PRINT 6*7` with `42`, `--screen` dumps the
+text screen, `--screenshot` writes a real PNG, and `--disk` boots real
+UFD-DOS. No high-resolution graphics and no GTK front-end yet.
 See `abc806/docs/ABC806_ROADMAP.md` for status and
 `abc806/docs/ABC806_SCOPING.md` for the feasibility review written before
 any of it - which now carries an outcome section comparing what it
@@ -301,7 +303,26 @@ That is also why `bin/abc806-chargen-dump` is not optional cover but the
 rewritten: the scoping document asked for the ROM's sign-on banner, and
 there is none to render. Its replacement - a synthetic screen exercising
 colours, underline, flash, blank, keep-previous and double width - is the
-boot-screen postmortem's own conclusion reached from a new direction.
+boot-screen postmortem's own conclusion reached from a new direction. That
+tool now checks the *terminal* renderer too, and for the identical reason:
+this ROM's screen is white on black using one attribute, so a live session
+renders it perfectly with the colour mapping inverted. Which is why the
+drawing lives in a deliberately pure `abc806/emu/src/text.c` (screen struct
+in, characters out, no live machine) while `render.c` keeps only the half
+that reaches for the CRTC and the RAM planes - the split is what lets a
+fixture pin the colours down, and the committed fixture carries the real
+escape codes. Two further things to know before touching that path.
+**`--screen` collapses double-width cells**, so it shows `ABC806` where
+character RAM holds `AABBCC880066`; asserting on the collapsed form is
+*stronger*, since collapsing at all requires decoding the attribute plane.
+And **the eight-pen palette is already in ANSI's order** (black, red,
+green, yellow, blue, magenta, cyan, white), so a pen is `30 + index` with
+no mapping table - a coincidence, not an oversight.
+
+Both renderers walk the screen through `abc806_decode_row()` (`chargen.c`)
+rather than each carrying its own copy of the attribute state machine.
+They had a copy each for a day, disagreed over double width, and that
+disagreement is what found two real bugs.
 
 **The ABC806's text attributes share nothing with the ABC802's.** That
 machine hides them in the character generator's output byte; this one has

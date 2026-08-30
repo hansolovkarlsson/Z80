@@ -21,6 +21,121 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 — the ABC806 gets a live session, and colour that can be tested
+
+`bin/abc806 --interactive` is now a real session: 3 MHz pacing, a screen
+redrawn thirty times a second **in colour**, a live keyboard, Ctrl-\ to
+quit. Driven through a pty it takes `PRINT 6*7` to `42`, takes
+`PRINT "ÅÄÖ"` back out as `ÅÄÖ`, and with `--disk` boots real UFD-DOS and
+shows the date off the clock that went in yesterday.
+
+That was milestone 3, and the gate was met early — `--type-at 40000000
+--type $'PRINT 6*7\r'` already answered `42` before I wrote a line of it.
+Most of the day went into the parts the gate does not cover.
+
+### The screen was lying, readably
+
+`--screen` printed `AABBCC880066` for a screen that reads `ABC806`. Not a
+bug exactly: it dumped raw character cells, and this ROM writes its banner
+double-width, so character RAM really does hold each letter twice. But it
+meant the dump showed the machine's *memory* rather than the machine's
+*screen*, and I had written a regression assertion against the doubled
+form only the day before, complete with a confident comment about how
+asserting on it was deliberate.
+
+It now walks the attribute plane and prints one character per drawn cell.
+The assertion moved to the plain form, and that is strictly stronger:
+collapsing correctly *requires* decoding the attribute plane, so a broken
+attribute walk now shows up in the text dump. The version I defended was
+the weaker one.
+
+### Two copies of one state machine, again
+
+The text renderer needed the same attribute walk the pixel renderer had.
+Writing a second copy is what caused the double-width bugs three entries
+ago — a text dump and a PNG disagreeing about the same screen is what
+exposed them. So `abc806_decode_row()` came out of `chargen.c` first and
+both renderers now go through it. Behaviour-preserving, and the fixture
+said so immediately.
+
+### The part the boot screen cannot check, for the third time
+
+The ABC806's eight colours are the reason it is not an ABC802. Its boot
+screen is white on black and uses one attribute. Those two sentences
+together are the whole argument: a live session would render that screen
+perfectly with the colour mapping completely inverted, and I would have
+shipped it feeling verified.
+
+This is [the boot-screen postmortem](postmortems/2026-08-28-boot-screen-cannot-validate.md)
+arriving a third time, on a third feature. It is starting to look less
+like a lesson about one bug and more like a property of this whole
+project: **the ROM's own output is a sample the hardware authors chose,
+and it systematically under-exercises whatever the machine can do that the
+sign-on does not need.** Every target here has now been caught by it once.
+
+The fix has the shape the postmortem prescribes. The drawing came out of
+`render.c` into a pure `text.c` — screen struct in, characters out, no
+live machine anywhere — and `bin/abc806-chargen-dump` now emits the text
+dump and the ANSI frame alongside its pixel art, ESC written as `\e` so
+the fixture stays a diffable text file. The committed fixture holds the
+real codes: `37;40` white on black, `31;44` red on blue, `[4m` underline,
+`30;40` where flash has dropped the pen into the background. Swapping
+foreground and background reds it, which I checked before believing it.
+
+`render.c` kept only the half that asks the machine, and one consequence
+was free: the `Abc806Screen` snapshot is now assembled in exactly one
+place, so `--screen`, `--screenshot` and the live frame can no longer
+disagree about what the screen currently is. They were assembling it
+separately before, which is the same shape of mistake one layer up.
+
+### A solved problem, reintroduced by starting from a blank page
+
+`--type` fed its argument to the keyboard as raw bytes, so
+`PRINT "ÅÄÖ"` reached BASIC as UTF-8 and errored while an interactive
+session typing the same letters worked fine.
+
+That is not a new bug. It is
+[the one with its own postmortem](postmortems/2026-08-28-type-raw-utf8-bytes.md),
+found and fixed on the ABC802 two days ago, in the file whose
+job is exactly this. It came back because I wrote this target's `main.c`
+from scratch instead of from the one that already had the fix in it — and
+the same choice is why the terminal glue, the pacing constants and the
+input state machine all had to be rewritten rather than reused.
+
+Worth being precise about the tradeoff, because "just share the code"
+is not obviously right here: each machine target owning its console glue
+is this repository's deliberate standing choice, and it has been the
+correct one twice. What it does not buy is *bug* isolation. A fix in one
+target's glue does not reach another's, and nothing announces that when
+you start the third copy. The charset table is now in its third copy too,
+and `abc802/emu/src/render.c`'s own comment says the third consumer is the
+moment to extract it. I left it, and wrote down why in the file: the
+shared thing would be a table plus a decoder plus an encoder, and where it
+should live depends on whether this target ends up sharing more with the
+ABC802 than a character set — the same open question `ports.c`'s
+duplication is already waiting on. One answer, or neither honestly.
+
+### And the keyboard was ready before it was listening
+
+Typing at T-state 0 arrived as `INT 6*7`, the first two characters gone.
+The ABC802 has the same property and answers it with `--type-at`, a
+caller-supplied delay. Here I could do better: the sign-on is drawn at the
+very end of boot, immediately before the keyboard poll loop, so "there is
+a non-space character on screen" is a real readiness signal rather than a
+constant tuned against one machine's timing. `--type` waits for it and now
+needs no help. `--type-at` stays for the different problem it was actually
+built for — a program booting off disk that starts listening long after
+the ROM's own sign-on, which no screen check can see.
+
+### Two new checks, both broken on purpose first
+
+`keyboard-basic-answers` and `keyboard-swedish-roundtrip`, neither needing
+media. The first asserts on BASIC's *answer*, not only on the echoed line
+— [that exact mistake](postmortems/2026-08-29-test-matched-the-echoed-input.md)
+was found in these suites once already, passing with its subject entirely
+broken. Bypassing the UTF-8 conversion reds the
+round-trip; forcing the readiness gate open reds both.
+
 ## 2026-08-29 (17) — the ABC806 asks what day it is, and now gets an answer
 
 Boot the ABC806 from a real 640K ABC832 UFD-DOS system disk and the DOS

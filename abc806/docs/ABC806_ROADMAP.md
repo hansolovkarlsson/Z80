@@ -248,17 +248,114 @@ asserts the DOS agrees with the host about the date. It needs a disk image
 this repo does not commit, so it **skips loudly** without
 `ABC806_TEST_DISKS` — and a skip is counted separately from a pass.
 
+## Milestone 3: the keyboard, and a live session — done
+
+`--interactive` is a genuine session: real 3 MHz pacing, a screen redrawn
+at 30fps **in colour**, a live keyboard, and Ctrl-\ to quit. Both halves of
+the scoping document's gate are met.
+
+```
+$ bin/abc806 --type $'PRINT 6*7\r' --screen
++--------------------------------------------------------------------------------+
+|ABC806                                                                          |
+|PRINT 6*7                                                                       |
+| 42                                                                             |
+|ABC806                                                                          |
+```
+
+and driven through a pty, a live session takes `PRINT 6*7` to `42` and
+`PRINT "ÅÄÖ"` back out as `ÅÄÖ` — the Swedish letters round-tripping
+through the keyboard, the ROM and the screen. With `--disk`, the same live
+session boots real UFD-DOS and shows the date from the clock.
+
+### `--screen` now shows what the machine shows
+
+It used to print `AABBCC880066` for a screen reading `ABC806`, because it
+dumped raw character cells and this ROM writes its banner double-width. It
+now walks the attribute plane and prints one character per *drawn* cell.
+
+That is a stronger assertion for the suite, not a laxer one: collapsing
+correctly **requires** decoding the attribute plane, so a broken attribute
+walk now shows up in the text dump as doubled or missing characters. The
+RTC check's assertions were rewritten from the doubled form to the plain
+one on those grounds.
+
+### One decode, not two
+
+`abc806_decode_row()` (chargen.c) was extracted so the pixel renderer and
+the text renderer share the attribute state machine rather than each
+carrying a copy. They had one copy each for about a day, they disagreed
+over double width, and the disagreement is what found
+[the two width bugs](#and-a-rendering-bug-the-picture-caught). One walk
+means they cannot disagree again.
+
+### The colour path needed a fixture, for the reason the postmortem gives
+
+The eight colours are the thing that makes an ABC806 an ABC806, and the
+boot screen is **white on black using one attribute** — so a live session
+renders it perfectly with the colour mapping completely broken. That is
+[the boot-screen postmortem](../../docs/postmortems/2026-08-28-boot-screen-cannot-validate.md)'s
+finding, arriving a third time.
+
+So the drawing was split out of `render.c` into a pure `text.c` — screen
+in, characters out, no live machine — and `bin/abc806-chargen-dump` now
+emits the text dump and the ANSI frame beside its pixel art, with `ESC`
+printed as `\e` so the fixture stays diffable. The committed fixture
+carries the real escape codes: `37;40` for white on black, `31;44` for red
+on blue, `[4m` for underline, `30;40` where flash has dropped the pen to
+the background. Swapping foreground and background in the mapping turns
+the check red.
+
+`render.c` keeps only the half that reaches for the machine — assembling
+an `Abc806Screen` from the CRTC, the 74ALS259 and the two RAM planes — and
+that snapshot is now built in exactly one place, so `--screen`,
+`--screenshot` and the live frame cannot disagree about what the screen is.
+
+### Found the hard way
+
+- **`--type` fed its argument to the keyboard as raw bytes.** That is
+  precisely [the postmortem's own bug](../../docs/postmortems/2026-08-28-type-raw-utf8-bytes.md),
+  fixed on the ABC802 and reintroduced here by starting this target's
+  `main.c` from a blank page instead of from the file that already solved
+  it. `PRINT "ÅÄÖ"` reached BASIC as UTF-8 bytes and errored while an
+  interactive session typing the same letters worked.
+- **The ROM reports the keyboard ready long before it is listening.**
+  Typing at T-state 0 arrived as `INT 6*7` — the first two characters
+  silently discarded. `--type` now waits for the machine to have *drawn*
+  something, which is a real readiness signal rather than a tuned delay:
+  the sign-on is written at the very end of boot, immediately before the
+  keyboard poll loop. `--type-at` remains, for the different problem of a
+  program booting off disk that starts listening much later.
+- **The palette is already in ANSI's order.** Black, red, green, yellow,
+  blue, magenta, cyan, white — so a pen index is `30 + index` with no
+  mapping table. A coincidence, and one worth writing down before someone
+  "fixes" it.
+
+### Verified
+
+Two new media-free checks: `keyboard-basic-answers` (asserting on BASIC's
+answer, never only on the echo —
+[that exact mistake](../../docs/postmortems/2026-08-29-test-matched-the-echoed-input.md)
+was caught in these suites once already) and `keyboard-swedish-roundtrip`. Both were broken on
+purpose before being trusted: bypassing the UTF-8 conversion reds the
+round-trip, and forcing the readiness gate open reds both.
+
 ## Known gaps
 
 Everything below is expected at this point: two milestones in, of five.
 
-- **No interactive mode.** `--type` delivers paced keystrokes and `--disk`
-  attaches ABC-bus media — and the machine genuinely boots real UFD-DOS
-  off that media — but there is no live session yet. Milestone 3.
+- **No GTK front-end.** `bin/abc80-gtk` and `bin/abc802-gtk` have no
+  ABC806 equivalent yet. `abc806_step()` is already extracted for one.
+- **Right arrow is dropped, on inference rather than evidence.** The
+  ABC802's line editor was swept byte by byte and turned out to have no
+  cursor movement at all; this ROM is from the same family and the same
+  year and is *assumed* to match. The sweep has not been done here.
+- **The flash rate is assumed.** 2 Hz, the conventional rate. No source
+  consulted gives the ABC806's own divider, and the ROM does not blink its
+  cursor in software the way the ABC802's does, so nothing in the machine
+  supplies the phase.
 - **The high-resolution plane is not rendered.** `--screenshot` draws the
   text layer only.
-- **Flash is static.** `flash_on` is passed to the decode but nothing
-  drives it; there is no frame clock yet.
 - **No high-resolution graphics.** Milestone 5. `HRU-I` and `V50` are
   committed and unused; `RAD` and `HRU-II` are now in use — though HRU II
   is only being read back through port `0x37`, not used to colour a
@@ -274,8 +371,6 @@ Everything below is expected at this point: two milestones in, of five.
   is genuinely common*, which needs this target further along than
   milestone 1. `abcbus/` reached that point the same way — built inside one
   target, moved out when a second consumer proved the shape.
-- **The test suite asserts no screen content**, because there is none. It
-  checks the machine's configuration and the decode instead.
 - **RAM is 32K directly addressable**, as on real hardware, with the rest
   reachable only through EME and the map. The 544K option is not modeled.
 - **No protection device.** It hangs off the same 74ALS259 as the clock;

@@ -79,14 +79,17 @@ ABC802_TARGET := $(BIN_DIR)/abc802
 # shared core, on the terms abc80 and abc802 established. Opt-in, never
 # part of `all`, same as the other machine targets.
 ABC806_SRC_DIR := abc806/emu/src
-ABC806_OBJS := $(ABC806_SRC_DIR)/main.o $(ABC806_SRC_DIR)/memory.o $(ABC806_SRC_DIR)/ports.o $(ABC806_SRC_DIR)/chargen.o $(ABC806_SRC_DIR)/png.o $(ABC806_SRC_DIR)/rtc.o $(ABC806_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC806_OBJS := $(ABC806_SRC_DIR)/main.o $(ABC806_SRC_DIR)/memory.o $(ABC806_SRC_DIR)/ports.o $(ABC806_SRC_DIR)/chargen.o $(ABC806_SRC_DIR)/png.o $(ABC806_SRC_DIR)/render.o $(ABC806_SRC_DIR)/text.o $(ABC806_SRC_DIR)/rtc.o $(ABC806_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
 ABC806_TARGET := $(BIN_DIR)/abc806
 
-# bin/abc806-chargen-dump: chargen.c's verification tool - a synthetic
-# screen exercising every attribute path, with no CPU core. Not optional
-# cover: this machine's boot screen currently has no visible text at all,
-# so it is the only thing checking the decode.
-ABC806_CHARGEN_DUMP_OBJS := $(ABC806_SRC_DIR)/chargen_dump.o $(ABC806_SRC_DIR)/chargen.o $(ABC806_SRC_DIR)/png.o
+# bin/abc806-chargen-dump: the verification tool for chargen.c *and*
+# text.c - a synthetic screen exercising every attribute path, with no CPU
+# core. Not optional cover: this machine's boot screen is white on black
+# and uses one attribute, so both the pixel decode and the terminal
+# renderer's eight colours would look perfect on it while being badly
+# broken. text.o links here precisely because it is pure; render.o, which
+# reaches for the live machine, deliberately does not.
+ABC806_CHARGEN_DUMP_OBJS := $(ABC806_SRC_DIR)/chargen_dump.o $(ABC806_SRC_DIR)/chargen.o $(ABC806_SRC_DIR)/text.o $(ABC806_SRC_DIR)/png.o
 ABC806_CHARGEN_DUMP_TARGET := $(BIN_DIR)/abc806-chargen-dump
 
 # bin/abcdisk: creates and inspects ABC-bus floppy images. Lives beside

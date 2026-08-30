@@ -1,20 +1,25 @@
 // abc806/emu/src/main.c - bin/abc806, the Luxor ABC806 machine target.
 //
-// Milestone 1 only: bring the machine up far enough to prove the memory
-// map works. The gate ABC806_SCOPING.md set for this milestone is that the
-// machine executes past reset and programs the CRTC - the same signal that
-// gated the ABC802's own first milestone, and for the same reason: a
-// programmed CRTC means the ROM got through its initialisation rather than
-// wedging in it.
+// A fourth Z80 machine alongside abc80/, abc802/ and cpm/, sharing the
+// same proven core (z80core/z80.o + alu.o). See
+// abc806/docs/ABC806_ROADMAP.md for status and ABC806_SCOPING.md for the
+// plan being followed.
 //
-// Deliberately absent, because they belong to later milestones: video
-// rendering, keyboard input, disk, and the interactive front-end. This
-// binary runs a fixed number of T-states and reports what the machine did.
+// The terminal glue below (raw mode, the ESC/UTF-8 input state machine,
+// real-time pacing) is deliberately a near-copy of the ABC802's, on the
+// same terms emu/src/ports.c is: each machine target owning its own
+// console glue is this repository's standing choice, and extracting a
+// shared one waits until it is known what is genuinely common.
 
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
+#include <termios.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "../../../z80core/z80.h"
 #include "../../../abcbus/disk.h"
@@ -22,22 +27,179 @@
 #include "memory.h"
 #include "png.h"
 #include "ports.h"
+#include "render.h"
 #include "rtc.h"
 #include "step.h"
 
 #define DEFAULT_ROM_DIR "abc806/resources/rom"
 #define DEFAULT_DOS_ROM "ABC806-dos.66-31.bin"
 
+// The real ABC806 Z80 runs at 3 MHz, and --interactive converts T-states
+// into real seconds against it. Same clock as the ABC802.
+#define ABC806_CLOCK_HZ 3000000.0
+
+// Pacing is checked every N instructions rather than every one:
+// clock_gettime() and nanosleep() are syscalls, and three million a second
+// would swamp the emulation itself.
+#define ABC806_PACING_CHECK_INTERVAL 500
+#define ABC806_RENDER_INTERVAL_SEC (1.0 / 30.0)
+
+// The attribute plane's flash bit needs a phase, and unlike the ABC802's
+// cursor (which that ROM blinks in software through the CRTC) nothing in
+// the machine supplies one - flash is hardware here, driven off the frame
+// rate. 2 Hz is the conventional rate and is stated as the assumption it
+// is: no source consulted gives the ABC806's own divider.
+#define ABC806_FLASH_HZ 2.0
+
+// A multi-byte terminal sequence must complete inside this much *real*
+// time or it is abandoned. Shorter than the inter-key gap on purpose; see
+// where it is used.
+#define ABC806_ESC_SEQUENCE_TIMEOUT_SEC 0.05
+
+// Every common terminal's Backspace sends DEL (0x7F). Whether this ROM's
+// line editor treats that as an edit or as a printable character has not
+// been swept the way the ABC802's was, so DEL is rewritten to BS (0x08),
+// which every ABC800-family editor does implement destructively. If the
+// sweep is ever done and finds 0x7F meaningful, this is the line to
+// revisit.
+#define ABC806_DEL 0x7F
+#define ABC806_BS  0x08
+
+// Terminal mode. Character-at-a-time input, no host echo (the ROM echoes
+// through character RAM itself), a real Enter arriving as 0x0D rather than
+// being rewritten to 0x0A, and Ctrl-S not swallowed as XOFF. VINTR is
+// disabled so a real Ctrl-C reaches the ROM's own BASIC, where a break
+// belongs; ISIG stays on, so Ctrl-\ remains this tool's quit key.
+static struct termios orig_termios;
+static int termios_saved = 0;
+
+static void console_shutdown(void) {
+    if (termios_saved) tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
+}
+
+static void console_init(void) {
+    if (!isatty(STDIN_FILENO)) return;
+    if (tcgetattr(STDIN_FILENO, &orig_termios) != 0) return;
+    termios_saved = 1;
+    atexit(console_shutdown);
+
+    struct termios raw = orig_termios;
+    raw.c_lflag &= ~(ICANON | ECHO);
+    raw.c_iflag &= ~(ICRNL | INLCR | IGNCR);
+    raw.c_iflag &= ~IXON;
+    raw.c_cc[VINTR] = _POSIX_VDISABLE;
+    raw.c_cc[VMIN] = 1;
+    raw.c_cc[VTIME] = 0;
+    tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+}
+
+// Set by the handler and checked by the main loop, so a quit leaves
+// through the normal end-of-main path - which is what runs the summary
+// and, critically, the atexit terminal restore. SIGINT is caught as well
+// as SIGQUIT: disabling VINTR stops the *driver* raising it, but an
+// external `kill -INT` still can, and the default action for either skips
+// atexit handlers and would strand a real user's shell in raw mode.
+static volatile sig_atomic_t quit_requested = 0;
+static volatile sig_atomic_t quit_signal = 0;
+
+static void handle_quit_signal(int sig) {
+    quit_requested = 1;
+    quit_signal = sig;
+}
+
+static double elapsed_since(const struct timespec *start) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (double)(now.tv_sec - start->tv_sec) +
+           (double)(now.tv_nsec - start->tv_nsec) / 1e9;
+}
+
+static int poll_stdin_byte(void) {
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds);
+    struct timeval tv = {0, 0};
+    if (select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv) <= 0) return -1;
+    uint8_t byte;
+    ssize_t n = read(STDIN_FILENO, &byte, 1);
+    return (n == 1) ? byte : -1;
+}
+
+// One machine character from the host terminal, or -1 if none is ready
+// yet. Two multi-byte shapes have to be reassembled: a 2-byte UTF-8
+// sequence for the Swedish letters (this machine's whole character set is
+// in the Latin-1 Supplement block, so 3- and 4-byte leads need no
+// handling), and ESC-introduced sequences from arrow and function keys.
+//
+// Of the arrow keys only Left is translated, to BS. Right is dropped: the
+// ABC802's editor was swept byte by byte and turned out to have no cursor
+// movement at all, and this ROM is from the same family and the same year.
+// That is an inference rather than a sweep, and it is flagged as one - the
+// honest version of this comment on the ABC802 rests on evidence this one
+// does not have yet.
+static int poll_keyboard_byte(void) {
+    static enum { ESC_NONE, ESC_SEEN, ESC_BRACKET } esc_state = ESC_NONE;
+    static struct timespec esc_started;
+    static int utf8_lead = -1;
+    static struct timespec utf8_started;
+
+    if (esc_state != ESC_NONE && elapsed_since(&esc_started) > ABC806_ESC_SEQUENCE_TIMEOUT_SEC)
+        esc_state = ESC_NONE;   // a lone ESC, or a sequence we do not know
+    if (utf8_lead >= 0 && elapsed_since(&utf8_started) > ABC806_ESC_SEQUENCE_TIMEOUT_SEC)
+        utf8_lead = -1;         // a lone or malformed lead byte
+
+    int b = poll_stdin_byte();
+
+    if (esc_state == ESC_NONE) {
+        if (utf8_lead >= 0) {
+            if (b < 0) return -1;              // mid-sequence, still waiting
+            int lead = utf8_lead;
+            utf8_lead = -1;
+            if ((b & 0xC0) != 0x80) return -1; // not a continuation byte
+            uint32_t cp = ((uint32_t)(lead & 0x1F) << 6) | (uint32_t)(b & 0x3F);
+            return abc806_charset_byte_for_codepoint(cp);
+        }
+        if (b == 0x1B) {
+            esc_state = ESC_SEEN;
+            clock_gettime(CLOCK_MONOTONIC, &esc_started);
+            return -1;
+        }
+        if (b >= 0xC2 && b <= 0xDF) {
+            utf8_lead = b;
+            clock_gettime(CLOCK_MONOTONIC, &utf8_started);
+            return -1;
+        }
+        if (b == ABC806_DEL) return ABC806_BS;
+        return b;
+    }
+
+    if (b < 0) return -1;   // mid-sequence
+
+    if (esc_state == ESC_SEEN) {
+        esc_state = (b == '[') ? ESC_BRACKET : ESC_NONE;
+        return (esc_state == ESC_BRACKET) ? -1 : b;
+    }
+
+    esc_state = ESC_NONE;
+    if (b == 'D') return ABC806_BS;
+    return -1;
+}
+
 static void usage(const char *argv0) {
     printf("Usage: %s [options]\n\n", argv0);
-    printf("Milestone 1: memory map and boot. No video, keyboard or disk yet.\n\n");
     printf("Options:\n");
     printf("  --rom-dir DIR    ROM directory (default: %s)\n", DEFAULT_ROM_DIR);
     printf("  --dos-rom FILE   DOS PROM at 0x6000 (default: %s)\n", DEFAULT_DOS_ROM);
     printf("  --cycles N       stop after N T-states (default: 20000000)\n");
     printf("  --disk FILE      attach FILE as a floppy image on the ABC-bus\n");
     printf("  --type TEXT      send TEXT to the keyboard once the ROM is ready\n");
-    printf("  --type-at N      hold TEXT back until N T-states have run\n");
+    printf("  --type-at N      hold TEXT back until N T-states have run. The ROM\n");
+    printf("                   reports the keyboard ready long before it is\n");
+    printf("                   listening, and discards anything typed meanwhile\n");
+    printf("  --interactive    live session: real 3 MHz pacing, a screen redrawn\n");
+    printf("                   in colour at 30fps, and a real keyboard. Removes\n");
+    printf("                   the T-state cap unless --cycles was given too.\n");
+    printf("                   Quit with Ctrl-\\ (Ctrl-C reaches BASIC instead)\n");
     printf("  --screen         print the text screen when the run ends\n");
     printf("  --screenshot F   write the screen as a real PNG to F - actual\n");
     printf("                   pixels from the character ROM and the RAD PROM,\n");
@@ -52,6 +214,8 @@ int main(int argc, char **argv) {
     const char *rom_dir = DEFAULT_ROM_DIR;
     const char *dos_rom = DEFAULT_DOS_ROM;
     long long max_cycles = 20000000;
+    bool cycles_given = false;
+    bool interactive = false;
     bool profile = false;
     bool show_screen = false;
     const char *screenshot_path = NULL;
@@ -69,6 +233,7 @@ int main(int argc, char **argv) {
         } else if (!strcmp(argv[i], "--dos-rom") && i + 1 < argc) {
             dos_rom = argv[++i];
         } else if (!strcmp(argv[i], "--cycles") && i + 1 < argc) {
+            cycles_given = true;
             max_cycles = atoll(argv[++i]);
         } else if (!strcmp(argv[i], "--disk") && i + 1 < argc) {
             if (disk_count < 8) disk_paths[disk_count++] = argv[++i];
@@ -77,6 +242,9 @@ int main(int argc, char **argv) {
             type_text = argv[++i];
         } else if (!strcmp(argv[i], "--type-at") && i + 1 < argc) {
             type_at = atoll(argv[++i]);
+        } else if (!strcmp(argv[i], "--interactive")) {
+            interactive = true;
+            if (!cycles_given) max_cycles = 0;   // 0 = run until quit
         } else if (!strcmp(argv[i], "--screen")) {
             show_screen = true;
         } else if (!strcmp(argv[i], "--screenshot") && i + 1 < argc) {
@@ -119,18 +287,89 @@ int main(int argc, char **argv) {
     // Keystrokes are paced the same way the ABC802's are, and for the same
     // hardware reason: the DART holds exactly one received byte, so a
     // burst would overwrite itself. ~0.1s of emulated time per key.
+    //
+    // --interactive enforces the identical gap and needs it just as much.
+    // No human can beat it, but a pipe or a paste delivers a whole line at
+    // once and most of it would be lost. Unsent input waits in the host's
+    // own terminal buffer until the gap expires, so nothing is dropped -
+    // it is drained at the speed the real machine could accept it.
     const long long key_gap = 300000;
+
+    // --type's text, converted from host UTF-8 into the machine's own
+    // character bytes rather than fed through raw. Feeding it raw is the
+    // bug docs/postmortems/2026-08-28-type-raw-utf8-bytes.md is about, and this
+    // target had it: `--type 'PRINT "ÅÄÖ"'` reached BASIC as the UTF-8
+    // bytes and errored, while an interactive session typing the same
+    // letters worked. Starting a new target's main.c from a blank page
+    // rather than from the one that already fixed this is how a solved
+    // problem comes back.
+    static uint8_t type_chars[4096];
     size_t type_pos = 0;
-    size_t type_len = type_text ? strlen(type_text) : 0;
+    size_t type_len = type_text
+        ? abc806_utf8_to_chars(type_text, type_chars, sizeof type_chars) : 0;
     long long next_key_at = type_at;
 
-    while (cycles < max_cycles) {
-        if (type_pos < type_len && cycles >= next_key_at &&
+    // The ROM reports the keyboard ready long before it is listening, and
+    // discards whatever arrives meanwhile - typing at T-state 0 reaches
+    // BASIC as `INT 6*7`, the first two characters simply gone. So --type
+    // additionally waits for the machine to have *drawn* something: the
+    // sign-on is written at the very end of boot, immediately before the
+    // keyboard poll loop, which makes "there is a non-space character on
+    // screen" a real readiness signal rather than a tuned delay constant.
+    //
+    // --type-at is still there and still needed, for a different problem:
+    // a program booting off disk is listening long after the ROM's own
+    // sign-on, and this gate cannot see that.
+    bool type_gate_open = false;
+
+    // Pacing and rendering state. run_start is the wall-clock origin that
+    // cycles/ABC806_CLOCK_HZ is paced against; last_render_sec throttles
+    // redraws independently of how often the pacing check runs.
+    struct timespec run_start = {0, 0};
+    double last_render_sec = -1.0;
+    if (interactive) {
+        console_init();
+        signal(SIGINT, handle_quit_signal);
+        signal(SIGQUIT, handle_quit_signal);
+        clock_gettime(CLOCK_MONOTONIC, &run_start);
+    }
+
+    while (!quit_requested && (max_cycles == 0 || cycles < max_cycles)) {
+        if (!type_gate_open && type_pos < type_len && abc806_crtc_programmed()) {
+            const uint8_t *cram = abc806_char_ram();
+            for (int i = 0; i < ABC806_CHAR_RAM_SIZE; i++) {
+                uint8_t ch = cram[i] & 0x7F;
+                if (ch > 0x20 && ch < 0x7F) { type_gate_open = true; break; }
+            }
+        }
+        if (type_gate_open && type_pos < type_len && cycles >= next_key_at &&
             !abc806_keyboard_busy() && abc806_keyboard_ready()) {
-            uint8_t ch = (uint8_t)type_text[type_pos++];
-            abc806_keyboard_send(ch == '\n' ? 0x0D : ch);
+            abc806_keyboard_send(type_chars[type_pos++]);
             next_key_at = cycles + key_gap;
         }
+
+        // The live keyboard, on exactly the same terms as the --type feed:
+        // same gap, same "the DART holds one byte" busy check. stdin is
+        // deliberately not read ahead of that gate - an unread byte waits
+        // in the host's buffer, which is what keeps a fast paste intact.
+        // A --type string, if given, is fed first, so a session can be
+        // seeded with a command and then taken over by hand.
+        if (interactive && type_pos >= type_len && cycles >= next_key_at &&
+            !abc806_keyboard_busy() && abc806_keyboard_ready()) {
+            int key = poll_keyboard_byte();
+            if (key >= 0) {
+                abc806_keyboard_send((uint8_t)key);
+                next_key_at = cycles + key_gap;
+            }
+            // A -1 deliberately does *not* start a new gap: it means part
+            // of a multi-byte sequence was consumed and the rest is needed
+            // promptly. Those sequences time out after
+            // ABC806_ESC_SEQUENCE_TIMEOUT_SEC of real time, which is
+            // shorter than key_gap is at 3 MHz, so gating the continuation
+            // byte behind the gap would expire every one of them and no
+            // accented letter would ever arrive.
+        }
+
         if (profile) hits[cpu.pc]++;
         int taken = abc806_step(&cpu, ram, &cycles);
         if (taken < 0) {
@@ -139,6 +378,39 @@ int main(int argc, char **argv) {
             break;
         }
         instructions++;
+
+        if (interactive && (instructions % ABC806_PACING_CHECK_INTERVAL) == 0) {
+            double elapsed_real = elapsed_since(&run_start);
+            double elapsed_emulated = (double)cycles / ABC806_CLOCK_HZ;
+
+            // If the emulated machine has raced ahead of real time, sleep
+            // off the difference. This is what makes the machine feel like
+            // a 3 MHz machine rather than finishing before a key can be
+            // pressed.
+            if (elapsed_emulated > elapsed_real) {
+                double sleep_sec = elapsed_emulated - elapsed_real;
+                struct timespec req;
+                req.tv_sec = (time_t)sleep_sec;
+                req.tv_nsec = (long)((sleep_sec - (double)req.tv_sec) * 1e9);
+                nanosleep(&req, NULL);
+                elapsed_real = elapsed_emulated;
+            }
+
+            if (elapsed_real - last_render_sec >= ABC806_RENDER_INTERVAL_SEC) {
+                bool flash_on = ((long)(elapsed_real * ABC806_FLASH_HZ * 2) & 1) == 0;
+                abc806_render_frame(stdout, flash_on);
+                last_render_sec = elapsed_real;
+            }
+        }
+    }
+
+    // A final frame before the summary, not after: render_frame() clears
+    // the screen first thing, which would otherwise wipe the summary a
+    // user is trying to read after pressing Ctrl-\.
+    if (interactive) {
+        abc806_render_frame(stdout, true);
+        if (quit_signal)
+            printf("Stopped by signal %d.\n", (int)quit_signal);
     }
 
     printf("Ran %lld instructions / %lld T-states; PC=%04X (%s)\n",
@@ -171,51 +443,13 @@ int main(int argc, char **argv) {
                nonzero, ABC806_CHAR_RAM_SIZE, nonspace, attrs);
     }
 
-    // Everything the decode needs, gathered in one place. abc806_render_pixels()
-    // is pure, so this struct is the entire interface between the machine
-    // and the picture.
-    Abc806Screen screen = {
-        .char_ram = abc806_char_ram(),
-        .attr_ram = abc806_attr_ram(),
-        .char_rom = abc806_char_rom(),
-        .rad_prom = abc806_rad_prom(),
-        .columns = abc806_80_column() ? 80 : 40,
-        .rows = abc806_crtc_reg(6),
-        .scanlines = (abc806_crtc_reg(9) & 0x1F) + 1,
-        .start_addr = (uint16_t)(((abc806_crtc_reg(12) << 8) |
-                                   abc806_crtc_reg(13)) & 0x7FF),
-        .cursor_addr = abc806_cursor_address(),
-        .flash_on = false,
-        .forty = !abc806_80_column(),
-    };
+    // One snapshot, assembled in one place (render.c), so --screen,
+    // --screenshot and the live frame cannot disagree about what the
+    // screen currently is.
+    Abc806Screen screen;
+    abc806_current_screen(&screen, false);
 
-    if (show_screen) {
-        if (!abc806_crtc_programmed()) {
-            printf("(CRTC not programmed - no display yet)\n");
-        } else {
-            // A character-level dump, for reading in a terminal. It cannot
-            // show colour or any of the RAD-PROM attributes - that is what
-            // --screenshot is for - so it deliberately renders the codes
-            // rather than pretending otherwise.
-            const uint8_t *cram = abc806_char_ram();
-            printf("+");
-            for (int x = 0; x < screen.columns; x++) putchar('-');
-            printf("+\n");
-            for (int row = 0; row < screen.rows; row++) {
-                putchar('|');
-                for (int col = 0; col < screen.columns; col++) {
-                    uint16_t ma = (uint16_t)(screen.start_addr +
-                                             row * screen.columns + col);
-                    uint8_t ch = cram[ma & 0x7FF] & 0x7F;
-                    putchar((ch >= 0x20 && ch < 0x7F) ? (char)ch : ' ');
-                }
-                printf("|\n");
-            }
-            printf("+");
-            for (int x = 0; x < screen.columns; x++) putchar('-');
-            printf("+\n");
-        }
-    }
+    if (show_screen) abc806_render_text_screen(stdout);
 
     if (screenshot_path) {
         static uint8_t pixels[ABC806_MAX_PIXELS];

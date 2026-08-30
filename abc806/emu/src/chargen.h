@@ -45,6 +45,31 @@ typedef struct {
     bool forty;                // the 74ALS259's 40-column line
 } Abc806Screen;
 
+// One cell as the attribute walk resolved it: the character to draw, the
+// colours in force at that point in the row, and how wide it is. Only
+// *drawn* cells appear - the second half of a double-width pair is
+// consumed by its partner and never produced.
+//
+// This exists so the text renderer and the pixel renderer share one
+// decode instead of each carrying its own copy of the attribute state
+// machine. They disagreed once already, over double width, and the
+// disagreement is what found two bugs (see ABC806_ROADMAP.md); one walk
+// means they cannot disagree again.
+typedef struct {
+    uint8_t code;      // the character-RAM byte
+    uint16_t ma;       // its character-RAM address, masked to 2K
+    int fg, bg;        // palette indices 0-7
+    int underline;
+    int flash;         // the attribute bit, not the current phase
+    int e5, e6;        // double width: either set means this cell is wide
+    bool cursor;       // the CRTC's cursor is on this cell
+} Abc806Cell;
+
+// Resolve one row into its drawn cells, writing at most `max` of them and
+// returning how many. Attribute state resets at the start of every row,
+// which is why a row is the unit.
+int abc806_decode_row(const Abc806Screen *s, int row, Abc806Cell *cells, int max);
+
 // Pixel dimensions the given screen will produce.
 int abc806_pixel_width(const Abc806Screen *s);
 int abc806_pixel_height(const Abc806Screen *s);

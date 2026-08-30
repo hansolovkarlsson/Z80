@@ -64,6 +64,74 @@ int abc806_pixel_height(const Abc806Screen *s) {
     return s->rows * s->scanlines;
 }
 
+int abc806_decode_row(const Abc806Screen *s, int row, Abc806Cell *cells, int max) {
+    if (!s || !cells || row < 0 || row >= s->rows) return 0;
+
+    // Attributes persist across a row until something changes them:
+    // command 0 means "use previously selected". They reset per row, which
+    // is why this function's unit is a row rather than a screen.
+    int fg = 7, bg = 0, underline = 0, flash = 0;
+    int e5 = s->forty, e6 = s->forty;
+    int n = 0;
+
+    for (int column = 0; column < s->columns && n < max; column++) {
+        uint16_t ma = (uint16_t)(s->start_addr + row * s->columns + column);
+        uint8_t data = s->char_ram[ma & 0x7FF];
+        uint8_t attr = s->attr_ram[ma & 0x7FF];
+
+        if ((attr & 0x07) == ((attr >> 3) & 0x07)) {
+            switch (attr >> 6) {
+                case 0:
+                    break;                       // keep what is current
+                case 1:
+                    break;                       // reserved
+                case 2:
+                    fg = bg = 0; underline = 0; flash = 0;
+                    break;                       // blank
+                case 3: {                        // double width
+                    e5 = attr & 0x01;
+                    e6 = (attr >> 1) & 0x01;
+                    uint16_t next = (uint16_t)((ma + 1) & 0x7FF);
+                    uint8_t a2 = s->attr_ram[next];
+                    if (a2 != 0x00) {
+                        fg = a2 & 0x07;
+                        bg = (a2 >> 3) & 0x07;
+                        underline = (a2 >> 6) & 1;
+                        flash = (a2 >> 7) & 1;
+                    }
+                    break;
+                }
+            }
+        } else {
+            fg = attr & 0x07;
+            bg = (attr >> 3) & 0x07;
+            underline = (attr >> 6) & 1;
+            flash = (attr >> 7) & 1;
+            e5 = s->forty;
+            e6 = s->forty;
+        }
+
+        cells[n].code      = data;
+        cells[n].ma        = (uint16_t)(ma & 0x7FF);
+        cells[n].fg        = fg;
+        cells[n].bg        = bg;
+        cells[n].underline = underline;
+        cells[n].flash     = flash;
+        cells[n].e5        = e5;
+        cells[n].e6        = e6;
+        cells[n].cursor    = s->cursor_addr >= 0 &&
+                             (int)(ma & 0x7FF) == s->cursor_addr;
+        n++;
+
+        // A double-width cell consumed the next column's attribute byte
+        // and occupies its space too.
+        if (e5 || e6) {
+            if (!s->forty) column++;
+        }
+    }
+    return n;
+}
+
 bool abc806_render_pixels(const Abc806Screen *s, uint8_t *pixels, size_t size) {
     if (!s || s->columns <= 0 || s->rows <= 0 || s->scanlines <= 0) return false;
 
@@ -73,11 +141,8 @@ bool abc806_render_pixels(const Abc806Screen *s, uint8_t *pixels, size_t size) {
     memset(pixels, 0, (size_t)(w * h));
 
     for (int row = 0; row < s->rows; row++) {
-        // Attributes persist across a row until something changes them:
-        // command 0 means "use previously selected". They reset per row,
-        // which is why these live inside this loop.
-        int fg = 7, bg = 0, underline = 0, flash = 0;
-        int e5 = s->forty, e6 = s->forty, th = 0;
+        Abc806Cell cells[ABC806_MAX_COLUMNS];
+        int count = abc806_decode_row(s, row, cells, ABC806_MAX_COLUMNS);
 
         // The pen advances by what was actually drawn, which is not
         // `column * width`: a double-width cell occupies two cells' worth
@@ -86,76 +151,41 @@ bool abc806_render_pixels(const Abc806Screen *s, uint8_t *pixels, size_t size) {
         // that was doubled.
         int pen_x = 0;
 
-        for (int column = 0; column < s->columns; column++) {
-            uint16_t ma = (uint16_t)(s->start_addr + row * s->columns + column);
-            uint8_t data = s->char_ram[ma & 0x7FF];
-            uint8_t attr = s->attr_ram[ma & 0x7FF];
-
-            if ((attr & 0x07) == ((attr >> 3) & 0x07)) {
-                switch (attr >> 6) {
-                    case 0:
-                        break;                       // keep what is current
-                    case 1:
-                        break;                       // reserved
-                    case 2:
-                        fg = bg = 0; underline = 0; flash = 0;
-                        break;                       // blank
-                    case 3: {                        // double width
-                        e5 = attr & 0x01;
-                        e6 = (attr >> 1) & 0x01;
-                        uint16_t next = (uint16_t)((ma + 1) & 0x7FF);
-                        uint8_t a2 = s->attr_ram[next];
-                        if (a2 != 0x00) {
-                            fg = a2 & 0x07;
-                            bg = (a2 >> 3) & 0x07;
-                            underline = (a2 >> 6) & 1;
-                            flash = (a2 >> 7) & 1;
-                        }
-                        break;
-                    }
-                }
-            } else {
-                fg = attr & 0x07;
-                bg = (attr >> 3) & 0x07;
-                underline = (attr >> 6) & 1;
-                flash = (attr >> 7) & 1;
-                e5 = s->forty;
-                e6 = s->forty;
-            }
+        for (int i = 0; i < count; i++) {
+            const Abc806Cell *c = &cells[i];
+            int th = 0;   // double height is not driven yet
 
             // Constant for the whole cell, so computed once rather than
-            // per scanline.
-            int rep_count = (e5 || e6) ? 2 : 1;
+            // per scanline. Pixel doubling follows e5/e6, *not* the
+            // screen's own 40-column flag: the flag seeds e5/e6 at the
+            // start of a row, but a double-width attribute sets them
+            // mid-row on an otherwise 80-column screen.
+            int rep_count = (c->e5 || c->e6) ? 2 : 1;
 
             for (int ra = 0; ra < s->scanlines; ra++) {
                 int rad;
-                if (s->cursor_addr >= 0 && (int)(ma & 0x7FF) == s->cursor_addr) {
+                if (c->cursor) {
                     // The cursor replaces the glyph rather than inverting
                     // it: scanline 0x0F is a solid bar in this font.
                     rad = 0x0F;
                 } else {
-                    uint16_t rad_addr = (uint16_t)((e6 << 8) | (e5 << 7) |
-                                                   (flash << 6) |
+                    uint16_t rad_addr = (uint16_t)((c->e6 << 8) | (c->e5 << 7) |
+                                                   (c->flash << 6) |
                                                    ((s->flash_on ? 1 : 0) << 5) |
-                                                   (underline << 4) |
+                                                   (c->underline << 4) |
                                                    (ra & 0x0F));
                     rad = s->rad_prom[rad_addr & 0x1FF] & 0x0F;
                 }
 
-                uint16_t caddr = (uint16_t)((th << 12) | (data << 4) | rad);
+                uint16_t caddr = (uint16_t)((th << 12) | (c->code << 4) | rad);
                 // The glyph is the top six bits after shifting left two -
                 // the font byte's low two bits are not pixels.
                 uint8_t bits = (uint8_t)(s->char_rom[caddr & 0xFFF] << 2);
 
-                // Pixel doubling follows e5/e6, *not* the screen's own
-                // 40-column flag. Those are different things: the flag
-                // seeds e5/e6 at the start of a row, but a double-width
-                // attribute sets them mid-row on an otherwise 80-column
-                // screen.
                 int px = pen_x;
                 int py = row * s->scanlines + ra;
                 for (int bit = 0; bit < ABC806_CHAR_WIDTH; bit++) {
-                    int colour = (bits & 0x80) ? fg : bg;
+                    int colour = (bits & 0x80) ? c->fg : c->bg;
                     for (int rep = 0; rep < rep_count; rep++) {
                         if (px < w) pixels[py * w + px] = (uint8_t)colour;
                         px++;
@@ -165,12 +195,6 @@ bool abc806_render_pixels(const Abc806Screen *s, uint8_t *pixels, size_t size) {
             }
 
             pen_x += ABC806_CHAR_WIDTH * rep_count;
-
-            // A double-width cell consumed the next column's attribute
-            // byte and occupies its space too.
-            if (e5 || e6) {
-                if (!s->forty) column++;
-            }
         }
     }
     return true;

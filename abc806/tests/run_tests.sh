@@ -50,9 +50,37 @@ tl_begin "boot-alternate-dos-prom"
 tl_want "$out" "CRTC programmed: yes" "UFD-DOS v.19 booting as well as v.20"
 tl_end "$out"
 
+# --- The keyboard, and BASIC answering ---------------------------------
+#
+# Milestone 3's gate, and the strongest end-to-end check here that needs
+# no media: a keystroke reaching the DART, the ROM's line editor, BASIC's
+# parser and the screen. Deliberately given no --type-at, because the
+# readiness gate is part of what is being tested - before it existed the
+# first two characters were discarded and this arrived as `INT 6*7`.
+out=$("$ABC806" --cycles 160000000 --type $'PRINT 6*7\r' --screen 2>&1)
+tl_begin "keyboard-basic-answers"
+tl_want "$out" "PRINT 6*7" "the ROM echoing the typed line"
+# Assert on the answer, never only on the echo: an echo proves the
+# keyboard works and says nothing about BASIC. That exact mistake was
+# found in these suites once already.
+tl_want "$out" " 42" "BASIC evaluating it"
+tl_end "$out"
+
+# The Swedish letters, through the keyboard and back out to the screen.
+# This is the regression test for --type feeding its argument as raw UTF-8
+# bytes, which is docs/postmortems/2026-08-28-type-raw-utf8-bytes.md's bug: it
+# was fixed on the ABC802 and then reintroduced here by starting this
+# target's main.c from a blank page. Round-tripping proves both directions
+# of the one charset table.
+out=$("$ABC806" --cycles 200000000 --type $'PRINT "ÅÄÖ"\r' --screen 2>&1)
+tl_begin "keyboard-swedish-roundtrip"
+tl_want "$out" 'PRINT "ÅÄÖ"' "the typed accented letters echoing as themselves"
+tl_want "$out" "ÅÄÖ" "BASIC printing them back"
+tl_end "$out"
+
 # --- The character and attribute decode -------------------------------
 #
-# The only check on chargen.c. Covers colours, underline, flash, blank,
+# The only check on chargen.c *and* text.c. Covers colours, underline, flash, blank,
 # keep-previous and double-width, none of which the boot screen touches.
 tl_begin "chargen-attributes"
 if diff -q "$FIXTURES/chargen.txt" <("$CHARGEN_DUMP" 2>&1) >/dev/null; then
@@ -72,8 +100,6 @@ fi
 # Point ABC806_TEST_DISKS at a directory holding sys832-ufd.img (an ABC832
 # UFD-DOS system disk - see abc802/resources/disks/README.md for where to
 # get one). Skips loudly without it; a skip is never counted as a pass.
-double() { printf '%s' "$1" | sed 's/./&&/g'; }
-
 RTC_IMAGE="${ABC806_TEST_DISKS:-}/sys832-ufd.img"
 if [ -z "${ABC806_TEST_DISKS:-}" ]; then
     tl_skip "disk-boot-and-rtc" "set ABC806_TEST_DISKS to a directory holding sys832-ufd.img (a 640K ABC832 UFD-DOS system disk)"
@@ -87,12 +113,13 @@ else
     cp "$RTC_IMAGE" "$WORK/sys.img"
     out=$("$ABC806" --cycles 200000000 --disk "$WORK/sys.img" --screen 2>&1)
     tl_begin "disk-boot-and-rtc"
-    # --screen dumps raw cells, and this ROM writes its text double-width,
-    # so every character appears twice. Asserting on the doubled form is
-    # deliberate: it is what the machine actually put in character RAM, and
-    # normalising it away would quietly stop testing the double-width path.
-    tl_want "$out" "$(double UFD-DOS)" "the DOS booting off real ABC832 media"
-    tl_want "$out" "$(double "$(date '+%Y-%m-%d')")" \
+    # --screen now collapses double-width cells, so these read as plain
+    # text. That is a stronger assertion than the doubled form it replaced,
+    # not a laxer one: collapsing correctly requires decoding the attribute
+    # plane, so a broken attribute walk shows up here as doubled or missing
+    # characters.
+    tl_want "$out" "UFD-DOS" "the DOS booting off real ABC832 media"
+    tl_want "$out" "$(date '+%Y-%m-%d')" \
             "the clock agreeing with the host about the date"
     tl_end "$out"
 fi
