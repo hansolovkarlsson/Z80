@@ -21,6 +21,67 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (11) — the PAL's structure, and stopping one fact short
+
+Started evaluating `ABC-P4-1.bin`, the PAL16L8 that decides the ABC806's
+memory map. Got the structure and stopped before the answer, on purpose.
+
+### What the array gave up
+
+The file parses cleanly into 64 product rows of 32 columns. Fuse polarity
+is the standard one — `1` blown, `0` intact — confirmed by the unused rows
+being all-intact (every input ANDed with its own complement, which is the
+conventional "never" encoding) and landing exactly where unused rows
+should.
+
+Rows group in eights, one group per output, and **the first group drives
+pin 19**, not pin 12. That was my first wrong assumption and the data
+corrected it with two independent checks:
+
+- **Pin 15 (KDL) comes out permanently tri-stated with zero live terms** —
+  precisely right for a pin MAME's own list marks as an *input* rather than
+  an output.
+- **The four signals MAME actually reads** — ROMD, HRE, MUX, RAMD, the ones
+  its comment marks `>` — are exactly the always-enabled outputs carrying
+  many live terms.
+
+Under the opposite grouping both facts land on the wrong pins. Two
+unrelated consistency checks agreeing is what makes that a determination
+rather than a preference.
+
+### Where it stops
+
+The 32 columns are 16 input lines by two polarities, and **which column pair
+carries which pin is not established.** A PAL16L8 interleaves dedicated
+inputs with output feedback in an order the datasheet fixes, and I have no
+primary source for it here.
+
+I tried two candidate layouts. Both fail the simplest possible check — that
+with EME off and KEYDTR high the array must select ROM below `0x8000` and
+RAM above it. So I stopped.
+
+That is the whole point of this entry. I could have kept going: the term
+dump is suggestive, columns 25 and 28 pair up throughout, columns 4/8/12/16
+travel together in a way that looks like consecutive address bits, and
+column 31 appears alone as a term in three different outputs. Any of those
+would support a story. **A story assembled from a structure I have already
+guessed wrong twice is not evidence**, and the last few days of this journal
+are a record of what happens when a plausible reading gets written down as a
+finding.
+
+So `scripts/palanalyse.py` dumps the terms, documents what is established
+and what is not, and names the one thing that unblocks it: a PAL16L8
+fuse-map column table from a datasheet. With that the array can be
+evaluated and compared against both MAME's approximation and this
+emulator's own fetch-window rule — which was derived from watching the
+machine and would then finally have an independent check.
+
+### Worth noting about the shape of the work
+
+Three of the last four entries have been corrections. This one is the same
+lesson applied *before* the mistake instead of after, which is the only
+version of it that costs nothing.
+
 ## 2026-08-30 (10) — the two "unverifiable" PALs verify after all
 
 `abc806/resources/rom/README.md` said, plainly and at some length, that the

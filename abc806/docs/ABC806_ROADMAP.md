@@ -50,11 +50,26 @@ it is part of `make test`.
 
 No milestone is outstanding. In rough order of value:
 
-1. **Evaluate the PAL fuse map.** `ABC-P4-1.bin` is a well-formed JEDEC
-   dump and the memory decode currently follows MAME's behavioural
-   approximation, inheriting its `abc806 30K banking` TODO. Doing it for
-   real is the same move this project already made with ABC80's `attr`,
-   `hsync` and `line` PROMs.
+1. **Evaluate the PAL fuse map.** Started, and blocked on one missing
+   fact. [`scripts/palanalyse.py`](../../scripts/palanalyse.py) parses
+   `ABC-P4-1.bin` and dumps every product term, and the structure is
+   settled: 64 rows of 32 columns, groups of eight per output, **the first
+   group driving pin 19**. Two independent checks agree on that ordering —
+   pin 15 (KDL) comes out permanently tri-stated with no live terms, which
+   is exactly right for a pin MAME's list marks as an input, and the four
+   signals MAME reads (ROMD, HRE, MUX, RAMD) are precisely the
+   always-enabled outputs with many terms.
+
+   **What is missing is the column-to-signal mapping.** A PAL16L8
+   interleaves dedicated inputs with output feedback in an order the device
+   datasheet gives, and this repository has no primary source for it. Two
+   candidate layouts were tried and both fail the simplest check — that
+   with EME off and KEYDTR high the array must select ROM below `0x8000`
+   and RAM above it. A third guess would be the same mistake again, so the
+   tool stops at the term dump. **A PAL16L8 fuse-map column table from a
+   datasheet unblocks this**, and then the array can be checked against
+   both MAME's approximation and this emulator's own fetch-window rule,
+   which currently rests on behavioural evidence alone.
 2. **The remaining graphics modes.** Only the four-colour mode is
    exercised; `FGCTL`'s other arguments program the palette differently.
 
