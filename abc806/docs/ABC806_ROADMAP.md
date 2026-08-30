@@ -50,26 +50,28 @@ it is part of `make test`.
 
 No milestone is outstanding. In rough order of value:
 
-1. **Evaluate the PAL fuse map.** Started, and blocked on one missing
-   fact. [`scripts/palanalyse.py`](../../scripts/palanalyse.py) parses
-   `ABC-P4-1.bin` and dumps every product term, and the structure is
-   settled: 64 rows of 32 columns, groups of eight per output, **the first
-   group driving pin 19**. Two independent checks agree on that ordering —
-   pin 15 (KDL) comes out permanently tri-stated with no live terms, which
-   is exactly right for a pin MAME's list marks as an input, and the four
-   signals MAME reads (ROMD, HRE, MUX, RAMD) are precisely the
-   always-enabled outputs with many terms.
+1. **Finish evaluating the PAL fuse map.** Substantially advanced.
+   [`scripts/palanalyse.py`](../../scripts/palanalyse.py) now decodes
+   `ABC-P4-1.bin` into readable equations: the column layout came from the
+   PAL16L8 logic diagram in TI's SRPS016 datasheet, and is self-validating,
+   since the terms come out as recognisable memory decode where two earlier
+   guesses produced none.
 
-   **What is missing is the column-to-signal mapping.** A PAL16L8
-   interleaves dedicated inputs with output feedback in an order the device
-   datasheet gives, and this repository has no primary source for it. Two
-   candidate layouts were tried and both fail the simplest check — that
-   with EME off and KEYDTR high the array must select ROM below `0x8000`
-   and RAM above it. A third guess would be the same mistake again, so the
-   tool stops at the term dump. **A PAL16L8 fuse-map column table from a
-   datasheet unblocks this**, and then the array can be checked against
-   both MAME's approximation and this emulator's own fetch-window rule,
-   which currently rests on behavioural evidence alone.
+   **It confirmed the fetch-window rule independently.** `HRAL`/`HRBL` are
+   a cross-coupled SR latch set by
+   `A15'.I3'.A14.B13.B12.B11.M1L'.(ENL+EME').XML` — the `0x7800`-`0x7FFF`
+   window during an opcode fetch — and `HRAL` gates `ROMD` and `HRE`. That
+   is the rule `memory.c` implements, arrived at from behaviour, and the
+   array explains why it is a *latch*: the diversion has to persist through
+   the instruction's data cycles.
+
+   What remains is smaller: **the real levels of `I3` (pin 1), `XML`
+   (pin 11) and `RKDL` (pin 17)**, which board logic supplies and which the
+   outputs depend on. Without them the array reads correctly but does not
+   yet evaluate to the plain ROM-low/RAM-high split the machine
+   demonstrably has. The ABC806 schematic, or instrumenting the emulated
+   machine, would settle them.
+
 2. **The remaining graphics modes.** Only the four-colour mode is
    exercised; `FGCTL`'s other arguments program the palette differently.
 

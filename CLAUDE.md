@@ -330,6 +330,14 @@ begins**; BASIC's coordinates are y-flipped (`239 - y`) with a +8 viewport
 origin the ROM keeps at `0xFEF8`. `abc806_note_instruction_fetch()` already
 supplied the latched-M1 information this needs, from milestone 1.
 
+**The rule is confirmed in the PAL's own fuse map**, not just in
+behaviour: `scripts/palanalyse.py` decodes `ABC-P4-1.bin` and shows
+`HRAL`/`HRBL` to be a cross-coupled SR latch set by
+`A15'.I3'.A14.B13.B12.B11.M1L'.(ENL+EME').XML` - the window during an
+opcode fetch - with `HRAL` then gating `ROMD` and `HRE`. That it is a
+*latch* is why the diversion persists through the instruction's data
+cycles, which is what `abc806_note_instruction_fetch()` reproduces.
+
 This rule exists in MAME only as a **commented-out TODO** in
 `abc806_state::read_pal_p4()` ("0..30k read from videoram if fetch opcode
 from 7800-7fff"), and the sketch contradicts itself - its condition tests

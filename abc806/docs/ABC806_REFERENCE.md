@@ -96,6 +96,30 @@ Consequences worth knowing before touching anything here:
 describes diverting because the opcode *was* fetched from the window. The
 comment matches the hardware.
 
+### Confirmed in the PAL's own fuse map
+
+The rule above was derived from watching the machine. Decoding
+`ABC-P4-1.bin`'s array (see
+[`scripts/palanalyse.py`](../../scripts/palanalyse.py)) confirms it
+independently, and settles the part behaviour could not.
+
+`HRAL` (pin 13) and `HRBL` (pin 14) each appear **complemented in the
+other's product terms**: they are a cross-coupled SR latch built from two
+of the PAL's own outputs. It is set by
+
+```
+A15' . I3' . A14 . B13 . B12 . B11 . M1L' . (ENL + EME') . XML
+```
+
+— address `0x7800`-`0x7FFF` with `M1L` low, which is an **opcode fetch**.
+`HRAL` then appears directly in `ROMD`'s and `HRE`'s terms
+(`RKDL . KDL . EME' . HRAL`), so the latched state gates the memory decode.
+
+So it is a *latch*, not a combinatorial test, which is precisely why the
+diversion persists through an instruction's data cycles after the fetch
+that set it — the behaviour `abc806_note_instruction_fetch()` reproduces by
+holding the fetch PC for the whole instruction.
+
 ### The page map and EME
 
 A 16-entry map at port `0x34`, indexed by the **high address byte** (which

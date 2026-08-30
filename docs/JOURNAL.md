@@ -21,6 +21,81 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (12) — the fetch-window rule, confirmed in the silicon
+
+Went and got the datasheet, which is what entry (11) said would unblock the
+PAL and what entry (10) had already recorded as a lesson about *not* just
+naming a source. Two hours later the array reads as equations, and it says
+something better than I expected.
+
+### The rule is in the fuse map, as a latch
+
+`HRAL` (pin 13) and `HRBL` (pin 14) each appear **complemented in the
+other's product terms**. They are a cross-coupled SR latch, built out of
+two of the PAL's own outputs. It is set by
+
+```
+A15' . I3' . A14 . B13 . B12 . B11 . M1L' . (ENL + EME') . XML
+```
+
+which is address `0x7800`-`0x7FFF` with `M1L` low — an **opcode fetch**.
+`HRAL` then appears directly in `ROMD`'s and `HRE`'s terms
+(`RKDL . KDL . EME' . HRAL`), so the latched state gates the memory decode.
+
+That is exactly the rule `abc806/emu/src/memory.c` implements. It was
+arrived at from watching the machine — a 30K memset that only made sense
+against DRAM, a plotter whose writes vanished, a differential profile — and
+now the silicon says the same thing independently.
+
+**And it explains the part behaviour could not.** I knew *that* the
+diversion had to persist through an instruction's data cycles, because the
+`LDIR` clear reads and writes in the same region and a plot is a
+read-modify-write. I did not know *why* a combinatorial decode would do
+that. It would not: it is a latch, set by the fetch and held. Which is
+precisely what `abc806_note_instruction_fetch()` reproduces by holding the
+fetch PC for the whole instruction — arrived at as the only thing that
+worked, and now the right thing for the right reason.
+
+### How the column mapping got settled
+
+The datasheet (TI SRPS016) has the PAL16L8 logic diagram, and it confirmed
+the row grouping outright — "first fuse numbers" 0..224 against pin 19,
+1792..2016 against pin 12, which entry (11) had derived from the fuse data
+alone. Pleasant to have a guess promoted to a citation.
+
+The column layout is the interleaved one: eight dedicated inputs on pins
+2-9 alternating with the six feedback lines, pins 1 and 11 at the ends,
+even columns true and odd complemented.
+
+**And it is self-validating, which matters more than the source.** Decoded
+with it, the terms come out as recognisable memory decode — `A15'.A14'.EME'`
+for the bottom 16K, `A14.B13.B12.B11` for the `0x7800` window. My two
+earlier guesses produced no meaningful equations at all. A wrong column
+mapping does not accidentally yield sensible hardware.
+
+### The mistake I made twice before finding it
+
+Both times I tested a candidate layout with a pass/fail check — "does this
+give ROM low and RAM high?" — and both times it printed False and I
+discarded the layout. The third time I printed the *equations* instead, and
+the very layout I had discarded was obviously correct on sight.
+
+The check was wrong, not the mapping. It depended on three input levels
+(`I3`, `XML`, `RKDL`) that board logic supplies and I had assumed. A binary
+oracle built on an assumption I had not noticed making is worse than no
+oracle: it does not fail loudly, it just says no to correct answers.
+
+### What is left
+
+Those same three levels. With `RKDL` high the array selects ROM at every
+address; with it low the behaviour becomes address-dependent but still does
+not match the plain ROM-low/RAM-high split the machine demonstrably has.
+`RKDL` is genuinely an input whenever `KDL` is high — pin 17's own enable
+term is `KDL'` — so its value comes from outside the chip.
+
+Recorded as what it is. The array is now *readable*; making it *evaluable*
+needs the schematic or some instrumentation of the real levels.
+
 ## 2026-08-30 (11) — the PAL's structure, and stopping one fact short
 
 Started evaluating `ABC-P4-1.bin`, the PAL16L8 that decides the ABC806's

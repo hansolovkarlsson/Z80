@@ -7,9 +7,10 @@ machine's memory map. `abc806/emu/src/memory.c` currently follows MAME's
 `abc806 30K banking` TODO sits, so evaluating the real array would settle
 something the reference implementation leaves open.
 
-**This tool does not evaluate the array yet, and the reason is recorded
-rather than papered over: the column-to-signal mapping is not established.**
-See "What is not known" below.
+The column-to-signal mapping **is** now established, from the PAL16L8
+logic diagram in TI's SRPS016 datasheet, so terms are printed as readable
+equations rather than column numbers. What is still missing is smaller and
+different - see "What is not known".
 
 ## What is established
 
@@ -21,7 +22,9 @@ See "What is not known" below.
   which is the standard "unused term" encoding. Both appear here, and the
   unused rows land exactly where unused rows should.
 * Rows group in eights, one group per output, and **the first group drives
-  pin 19**, not pin 12. Two independent checks agree:
+  pin 19**, not pin 12 - stated outright by the datasheet's logic diagram,
+  whose "first fuse numbers" run 0..224 against pin 19 and 1792..2016
+  against pin 12. Two checks against the fuse data agree:
     - pin 15 (KDL) comes out permanently tri-stated with zero live terms,
       which is exactly right for a pin MAME's own pin list marks as an
       *input*;
@@ -30,22 +33,51 @@ See "What is not known" below.
       with many live terms.
   Under the opposite ordering both facts land on the wrong pins.
 
+* The column layout, from the same diagram: a PAL16L8 interleaves the eight
+  dedicated inputs on pins 2-9 with the six output feedback lines, and
+  puts pins 1 and 11 at either end. Even columns carry the true form of a
+  signal, odd columns its complement.
+
+  The layout is also **self-validating**, which matters more than the
+  source: decoded with it, the terms come out as recognisable memory
+  decode. Row 57 is `A15'.A14'.EME'` - the bottom 16K with EME off. Rows
+  59 and 60 are `A14.B13.B12.B11`, which is exactly the `0x7800`-`0x7FFF`
+  window. A wrong column mapping does not produce meaningful equations by
+  accident, and two earlier guesses produced none.
+
+* **The fetch-window rule is in the array, as a latch.** `HRAL` (pin 13)
+  and `HRBL` (pin 14) each appear complemented in the other's terms: they
+  are a cross-coupled SR latch built out of two of the PAL's outputs. It is
+  set by
+
+      A15' . I3' . A14 . B13 . B12 . B11 . M1L' . (ENL + EME') . XML
+
+  which is address `0x7800`-`0x7FFF` **during an opcode fetch** - `M1L`
+  low. `HRAL` then appears directly in `ROMD`'s and `HRE`'s own terms
+  (`RKDL . KDL . EME' . HRAL`), so the latched state gates the memory
+  decode.
+
+  That is exactly the rule `abc806/emu/src/memory.c` implements, and it was
+  derived there from watching the machine rather than from this file. The
+  array confirms it independently, and explains the part that behavioural
+  evidence could not: **why it is a latch** rather than a combinatorial
+  test, and therefore why the diversion persists through an instruction's
+  data cycles after the fetch that set it. MAME leaves this unimplemented -
+  its `read_pal_p4()` carries the idea only as a commented-out TODO.
+
 ## What is not known
 
-The 32 columns are 16 input lines by two polarities, but **which column pair
-carries which pin is not established here.** A PAL16L8 interleaves dedicated
-inputs with output feedback in an order given by the device datasheet's fuse
-map, and this repository has no primary source for it.
+**The real levels of three inputs.** `I3` (pin 1), `XML` (pin 11) and
+`RKDL` (pin 17) are supplied by board logic this tool knows nothing about,
+and the outputs depend on them. With `RKDL` high the array selects ROM at
+every address; with it low the behaviour becomes address-dependent but
+still does not match the plain ROM-low/RAM-high split the machine
+demonstrably has. `RKDL` is genuinely an input here whenever `KDL` is high,
+since pin 17's own enable term is `KDL'`.
 
-Two candidate layouts were tried and both fail the simplest sanity check -
-that with EME off and KEYDTR high the array must select ROM below 0x8000 and
-RAM above it. Guessing a third would be the same mistake twice more, so the
-tool stops at dumping the terms.
-
-Settling it needs a PAL16L8 fuse-map column table from a datasheet. With
-that, the array can be evaluated and compared against both MAME's
-approximation and this emulator's own fetch-window rule - which was derived
-from watching the machine and would then have an independent check.
+So the array is readable but not yet *evaluable* against real operation.
+Establishing those three levels - from the ABC806 schematic, or by
+instrumenting what makes the emulated machine behave - is what remains.
 
 Usage:  scripts/palanalyse.py abc806/resources/rom/ABC-P4-1.bin
 """
@@ -55,6 +87,11 @@ import sys
 
 # Row group -> output pin. See "What is established" above.
 OUT_PIN = [19, 18, 17, 16, 15, 14, 13, 12]
+
+# Column pair -> pin, from the PAL16L8 logic diagram: dedicated inputs on
+# pins 2-9 interleaved with the six feedback lines, pins 1 and 11 at the
+# ends. Even column = true form, odd = complement.
+PAIR_PIN = [2, 1, 3, 18, 4, 17, 5, 16, 6, 15, 7, 14, 8, 13, 9, 11]
 
 # MAME's own pin list for this part, from src/mame/luxor/abc80x.cpp.
 # '>' there marks an active-low output.
@@ -78,12 +115,17 @@ def parse_jedec(path, rows=64, cols=32):
 
 
 def describe(row):
-    """A product term as its connected columns, or its constant value."""
+    """A product term as a readable equation, or its constant value."""
     if all(b == 1 for b in row):
         return 'always true (no fuses intact)'
     if all(b == 0 for b in row):
         return None                       # unused: input AND its complement
-    return 'cols=%s' % [c for c in range(len(row)) if row[c] == 0]
+    parts = []
+    for c in range(len(row)):
+        if row[c] == 0:
+            name = PIN_NAME[PAIR_PIN[c // 2]].lstrip('>')
+            parts.append(name if c % 2 == 0 else name + "'")
+    return ' . '.join(parts)
 
 
 def main(argv):
