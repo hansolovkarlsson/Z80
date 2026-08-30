@@ -101,10 +101,16 @@ fi
 # UFD-DOS system disk - see abc802/resources/disks/README.md for where to
 # get one). Skips loudly without it; a skip is never counted as a pass.
 RTC_IMAGE="${ABC806_TEST_DISKS:-}/sys832-ufd.img"
+# Every check below needs the media, so each skips in its own right -
+# reporting one skip for a block of three would undercount what is not
+# being run.
+DISK_CHECKS="disk-boot-and-rtc dos-shell dos-runs-lib"
 if [ -z "${ABC806_TEST_DISKS:-}" ]; then
-    tl_skip "disk-boot-and-rtc" "set ABC806_TEST_DISKS to a directory holding sys832-ufd.img (a 640K ABC832 UFD-DOS system disk)"
+    for c in $DISK_CHECKS; do
+        tl_skip "$c" "set ABC806_TEST_DISKS to a directory holding sys832-ufd.img (a 640K ABC832 UFD-DOS system disk)"
+    done
 elif [ ! -f "$RTC_IMAGE" ]; then
-    tl_skip "disk-boot-and-rtc" "$RTC_IMAGE not found"
+    for c in $DISK_CHECKS; do tl_skip "$c" "$RTC_IMAGE not found"; done
 else
     # Copy first: the DOS writes to media, and a test must never mutate
     # the user's archive.
@@ -121,6 +127,29 @@ else
     tl_want "$out" "UFD-DOS" "the DOS booting off real ABC832 media"
     tl_want "$out" "$(date '+%Y-%m-%d')" \
             "the clock agreeing with the host about the date"
+    tl_end "$out"
+
+    # Milestone 4's gate: BYE leaves BASIC for the DOS command shell, and
+    # the shell runs a real program off the disk. LIB is the DOS's own
+    # directory utility, so a full listing means the bus, the controller,
+    # the filesystem and the loader all work end to end - not just that a
+    # boot sector ran.
+    # Two runs, not one: LIB's listing is long enough to scroll the shell's
+    # own banner off the top, so each assertion is made against a screen
+    # that still holds it.
+    cp "$RTC_IMAGE" "$WORK/bye.img"
+    out=$("$ABC806" --cycles 900000000 --disk "$WORK/bye.img" --type $'BYE\r' --screen 2>&1)
+    tl_begin "dos-shell"
+    tl_want "$out" "Disc operating system" "BYE reaching the DOS command shell"
+    tl_end "$out"
+
+    cp "$RTC_IMAGE" "$WORK/lib.img"
+    out=$("$ABC806" --cycles 2000000000 --disk "$WORK/lib.img" --type $'BYE\rLIB\r' --screen 2>&1)
+    tl_begin "dos-runs-lib"
+    # LIB is a program on the disk, not a shell built-in, so a listing
+    # means the bus, the controller, the filesystem and the loader all
+    # worked end to end - not merely that a boot sector ran.
+    tl_want "$out" "DOSGEN" "LIB loading off the disk and listing its files"
     tl_end "$out"
 fi
 

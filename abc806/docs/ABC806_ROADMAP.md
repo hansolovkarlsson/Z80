@@ -340,6 +340,111 @@ was caught in these suites once already) and `keyboard-swedish-roundtrip`. Both 
 purpose before being trusted: bypassing the UTF-8 conversion reds the
 round-trip, and forcing the readiness gate open reds both.
 
+## Milestone 4: disk — done, and it was as free as predicted
+
+`--disk` boots real ABC832 UFD-DOS media, `BYE` leaves BASIC for the DOS
+command shell, and the shell loads and runs a real program off the disk:
+
+```
+** Disc operating system - Ver 6.20 **
+   Ver 6.02, 1983-04-21
+   Copyright 1982 Dataindustrier AB
+-
+```
+
+then `LIB` gives a full directory listing — `DOSGEN.ABS`, `COPY.ABS`,
+`ISAMDEMO.BAC` and the rest. That matters more than the banner does: `LIB`
+is a *program on the disk*, not a shell built-in, so a listing means the
+bus, the controller, the filesystem and the DOS's own loader all worked
+end to end rather than a boot sector merely having run.
+
+The scoping document predicted this milestone would be "nearly free — same
+bus, same DOS", and it was: no ABC806-specific work was needed at all. The
+shared `abcbus/` card and the RTC were between them the whole of it.
+
+Covered by `dos-shell` and `dos-runs-lib`, both media-gated. They are two
+runs rather than one because `LIB`'s listing scrolls the shell's banner off
+the top, so each assertion is made against a screen that still holds it —
+it failed that way first. Both were verified by breaking the ABC-bus card
+select on purpose, which reds them along with the RTC check.
+
+## Milestone 5: high-resolution graphics — investigated, not started
+
+Not built. What follows is what the investigation established, recorded
+because it is the starting point and because two of its facts are not
+guessable.
+
+### The machine's graphics commands, read out of the option PROM
+
+`ABC806-option.76-11` carries a keyword table holding **`FGPOINT`,
+`FGLINE`, `FGFILL`, `FGCTL`, `FGPAINT` and `FGPICTURE`** — recovered the
+same way the ABC802's BASIC keywords were, by dumping the table with the
+high-bit token markers made visible rather than transcribing a manual.
+
+They are live in the running machine, not dead table entries. `FGPOINT
+10,10` and `FGLINE 100,100` are accepted; `FGCTL 1,1` gives `Error 221`
+and `FGLINE TO 100,100` gives `"," saknas` — real parser diagnostics, so
+the argument syntax above is the machine's own answer rather than a guess.
+
+They are also *enabled*: the dispatcher at `0x763B` gates the whole package
+on a flag at `0xFEF4`, bailing to `0x0012` when it is zero, and
+`PRINT PEEK(65268)` reads back **1**. The commands are not being skipped.
+
+### And they draw nothing
+
+The high-resolution plane stays at `0/131072 bytes nonzero` after every
+command and every `FGCTL` argument from 0 to 255. This is not the commands
+failing silently — a differential profile (`ABC806_PROFILE_ALL=1`, once
+with the graphics line and once with a bare `REM`, then diffing the
+executed-address sets) shows **994 addresses executed only in the graphics
+run**, spread across the BASIC ROM and the option PROM. Real code runs.
+
+Where its writes go is the finding. `ABC806_TRACE_WRITES=1` puts every CPU
+write on stderr with the three bits that decide its destination, and they
+land in ordinary high RAM — `0xF3xx` most heavily, then `0xFFxx`, `0xF1xx`,
+`0xF4xx`. **The CPU never opens a window onto the plane at all**: KEYDTR
+never changes state for the life of the run, and every page-map entry stays
+zero, which with the inverted polarity means "do not divert". The 74ALS259
+is written exactly three times during boot and never again, so neither EME
+nor KEYDTR is touched by the drawing code.
+
+### What that leaves open
+
+The honest statement is that **the path by which drawing reaches the plane
+has not been found**, and that is the first thing milestone 5 has to
+answer. Three leads, in the order they look worth pursuing:
+
+1. **Port `0x37` is read during the graphics commands and not otherwise**
+   (`[in] 37 -> 0F`, three times). That port is the HRU II PROM's low
+   nibble, and this emulator addresses the PROM with register B plus the
+   74ALS259's A8 line. If that addressing is wrong the ROM may be reading a
+   palette or a capability word and concluding something false.
+2. **The drawing may be building a display list in RAM** for a later blit
+   that these command sequences never trigger. `FGPICTURE` has not been
+   exercised.
+3. **The high-resolution unit may need the option board to announce
+   itself** in a way this emulator does not, in which case the code would
+   run to completion and write its output nowhere — which is what is
+   observed.
+
+None of these is claimed as the answer. Writing down an untested
+hypothesis as though it were a finding is a mistake this project has made
+twice and recorded both times; this section is deliberately shaped to
+avoid a third.
+
+### The renderer is also still to write
+
+Independently of the above, nothing yet turns video RAM into pixels: 240×240
+at 4 bits per pixel, banked 16 ways by `hrs`, through the 16-entry `hrc`
+colour lookup, with `HRU-I` and `V50` placing it on screen. `hrs` and
+`hrc` are already latched (`ports.c`, on ports 6 and 7 of the ABC-bus
+range) and the plane is already addressable from `memory.c`; what is
+missing is the decode and its composition with the text layer.
+
+When it is written it will need a fixture, for the reason
+[milestone 3 gives](#the-colour-path-needed-a-fixture-for-the-reason-the-postmortem-gives)
+and the boot screen cannot: there is no ROM output that exercises it.
+
 ## Known gaps
 
 Everything below is expected at this point: two milestones in, of five.
@@ -356,10 +461,10 @@ Everything below is expected at this point: two milestones in, of five.
   supplies the phase.
 - **The high-resolution plane is not rendered.** `--screenshot` draws the
   text layer only.
-- **No high-resolution graphics.** Milestone 5. `HRU-I` and `V50` are
-  committed and unused; `RAD` and `HRU-II` are now in use — though HRU II
-  is only being read back through port `0x37`, not used to colour a
-  high-resolution plane.
+- **No high-resolution graphics.** Milestone 5, and see its section above
+  for how far the investigation got. `HRU-I` and `V50` are committed and
+  unused; `RAD` and `HRU-II` are in use, though HRU II only as a port
+  `0x37` read-back rather than to colour anything.
 - **The PAL fuse map is not evaluated.** `ABC-P4-1.bin` is a well-formed
   JEDEC dump and the memory decode currently follows MAME's behavioural
   approximation instead — inheriting its `abc806 30K banking` gap. See

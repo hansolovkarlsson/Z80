@@ -41,6 +41,7 @@
 // ABC806_SCOPING.md flags as the risk most likely to force a core change.
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "memory.h"
@@ -60,6 +61,7 @@ static bool eme = false;
 // KEYDTR resets high. With it low the low 32K reads video RAM, which is
 // how the ROM gets at the high-resolution plane.
 static bool keydtr = true;
+static bool trace_writes = false;
 
 static uint8_t attr_latch = 0;
 static uint8_t hrs = 0;
@@ -122,6 +124,7 @@ bool abc806_memory_init(Z80 *cpu, const char *rom_dir, const char *dos_rom_name)
     memset(page_map, 0, sizeof page_map);
     eme = false;
     keydtr = true;
+    trace_writes = getenv("ABC806_TRACE_WRITES") != NULL;
 
     // The firmware is physically resident, for the reason in the header.
     memcpy(cpu->memory, rom, ABC806_ROM_SIZE);
@@ -185,6 +188,14 @@ static uint8_t bus_read(Z80 *cpu, uint16_t addr, uint8_t stored_value) {
 // Returns 1 when the write was fully handled and must not also land in
 // the flat array, 0 to let the normal store proceed.
 static int bus_write(Z80 *cpu, uint16_t addr, uint8_t value) {
+    // Every CPU write, with the three bits that decide where it lands.
+    // Exists because the high-resolution investigation needed to know not
+    // just that the graphics code runs but *where its writes go* - and the
+    // answer (ordinary high RAM, never the plane) is what the open
+    // question in ABC806_ROADMAP.md rests on.
+    if (trace_writes)
+        fprintf(stderr, "[w] %04X <- %02X eme=%d keydtr=%d hrs=%02X\n",
+                addr, value, (int)eme, (int)keydtr, hrs);
     uint8_t entry = (uint8_t)(page_map[addr >> 12] ^ 0xFF);
     if (eme && !(entry & 0x80)) {
         uint32_t phys = ((uint32_t)(entry & 0x7F) << 12) | (addr & 0x0FFF);

@@ -21,7 +21,91 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
-## 2026-08-30 — the ABC806 gets a live session, and colour that can be tested
+## 2026-08-30 (2) — the ABC806's disk milestone was already done, and its graphics are not where I expected
+
+Two milestones looked at today. One turned out to be finished; the other
+turned out to be a different problem than the one I went looking for.
+
+### Milestone 4 was free, exactly as the scoping document predicted
+
+`BYE` leaves BASIC for the real DOS command shell, and the shell loads and
+runs `LIB` off the disk, which gives a full directory listing. No
+ABC806-specific work at all: the shared `abcbus/` card and yesterday's RTC
+were between them the whole of it.
+
+The listing is the assertion worth making, not the banner. `LIB` is a
+*program on the disk*, not a shell built-in, so a listing means the bus,
+the controller, the filesystem and the DOS's own loader all worked end to
+end — where a banner only means a boot sector ran. Both are checks now, as
+two separate runs, because `LIB`'s output scrolls the banner off the top
+and I would otherwise have been asserting against a screen that no longer
+held it. (It failed that way first.)
+
+### The graphics commands exist, run, and draw nothing
+
+Milestone 5 is high-resolution graphics, and the scoping gate is "a BASIC
+program using the option PROM's commands draws something". So the first
+question is what those commands are called.
+
+Dumping the option PROM's keyword table with the high-bit token markers
+made visible — the same technique the ABC802's BASIC reference was built
+from — gives **`FGPOINT`, `FGLINE`, `FGFILL`, `FGCTL`, `FGPAINT`,
+`FGPICTURE`**. And they are live: `FGCTL 1,1` answers `Error 221` and
+`FGLINE TO 100,100` answers `"," saknas`, which is the machine telling me
+its own argument syntax rather than me guessing it.
+
+They are enabled, too. The dispatcher at `0x763B` gates the whole package
+on a flag at `0xFEF4` and bails to `0x0012` when it is zero;
+`PRINT PEEK(65268)` reads back 1.
+
+And the plane stays at `0/131072 bytes nonzero`. Every command, every
+`FGCTL` argument from 0 to 255.
+
+### Three instruments, and what they said
+
+The temptation here is to guess. Instead:
+
+- **A differential profile.** `ABC806_PROFILE_ALL=1` dumps every executed
+  address and its count; running once with the graphics line and once with
+  a bare `REM` and diffing the sets gives **994 addresses executed only in
+  the graphics run**, across both the BASIC ROM and the option PROM. So it
+  is not silently skipping. Real code runs.
+- **A write trace.** `ABC806_TRACE_WRITES=1` puts every CPU write on
+  stderr along with EME, KEYDTR and HRS — the three bits that decide where
+  a write lands. They go to ordinary high RAM, `0xF3xx` most heavily.
+- **The state itself.** KEYDTR never changes for the life of the run, every
+  page-map entry stays zero (which with the inverted polarity means "do not
+  divert"), and the 74ALS259 is written three times during boot and never
+  again.
+
+So: **the CPU never opens a window onto the high-resolution plane at
+all.** That is the finding. Not "the graphics do not work" — something
+much more specific, and a much better starting point.
+
+### What I did not do
+
+I did not write down which of my three hypotheses is the answer, because I
+did not test any of them. The leads are that port `0x37` is read during
+these commands and not otherwise (HRU II, addressed here with register B
+plus the latch's A8 line — possibly wrongly); that the code may be building
+a display list for a blit these sequences never trigger; and that the
+option board may need to announce itself in a way this emulator does not,
+which would produce exactly the observed "runs fully, writes nowhere".
+
+Each is plausible and each is cheap to write up as though it were the
+cause. That is precisely the move that produced two wrong published
+explanations yesterday — `BYE`'s `Abort 48` recorded as undiagnosed when it
+was an interleave problem, and `LIB` blamed on an unbound `DR0:` that a
+trace disproved. **A hypothesis written down without testing inherits the
+credibility of the observation it sits next to.** So the roadmap section
+says the path has not been found, lists the leads as leads, and stops.
+
+The renderer is still unwritten either way — 240×240 at 4bpp, banked by
+`hrs`, through the `hrc` lookup — and when it exists it will need its own
+fixture, because there is no ROM output that exercises it. Which is the
+third time that sentence has been true on this machine.
+
+## 2026-08-30 (1) — the ABC806 gets a live session, and colour that can be tested
 
 `bin/abc806 --interactive` is now a real session: 3 MHz pacing, a screen
 redrawn thirty times a second **in colour**, a live keyboard, Ctrl-\ to

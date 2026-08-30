@@ -276,13 +276,31 @@ CP/M program silently produced no output at all - a failure a plain
 `abc806/` is a *fourth* machine target - the Luxor ABC806 (1983), the top
 of the ABC800 family - added on the terms the other two established: it
 links the same `z80core/z80.o`/`alu.o` and mounts the same `abcbus/` card.
-It is at **milestone 3**: `bin/abc806` (opt-in, `make abc806`) boots the
+It is at **milestone 4**: `bin/abc806` (opt-in, `make abc806`) boots the
 real 32K firmware, programs the MC6845 for 80x25, and runs a genuine live
 session — `--interactive` gives real 3 MHz pacing, a live keyboard and a
 screen redrawn at 30fps *in colour*, on the terms `bin/abc80 --interactive`
 established. `--type` answers `PRINT 6*7` with `42`, `--screen` dumps the
 text screen, `--screenshot` writes a real PNG, and `--disk` boots real
-UFD-DOS. No high-resolution graphics and no GTK front-end yet.
+UFD-DOS — `BYE` reaches the DOS command shell and the shell loads and runs
+`LIB` off the media, which is the assertion worth making since `LIB` is a
+program on the disk rather than a shell built-in. No high-resolution
+graphics and no GTK front-end yet.
+
+**Milestone 5 (high-resolution graphics) has been investigated but not
+started, and the investigation's result is worth knowing before repeating
+it.** The option PROM's own keyword table holds `FGPOINT`, `FGLINE`,
+`FGFILL`, `FGCTL`, `FGPAINT` and `FGPICTURE`; they parse, they pass their
+enable gate at `0xFEF4` (the dispatcher at `0x763B` bails to `0x0012` when
+it is zero, and `PRINT PEEK(65268)` reads 1), a differential profile shows
+994 addresses executing only during them - and the plane stays entirely
+zero. **The CPU never opens a window onto it**: KEYDTR never changes, every
+page-map entry stays zero, and the 74ALS259 is written three times during
+boot and never again. The path by which drawing is supposed to reach the
+plane is the open question; `ABC806_TRACE_WRITES=1` (every CPU write with
+the EME/KEYDTR/HRS state) and `ABC806_PROFILE_ALL=1` (with `--profile`, for
+differential profiling) are the two instruments that established this and
+are the ones to reach for next.
 See `abc806/docs/ABC806_ROADMAP.md` for status and
 `abc806/docs/ABC806_SCOPING.md` for the feasibility review written before
 any of it - which now carries an outcome section comparing what it

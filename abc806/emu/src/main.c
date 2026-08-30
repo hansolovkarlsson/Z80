@@ -207,7 +207,11 @@ static void usage(const char *argv0) {
     printf("  --profile        print the most-executed addresses when the run ends\n");
     printf("  -h, --help       this message\n");
     printf("\nEnvironment:\n");
-    printf("  ABC806_TRACE_IO=1   log every I/O port access to stderr\n");
+    printf("  ABC806_TRACE_IO=1      log every I/O port access to stderr\n");
+    printf("  ABC806_TRACE_WRITES=1  log every CPU write, with the EME/KEYDTR/HRS\n");
+    printf("                         state that decides where it lands\n");
+    printf("  ABC806_PROFILE_ALL=1   with --profile, dump every executed address\n");
+    printf("                         and its count, for a differential profile\n");
 }
 
 int main(int argc, char **argv) {
@@ -441,6 +445,17 @@ int main(int argc, char **argv) {
         printf("Character RAM: %d/%d nonzero, %d non-space; "
                "attribute plane: %d nonzero\n",
                nonzero, ABC806_CHAR_RAM_SIZE, nonspace, attrs);
+
+        // The high-resolution plane, reported the same way and for the
+        // same reason: it is the one part of this machine whose state is
+        // invisible in a text dump, so without this line a graphics
+        // command that silently did nothing looks exactly like one that
+        // worked.
+        int hr_nonzero = 0;
+        for (int i = 0; i < ABC806_VIDEO_RAM_SIZE; i++)
+            if (abc806_videoram_read((uint32_t)i)) hr_nonzero++;
+        printf("High-resolution plane: %d/%d bytes nonzero\n",
+               hr_nonzero, ABC806_VIDEO_RAM_SIZE);
     }
 
     // One snapshot, assembled in one place (render.c), so --screen,
@@ -467,6 +482,14 @@ int main(int argc, char **argv) {
     }
 
     if (profile) {
+        // ABC806_PROFILE_ALL dumps every executed address and its count,
+        // which is what a differential profile (run with a command, run
+        // without, diff the sets) needs to locate a ROM routine.
+        if (getenv("ABC806_PROFILE_ALL")) {
+            for (int a = 0; a < 0x10000; a++)
+                if (hits[a]) printf("A %04X %llu\n", a, hits[a]);
+            return halted ? EXIT_FAILURE : EXIT_SUCCESS;
+        }
         printf("Most-executed addresses:\n");
         for (int n = 0; n < 20; n++) {
             int best = -1;
