@@ -21,6 +21,63 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (13) — the real schematics, and a wrong oracle for the third time
+
+Entry (12) ended saying the remaining PAL work needed the ABC806
+schematic. So I went and got it, from the archive the user pointed at days
+ago: `ABC806-schema.pdf`, ten sheets, Luxor Datorer AB 1983.
+
+Rendering the PDF at 600 dpi and cropping (`pdftoppm -x -y -W -H`) makes
+individual chips perfectly legible. Sheet 5, "Graphic Control", position
+2D: **PAL16L8/ABC P4**, with every pin labelled.
+
+### What it settled
+
+- **The pinout matches MAME's comment exactly** — an independent check on
+  both, since MAME's is a hand-written comment beside a ROM it never reads.
+- **`RKDL` (pin 17) carries R17, a 22k pull-up to Vcc.** So it reads high
+  whenever the PAL tri-states it, which is whenever `KDL` is high. One of
+  my three unknown input levels, resolved from a primary source rather than
+  assumed.
+- **`XML` is `/XM`** from connectors P1-15 and P2-5 tied together, **`M1L`
+  is `/MI`** from P3-17, **`KDL` is `/HR`** from P1-11 — active-low signals
+  arriving from the processor unit.
+- **`ENL` comes from a 74F189**, the 16x4 RAM sitting right below the PAL
+  on the same sheet. That RAM *is* the page map, which is a pleasing thing
+  to see as silicon after modelling it as an array.
+
+### And it corroborated the overlay
+
+`RAMD` has, among its product terms, **the single literal `A15'`**. RAM is
+therefore selected across the entire low 32K unconditionally, and `ROMD`
+decides only whether ROM overrides on a *read*.
+
+That is exactly the arrangement `memory.c` implements — reads from ROM,
+writes through to the DRAM beneath — which I arrived at by watching a 30K
+memset that only made sense against DRAM. Second independent confirmation
+of a behaviourally-derived rule in two days.
+
+### The oracle was wrong again, and I nearly missed it again
+
+I had been scoring candidate evaluations against "ROM low, RAM high". That
+test is simply false about this machine: RAM is enabled everywhere. It is
+the *third* time in this investigation that a pass/fail check encoding an
+unexamined assumption told me a correct thing was wrong — twice about the
+column layout, once now about the whole ROM/RAM model.
+
+The pattern is specific enough to name. **A binary oracle hides its own
+premises.** When it says False you learn nothing about *which* of its
+assumptions failed, and the natural reading — "the thing under test is
+wrong" — is exactly the one that keeps being false. Printing the equations
+instead of scoring them is what broke the deadlock both times.
+
+### What is left
+
+`I3` (pin 1) leaves sheet 5 and I did not trace it. And with `ENL` held
+constant, no term enables ROM between `0x4000` and `0x77FF`, which the
+machine demonstrably does; `ENL` being per-page is the obvious candidate,
+but after the above I am not writing that down as the answer.
+
 ## 2026-08-30 (12) — the fetch-window rule, confirmed in the silicon
 
 Went and got the datasheet, which is what entry (11) said would unblock the

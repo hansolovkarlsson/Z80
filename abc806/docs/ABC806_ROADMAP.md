@@ -65,12 +65,20 @@ No milestone is outstanding. In rough order of value:
    array explains why it is a *latch*: the diversion has to persist through
    the instruction's data cycles.
 
-   What remains is smaller: **the real levels of `I3` (pin 1), `XML`
-   (pin 11) and `RKDL` (pin 17)**, which board logic supplies and which the
-   outputs depend on. Without them the array reads correctly but does not
-   yet evaluate to the plain ROM-low/RAM-high split the machine
-   demonstrably has. The ABC806 schematic, or instrumenting the emulated
-   machine, would settle them.
+   **The real schematics settled most of the rest.**
+   `ABC806-schema.pdf` on abc80.net (sheet 5, PAL at position 2D) confirms
+   the pinout from the board, shows `RKDL` carrying a 22k pull-up to Vcc —
+   so it is high whenever the PAL tri-states it — and identifies `XML`,
+   `M1L` and `KDL` as the active-low board signals `/XM`, `/MI` and `/HR`
+   from the processor unit, with `ENL` coming from the 74F189 that *is* the
+   page map. It also corroborates the ROM overlay: one of `RAMD`'s terms is
+   the bare literal `A15'`, so RAM is selected across the whole low 32K and
+   `ROMD` only decides whether ROM overrides on a read.
+
+   Two things remain. **`I3` (pin 1)** leaves that sheet untraced. And with
+   `ENL` held constant no term enables ROM between `0x4000` and `0x77FF`,
+   which the machine demonstrably does — `ENL` being per-page is the likely
+   explanation, but that is a hypothesis rather than a result.
 
 2. **The remaining graphics modes.** Only the four-colour mode is
    exercised; `FGCTL`'s other arguments program the palette differently.

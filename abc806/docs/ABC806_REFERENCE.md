@@ -120,6 +120,27 @@ diversion persists through an instruction's data cycles after the fetch
 that set it — the behaviour `abc806_note_instruction_fetch()` reproduces by
 holding the fetch PC for the whole instruction.
 
+The array corroborates the overlay too: **one of `RAMD`'s product terms is
+the single literal `A15'`**, so RAM is selected across the whole low 32K
+unconditionally and `ROMD` decides only whether ROM overrides on a *read*.
+That is the read-from-ROM, write-through-to-DRAM arrangement above.
+
+### The board's own wiring
+
+From the real schematics (`ABC806-schema.pdf`, sheet 5 "Graphic Control",
+PAL at position 2D — its pinout matches MAME's comment exactly):
+
+| PAL pin | Driven by |
+|---|---|
+| 15 `KDL` | `/HR`, connector P1-11 |
+| 11 `XML` | `/XM`, connectors P1-15 and P2-5, tied |
+| 7 `M1L` | `/MI`, connector P3-17 |
+| 9 `ENL` | a 74F189 — the 16x4 RAM that *is* the page map |
+| 8 `EME` | the 74ALS259 addressable latch |
+| 17 `RKDL` | **R17, a 22k pull-up to Vcc** — high whenever the PAL tri-states it, which is whenever `KDL` is high |
+
+`I3` (pin 1) leaves that sheet and has not been traced.
+
 ### The page map and EME
 
 A 16-entry map at port `0x34`, indexed by the **high address byte** (which

@@ -65,19 +65,41 @@ different - see "What is not known".
   data cycles after the fetch that set it. MAME leaves this unimplemented -
   its `read_pal_p4()` carries the idea only as a commented-out TODO.
 
+## What the schematic added
+
+The real ABC806 schematics (`ABC806-schema.pdf`, sheet 5 "Graphic
+Control", the PAL at position 2D) settle several things this tool had to
+assume:
+
+* **The pinout is confirmed from the board**, and matches MAME's comment
+  exactly - an independent check on both.
+* **`RKDL` (pin 17) carries R17, a 22k pull-up to Vcc**, so it reads high
+  whenever the PAL tri-states it, which is whenever `KDL` is high. That is
+  one of the three unknown levels resolved from a primary source.
+* **`XML` comes from `/XM`** on connectors P1-15 and P2-5, tied together;
+  **`M1L` from `/MI`** on P3-17; **`KDL` from `/HR`** on P1-11. All are
+  active-low board signals arriving from the processor unit.
+* **`ENL` comes from a 74F189**, the 16x4 RAM that *is* the page map, on
+  the same sheet. So `ENL` is per-4K-page rather than a constant, which
+  matters for evaluation.
+
+**`RAMD` is asserted across the whole low 32K unconditionally** - one of
+its product terms is the single literal `A15'`. So RAM is always selected
+there and `ROMD` decides whether ROM overrides on a read. That is exactly
+the ROM-overlay-over-DRAM arrangement `memory.c` implements (reads from
+ROM, writes through to the DRAM beneath), arrived at behaviourally, and the
+array corroborates it.
+
 ## What is not known
 
-**The real levels of three inputs.** `I3` (pin 1), `XML` (pin 11) and
-`RKDL` (pin 17) are supplied by board logic this tool knows nothing about,
-and the outputs depend on them. With `RKDL` high the array selects ROM at
-every address; with it low the behaviour becomes address-dependent but
-still does not match the plain ROM-low/RAM-high split the machine
-demonstrably has. `RKDL` is genuinely an input here whenever `KDL` is high,
-since pin 17's own enable term is `KDL'`.
+**`I3` (pin 1)** still. It leaves this sheet to the right and was not
+traced further.
 
-So the array is readable but not yet *evaluable* against real operation.
-Establishing those three levels - from the ABC806 schematic, or by
-instrumenting what makes the emulated machine behave - is what remains.
+And one thing does not yet add up: with `ENL` held at 1 no product term
+enables ROM between `0x4000` and `0x77FF`, which the machine demonstrably
+does. `ENL` is per-page, so holding it constant is likely the flaw in the
+evaluation rather than in the reading - but that is a hypothesis, and it is
+recorded as one.
 
 Usage:  scripts/palanalyse.py abc806/resources/rom/ABC-P4-1.bin
 """
