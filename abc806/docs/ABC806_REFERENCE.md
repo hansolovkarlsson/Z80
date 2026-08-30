@@ -288,12 +288,38 @@ generator, the 512-byte `RAD` and `HRU-II` PROMs, `HRU-I`, `V50`, and two
 PALs.
 
 See [`../resources/rom/README.md`](../resources/rom/README.md) for
-provenance — every image with a MAME entry is verified byte-for-byte
-against its published CRC32 *and* SHA1; the two PALs have no MAME entry and
-rest on the archive alone, which that file states plainly.
+provenance — **all sixteen** images are verified byte-for-byte against
+MAME's published CRC32 *and* SHA1, the two PALs included. Those two needed
+converting first: the archive ships JEDEC ASCII while MAME stores the
+260-byte binary its `jedparse` produces, so
+[`scripts/jed2bin.py`](../../scripts/jed2bin.py) does the conversion and
+prints the checksums.
 
 **The memory map is decided by a PAL16L8** (`ABC-P4-1.bin`, a well-formed
 JEDEC fuse map). `emu/src/memory.c` follows MAME's behavioural form of it
 instead, which is also where MAME's own `abc806 30K banking` TODO lives, so
 evaluating the real fuse map is an open opportunity rather than a settled
 question.
+
+Its pinout, from MAME's own comment (outputs marked `>`):
+
+| Pin | Signal | | Pin | Signal |
+|---|---|---|---|---|
+| 1 | I3 | | 11 | XML |
+| 2 | A15 | | 12 | >ROMD |
+| 3 | A14 | | 13 | HRAL |
+| 4 | B13 | | 14 | HRBL |
+| 5 | B12 | | 15 | KDL |
+| 6 | B11 | | 16 | >HRE |
+| 7 | M1L | | 17 | RKDL |
+| 8 | EME | | 18 | >MUX |
+| 9 | ENL | | 19 | >RAMD |
+| 10 | GND | | 20 | Vcc |
+
+Two details there are suggestive and unconfirmed. The address inputs are
+split **`A15`/`A14` but `B13`/`B12`/`B11`** — two different prefixes for
+what MAME's own model feeds from one address — and `M1L` is an input
+alongside them. Between them those are the ingredients of the
+fetch-window rule this emulator implements, which was derived from
+behaviour rather than from the fuse map, so evaluating the array would be
+an independent check on it.

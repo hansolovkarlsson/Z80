@@ -365,7 +365,11 @@ another.
 
 Three further ABC806 facts worth knowing before touching that target, none
 guessable. **Its memory map is decided by a PAL16L8** (`ABC-P4-1.bin`,
-committed, a well-formed JEDEC fuse map) rather than by address decode;
+committed, a well-formed JEDEC fuse map, and - like every other ABC806
+image, the second PAL included - verified byte-for-byte against MAME's
+published CRC32 and SHA1; the PALs need `scripts/jed2bin.py` first, since
+the archive ships JEDEC ASCII while MAME stores the 260-byte binary its
+`jedparse` produces) rather than by address decode;
 `emu/src/memory.c` currently follows MAME's behavioural form of it, which
 is also where MAME's own `abc806 30K banking` TODO lives, so evaluating
 the real fuse map is an open opportunity rather than a settled question.

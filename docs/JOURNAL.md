@@ -21,6 +21,74 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (10) — the two "unverifiable" PALs verify after all
+
+`abc806/resources/rom/README.md` said, plainly and at some length, that the
+ABC806's two PALs **"have no MAME entry to check against … unlike the other
+fourteen they rest on the archive alone"**, and made a small virtue of
+saying so rather than letting them look like the same standard of evidence.
+
+Both statements were wrong. MAME carries both PALs, and both now verify
+byte-for-byte on CRC32 *and* SHA1:
+
+```
+ABC-P4-1.bin     crc32=3cc5518d sha1=343cf951d01c9d361b695bb4e80eaadf0820b6bc
+ABC-P3-1.bin     crc32=f3d0ba00 sha1=bcc0ee26ecac0028aef6bf5cb308133b509bb360
+```
+
+Sixteen of sixteen, not fourteen of sixteen.
+
+### Two reasons they were missed
+
+**MAME never reads them.** They sit in `ROM_REGION("abc_p3")` and
+`ROM_REGION("abc_p4")`, but `read_pal_p4()`'s actual PAL lookup is
+commented out — so they appear nowhere a search for *behaviour* would land,
+which is how I had been reading that file. A ROM entry with no reader is
+invisible to anyone looking for what the code does.
+
+**They could not be compared directly even once found.** The archive ships
+JEDEC ASCII, 2,769 and 2,754 bytes; MAME stores the 260-byte binary its
+`jedparse` produces. Identical fuses, different containers, and a naive
+checksum comparison just fails.
+
+The conversion is 4 bytes of fuse count big-endian followed by the fuses
+packed 8 per byte **least significant bit first**, uninverted. I did not
+know that and did not guess it: I swept the four plausible conventions
+(endianness x bit order x inversion) against MAME's published checksums.
+**Two independent files agreeing on one convention** is what makes that a
+determination rather than a curve fit — one file matching under some
+convention would prove very little.
+
+`scripts/jed2bin.py` now does it, so this is reproducible instead of a
+claim in a document.
+
+### What the pin lists gave for free
+
+Above each `ROM_LOAD` MAME has a full pinout, which nothing here had
+recorded. Both are now in the ROM README and the P4 one in the hardware
+reference.
+
+Two things in it are suggestive. The address inputs are split **`A15`/`A14`
+but `B13`/`B12`/`B11`** — two different prefixes, where MAME's own
+behavioural model feeds all five from one address — and **`M1L` is an input
+alongside them**. Those are between them exactly the ingredients of the
+fetch-window rule this emulator now implements, which was derived from
+watching the machine rather than from the fuse map. So evaluating the array
+would be a genuinely independent check on a rule I currently believe on
+behavioural evidence alone. Recorded as the reason to do that work, not as
+a claim about what it will find.
+
+### The shape of the error
+
+Worth naming, because it is the third of its kind this week. The original
+claim was not careless — it was *specific*, it was hedged in the right
+direction, and it was written to be honest about weak evidence. It was
+still false, because "I looked and did not find it" was recorded as "it is
+not there."
+
+The fix is the same one that keeps recurring: when a document says
+something cannot be checked, that sentence is a task, not a conclusion.
+
 ## 2026-08-30 (9) — bin/abc806-gtk, and the value of having nothing left to write
 
 The third Cairo framebuffer window in this repository, and the shortest —

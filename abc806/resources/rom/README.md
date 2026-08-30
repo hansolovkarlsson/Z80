@@ -54,9 +54,8 @@ is complete and verified in one pass.
 | `ABC-P4-1.bin` | PAL16L8 | 60 90240-01 | 2769 |
 
 **These are JEDEC fuse maps, not binaries** — ASCII, with an `L00000
-1111...*` line per product term. `ABC-P4-1.bin` was checked and is
-well-formed: 64 product lines of 32 fuses, 2048 in total, exactly a
-PAL16L8's array.
+1111...*` line per product term. Both are well-formed: 64 product lines of
+32 fuses, 2048 in total, exactly a 16L8's or 16R4's array.
 
 That matters because P4-1 *is* the ABC806's memory decode. MAME
 reimplements it behaviourally and has its own PAL lookup commented out,
@@ -74,7 +73,7 @@ the other two targets' ROMs come from, with its own `00index.txt`
 identifying each image.
 
 Every one that MAME carries was then verified against the checksums
-mainline `src/mame/luxor/abc80x.cpp` documents. **All fourteen match
+mainline `src/mame/luxor/abc80x.cpp` documents. **All sixteen match
 exactly on both CRC32 and SHA1** — byte-for-byte identical, not merely
 the right size:
 
@@ -94,12 +93,62 @@ the right size:
 | `HRU-I.bin` | `60 90128-01.6e` | match |
 | `HRU-II.bin` | `60 90127-01.12g` | match |
 | `V50.bin` | `60 90242-01.7e` | match |
+| `ABC-P3-1.bin` | `60 90239-01.1b` | match |
+| `ABC-P4-1.bin` | `60 90240-01.2d` | match |
 
-**The two PALs have no MAME entry to check against** — they are not in its
-`ROM_START`, because MAME does not read them. Their checksums are recorded
-here so a re-download can be compared, but unlike the other fourteen they
-rest on the archive alone. Said plainly rather than left to look like the
-same standard of evidence.
+### The PALs needed converting before they could be compared
+
+This file previously said **"the two PALs have no MAME entry to check
+against … they rest on the archive alone."** That was wrong, and the reason
+is worth recording because it is an easy mistake to repeat: MAME *does*
+carry both, in `ROM_REGION("abc_p3")` and `ROM_REGION("abc_p4")`, each with
+a full pin list in a comment above it. They were missed on a first pass
+because MAME never *reads* them — the PAL lookup in `read_pal_p4()` is
+commented out — so they do not appear anywhere a search for behaviour would
+land.
+
+They also could not be compared directly. The archive ships **JEDEC ASCII**
+(2,769 and 2,754 bytes) while MAME stores the **260-byte binary** its
+`jedparse` produces, so the two describe identical fuses in different
+containers and a naive checksum comparison fails.
+
+[`scripts/jed2bin.py`](../../../scripts/jed2bin.py) does the conversion and
+prints the checksums, so this is reproducible rather than a one-off claim:
+
+```
+$ scripts/jed2bin.py abc806/resources/rom/ABC-P4-1.bin
+ABC-P4-1.bin     fuses=2048 bytes=260 crc32=3cc5518d sha1=343cf951d01c9d361b695bb4e80eaadf0820b6bc
+```
+
+The format is 4 bytes of fuse count big-endian, then the fuses packed 8 per
+byte **least significant bit first**, uninverted — established by sweeping
+the four plausible conventions until both files matched their published
+checksums at once. Two independent files agreeing on one convention is what
+makes that a determination rather than a fit.
+
+### The pin lists
+
+MAME's comments give both PALs' pinouts, which are not otherwise recorded
+here and are what any future attempt to evaluate the fuse map will need.
+
+`ABC-P4-1` (PAL16L8, the memory mapper) — outputs marked `>`:
+
+| Pin | Signal | | Pin | Signal |
+|---|---|---|---|---|
+| 1 | I3 | | 11 | XML |
+| 2 | A15 | | 12 | >ROMD |
+| 3 | A14 | | 13 | HRAL |
+| 4 | B13 | | 14 | HRBL |
+| 5 | B12 | | 15 | KDL |
+| 6 | B11 | | 16 | >HRE |
+| 7 | M1L | | 17 | RKDL |
+| 8 | EME | | 18 | >MUX |
+| 9 | ENL | | 19 | >RAMD |
+| 10 | GND | | 20 | Vcc |
+
+`ABC-P3-1` (PAL16R4, the colour encoder): inputs `RTB`/`GTB`/`BTB` (pin
+6-8), `SFG` (9), `RFG`/`GFG` (12-13), `BFG` (18); outputs `>YL` (14),
+`>BL` (15), `>GL` (16), `>RL` (17), `>FGE` (19).
 
 Two further parts are not dumped **anywhere**, MAME included: the
 attribute-handler PAL (MAME carries only a pin list in a comment) and
