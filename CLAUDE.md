@@ -276,7 +276,18 @@ CP/M program silently produced no output at all - a failure a plain
 `abc806/` is a *fourth* machine target - the Luxor ABC806 (1983), the top
 of the ABC800 family - added on the terms the other two established: it
 links the same `z80core/z80.o`/`alu.o` and mounts the same `abcbus/` card.
-It is at **milestone 4**: `bin/abc806` (opt-in, `make abc806`) boots the
+**All five of `ABC806_SCOPING.md`'s gates are met.** See
+`abc806/docs/ABC806_REFERENCE.md` for the consolidated hardware reference
+(memory map including the high-resolution window, I/O ports, the 74ALS259
+bit assignments, both video decodes, the RTC protocol, the BASIC graphics
+commands) - that is the place to look before touching this target, and the
+summary here is deliberately partial. `abc806/docs/ABC806_ROADMAP.md` has
+status and open gaps, `abc806/docs/ABC806_COMPLETED.md` the finished
+milestone write-ups, and `abc806/docs/ABC806_SCOPING.md` the feasibility
+review written before any of it, which now carries an outcome section
+comparing what it predicted against what happened.
+
+`bin/abc806` (opt-in, `make abc806`) boots the
 real 32K firmware, programs the MC6845 for 80x25, and runs a genuine live
 session — `--interactive` gives real 3 MHz pacing, a live keyboard and a
 screen redrawn at 30fps *in colour*, on the terms `bin/abc80 --interactive`
@@ -284,8 +295,9 @@ established. `--type` answers `PRINT 6*7` with `42`, `--screen` dumps the
 text screen, `--screenshot` writes a real PNG, and `--disk` boots real
 UFD-DOS — `BYE` reaches the DOS command shell and the shell loads and runs
 `LIB` off the media, which is the assertion worth making since `LIB` is a
-program on the disk rather than a shell built-in. No high-resolution
-graphics and no GTK front-end yet.
+program on the disk rather than a shell built-in. `FGCTL 2` followed by
+`FGLINE` draws real coloured lines. No GTK front-end yet - that is the
+next job.
 
 **The machine draws into its high-resolution plane**, and the mechanism is
 the least guessable thing in this target. **When the instruction currently
@@ -363,8 +375,8 @@ missing block I/O opcodes, `--type`'s raw-UTF-8 bug, the DART's
 single-receive-byte constraint, and the "boot screen cannot validate the
 feature" near-miss. Each machine target's *finished* work now lives in its
 own `*_COMPLETED.md` (`cpm/docs/COMPLETED.md`,
-`abc80/docs/ABC80_COMPLETED.md`, `abc802/docs/ABC802_COMPLETED.md`) rather
-than in its roadmap, so each `ROADMAP.md` answers only "what works, what
+`abc80/docs/ABC80_COMPLETED.md`, `abc802/docs/ABC802_COMPLETED.md`,
+`abc806/docs/ABC806_COMPLETED.md`) rather than in its roadmap, so each `ROADMAP.md` answers only "what works, what
 doesn't, what's next" — they had grown to 4,605 lines between them, nearly
 all of it completed-work narrative. The milestone write-ups themselves are
 unchanged and still worth reading: most of this project's hard-won

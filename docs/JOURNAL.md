@@ -21,6 +21,61 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (8) — splitting the ABC806's docs, and writing its reference
+
+Housekeeping, but the kind this project treats as part of the work rather
+than after it.
+
+`ABC806_ROADMAP.md` had reached **604 lines, 552 of them finished-work
+narrative**, against 209 for the ABC80's and 217 for the ABC802's — both of
+which had already split their history into a `*_COMPLETED.md` for exactly
+this reason. The ABC806 had become the outlier, and the split is mechanical
+once the convention exists: the milestone write-ups move verbatim, the
+roadmap keeps a status table, the open gaps and a ranked "what is next".
+100 lines and 570.
+
+Nothing was rewritten in the move. The "found the hard way" notes are the
+most valuable thing in those write-ups and rewriting them from memory is
+how detail quietly goes missing.
+
+### The reference was overdue, and the roadmap said so
+
+The old roadmap opened with "there is no `ABC806_REFERENCE.md` yet … worth
+writing once the machine does something visible, which it does not yet."
+That condition had been satisfied several commits earlier and the sentence
+had simply stayed put — which is its own small lesson about deferral notes:
+they do not check themselves.
+
+Writing it was worth more here than on the other targets, because this
+machine has an unusual concentration of facts that are not inferable from a
+memory map and were scattered across a roadmap, five journal entries and a
+handful of source comments: the fetch-window memory rule, the M1 character
+window, the inverted page map, the attribute-byte-as-command encoding, the
+`RAD` scanline substitution, the palette carrying the horizontal
+resolution, the RTC's clock edges and inverted CS, the latch bit
+assignments, port `0x37` serving two devices on read and a DIP switch on
+write, and the four-colour pen encoding.
+
+Gathering them in one place turned up something too: the reference's own
+claim that a character cell is 6x10 was worth checking rather than
+asserting, and `--screenshot` reporting 480x250 for 80x25 confirms it
+arithmetically.
+
+### Two stale claims found by doing this
+
+Both in files I had edited within the last few commits:
+
+- The roadmap's Known gaps still said **"The high-resolution plane is not
+  rendered — `--screenshot` draws the text layer only"**, two commits after
+  it started rendering.
+- `CLAUDE.md` still said the target was at **milestone 4** with "no
+  high-resolution graphics", after milestone 5 was finished and documented.
+
+Neither is dramatic, and both are the predictable cost of appending to a
+status section instead of re-reading it. Worth noting that the *split*
+found them: moving 552 lines forces a read of every line, which a normal
+edit does not.
+
 ## 2026-08-30 (7) — the colours were right; I was reading a small picture by eye
 
 Entry (6) ended by reporting that colour was broken: four lines drawn with
