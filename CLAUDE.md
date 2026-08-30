@@ -273,6 +273,36 @@ every already-built object compiled against the old, smaller struct while
 CP/M program silently produced no output at all - a failure a plain
 `make clean` hides, which is exactly what makes it worth tracking.
 
+`abc806/` is a *fourth* machine target - the Luxor ABC806 (1983), the top
+of the ABC800 family - added on the terms the other two established: it
+links the same `z80core/z80.o`/`alu.o` and mounts the same `abcbus/` card.
+It is at **milestone 1**: `bin/abc806` (opt-in, `make abc806`) boots the
+real 32K firmware, programs the MC6845 for 80x25, clears the screen and
+parks polling the keyboard. No rendering, keyboard, disk or graphics yet.
+See `abc806/docs/ABC806_ROADMAP.md` for status and
+`abc806/docs/ABC806_SCOPING.md` for the feasibility review written before
+any of it - which now carries an outcome section comparing what it
+predicted against what happened, the same shape
+`ABC802_FLOPPY_SCOPING.md` uses.
+
+Three ABC806 facts worth knowing before touching that target, none
+guessable. **Its memory map is decided by a PAL16L8** (`ABC-P4-1.bin`,
+committed, a well-formed JEDEC fuse map) rather than by address decode;
+`emu/src/memory.c` currently follows MAME's behavioural form of it, which
+is also where MAME's own `abc806 30K banking` TODO lives, so evaluating
+the real fuse map is an open opportunity rather than a settled question.
+**The page map's entries are stored inverted** - MAME reads them as
+`m_map[page] ^ 0xff` before testing ENL in bit 7, so an entry of zero
+means "do not divert"; with the polarity reversed, enabling EME sends
+every access to video RAM and the machine dies thousands of instructions
+later on an illegal opcode. And **DTR-B is not LRS here**: on the ABC802
+that pin selects ROM or RAM in the low 32K, on the ABC806 it is KEYDTR,
+swapping the low 32K between ROM and the high-resolution plane. Same chip,
+same pin, different wiring - which is also why
+`abc806/emu/src/ports.c` is deliberately still a near-copy of the
+ABC802's rather than a shared module: extraction waits until it is known
+what is genuinely common, exactly as `abcbus/` did.
+
 Project history lives in the top-level `docs/` too, and is worth
 consulting before repeating an investigation: `docs/JOURNAL.md` is a
 running log organized by *when* (what was worked on, why an approach was

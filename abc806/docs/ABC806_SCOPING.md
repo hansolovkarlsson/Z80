@@ -1,6 +1,12 @@
 # Scoping: an ABC806 machine target
 
-**Status**: **not started.** Written before any work, on the same terms as
+**Status**: **milestone 1 executed.** `bin/abc806` boots the real firmware
+and passes gate 1 — see [`ABC806_ROADMAP.md`](ABC806_ROADMAP.md) for what
+that took and what it found. The outcome section immediately below records
+prediction against result; **everything after it is the document as
+written before the work**, unchanged.
+
+Written before any work, on the same terms as
 [`ABC802_FLOPPY_SCOPING.md`](../../abc802/docs/ABC802_FLOPPY_SCOPING.md) —
 so that whatever happens next can be compared against what was predicted
 here. Nothing in this document has been run; it is a review of the
@@ -13,6 +19,40 @@ observation say so.
 exists, and what would it actually cost?
 
 ---
+
+## Outcome so far
+
+**Gate 1 passed, first run.** The machine executes past reset, programs
+the CRTC for 80×25, clears the screen, and parks polling the keyboard.
+
+**What this document got right.** The shape entirely. The firmware really
+was complete and verified in one pass (fourteen files, CRC32 and SHA1
+against MAME, zero mismatches). Half the machine really did transfer — the
+CTC, SIO, DART and CRTC came across from the ABC802 essentially unchanged.
+And the risk was correctly placed: every one of milestone 1's real
+difficulties was in the memory decode.
+
+**What it got wrong, in the reassuring direction.** It predicted the MMU
+might force a change to the shared core's instruction-fetch path. It did
+not. The machine's reset state is ROM-low/RAM-high, exactly the ABC802's
+shape, so the resident-32K arrangement carried over untouched. That risk is
+deferred rather than retired — firmware executing out of a mapped page
+would still break it — but it did not bite at milestone 1.
+
+**The question this document said to answer first** — whether
+`ABC-P4-1.bin` can be evaluated at all — **is answered: yes.** It is a
+well-formed JEDEC fuse map, 64 product lines of 32 fuses, exactly a
+PAL16L8's array. It is committed and still unused; the decode follows
+MAME's behavioural form for now, because a PAL evaluator written before
+anything booted would have had nothing to check itself against.
+
+**What no amount of scoping would have predicted**: the page map's entries
+are stored *inverted*, and getting that backwards kills the machine
+thousands of instructions away from the cause. See the roadmap.
+
+---
+
+*Everything below this line is the document as written before the work.*
 
 ## Short answer
 

@@ -213,12 +213,14 @@ CP/M-specific — see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
   through the ABC802's real ROM; the ABC80 mounts the same media and its
   own DOS keeps its directory in the same place, but that path has not
   been tested.
-- `abc806/docs/` — no emulator yet, only
-  [`ABC806_SCOPING.md`](abc806/docs/ABC806_SCOPING.md): a costed
-  feasibility review of a fourth machine target, the Luxor ABC806, written
-  before any work so prediction can be compared with outcome. Short
-  version: possible, better resourced than the ABC802 was, and the memory
-  management unit is both the risk and the first milestone.
+- `abc806/` — the Luxor ABC806 machine target (`make abc806`), at
+  milestone 1: it boots the real 1983 firmware, programs the CRTC for
+  80×25 and clears the screen, then waits for a key. No video rendering,
+  keyboard, disk or graphics yet. See
+  [`ABC806_ROADMAP.md`](abc806/docs/ABC806_ROADMAP.md) for status and
+  [`ABC806_SCOPING.md`](abc806/docs/ABC806_SCOPING.md) for the feasibility
+  review written before any of it, now carrying an outcome section
+  comparing prediction against result.
 - `cpm/gtk/` — an opt-in (`make gtk`) thin GTK4 launcher for `bin/z80`,
   attached to a pty with a `VteTerminal` doing the real terminal
   interpretation. See `cpm/gtk/README.md`.

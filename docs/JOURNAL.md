@@ -21,6 +21,79 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-29 (14) — ABC806 milestone 1: a fourth machine boots
+
+`bin/abc806` runs the real Luxor ABC806 firmware and passes the gate
+`ABC806_SCOPING.md` set for milestone 1 — executes past reset and programs
+the CRTC. Three signs say it is a real boot rather than a survival: the
+CRTC is set for **80×25**, which is this machine's geometry and not the
+ABC802's 80×24; character RAM holds exactly 2000 bytes of `0x20`, so the
+ROM cleared the screen it had just configured; and execution settles into
+a six-address loop polling port `0x23`, DART channel B — waiting for a key.
+Both committed DOS PROMs boot identically.
+
+### Scoping earned its keep again
+
+Written yesterday, checked today. It got the shape entirely right — the
+firmware was complete and verified in one pass, half the machine
+transferred, and the risk was correctly placed in the memory decode, where
+every real difficulty turned out to be.
+
+It was wrong in the reassuring direction on the biggest risk: it predicted
+the MMU might force a change to the shared core's instruction-fetch path.
+It did not, because the ABC806's *reset* state is ROM-low/RAM-high, exactly
+the ABC802's shape, so the resident-32K arrangement carried over untouched.
+Deferred rather than retired — firmware executing out of a mapped page
+would still break it.
+
+And the question it said to answer first is answered: `ABC-P4-1.bin` is a
+well-formed JEDEC fuse map, 64 product lines of 32 fuses, exactly a
+PAL16L8's array. It is committed and deliberately unused. A PAL evaluator
+written before anything booted would have had nothing to check itself
+against; now it would.
+
+### The bug worth remembering
+
+**The page map's entries are stored inverted.** MAME reads them as
+`m_map[page] ^ 0xff` before testing ENL in bit 7, so an entry of zero —
+what the map holds at reset — means "do not divert". I implemented the test
+the other way round, so the moment the ROM enabled EME, *every* access went
+to video RAM.
+
+The failure appeared as an illegal `ED C3` at `0x05D1`, thousands of
+instructions and one subsystem away from the cause. What found it was
+bisection: disable one port handler at a time and see which one restores
+the boot. Three tries, and the answer was unambiguous.
+
+Second one of the same family: `0x34`-`0x36` have **no low-byte mirror**,
+and decoding them as `port & 0x3F` also claims `0x74`, `0xB4` and `0xF4` —
+CTC mirrors. Both bugs are "a mask that is nearly right", and both killed
+the machine far from where they lived.
+
+### A deliberate duplication
+
+`abc806/emu/src/ports.c` is a near-copy of the ABC802's, because the CTC,
+SIO, DART and CRTC are the same chips. That is not laziness and it is not
+an accident — it is the order `abcbus/` was built in. Extract the shared
+module once it is known what is genuinely common; find that out by having
+a second consumer far enough along to say. At milestone 1 it is not.
+
+The differences found so far are exactly the argument for waiting: DTR-B is
+LRS on the ABC802 and KEYDTR on the ABC806 — same chip, same pin, different
+wiring — and ports `0x06`/`0x07` are ABC-bus lines on one machine and video
+registers on the other. A premature extraction would have unified two
+things that are not the same.
+
+### Where it stops
+
+No banner. The ROM clears the screen and waits without writing visible
+text, where the ABC802 shows its sign-on first. Whether that is a real
+difference or something the machine wants before it will draw is the open
+question milestone 2 starts from — and since it is polling the keyboard,
+milestone 3 may simply answer it.
+
+---
+
 ## 2026-08-29 (13) — the right disk, and a bug that halved every one I made
 
 The user pointed at <https://www.abc80.net/archive/luxor/>. Its
