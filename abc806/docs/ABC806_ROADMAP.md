@@ -188,19 +188,81 @@ that specific regression is currently covered by *looking at the real
 ROM's banner*, not by the suite. Left as an open item rather than
 described as covered.
 
+## The real-time clock — done
+
+Booted from a real 640K ABC832 UFD-DOS system disk, the DOS prints a date
+line. Before this it read:
+
+```
+Datum och tid: 19é5-é5-é5  é5.é5.é5
+```
+
+and now it reads the host's own clock, to the second:
+
+```
+DOS är UFD-DOS ver. 20
+DR_: motsvarar MF_:
+
+Datum och tid: 2026-08-29 20.25.32
+ABC806
+```
+
+That is the whole gate, and it is a good one: every digit is a BCD nibble
+that travelled through a shift register a bit at a time, so a date that
+reads correctly means the command encoding, the register order, the clock
+edges and the bit order are all right at once.
+
+### What the device is
+
+The E050-16 (`emu/src/rtc.c`, reimplemented from MAME's `e0516_device`)
+has no bus at all. Three bits of the 74ALS259 at port `0x36` drive chip
+select, clock and data, and the data line is read back as **bit 7 of port
+`0x37`** — which it shares with the HRU II palette PROM's low nibble. So
+one register read is thirty-odd `OUT`s and `IN`s of bit-banging, and the
+protocol is a shift register: CS low arms a four-bit command (address in
+bits 3:1, read/write in bit 0), then data moves a bit per clock edge.
+
+Address 7 is not a register but a mode — continuous read-out of all seven
+registers as one 56-bit transfer — and it is the one the DOS uses.
+
+### Found the hard way
+
+- **Reads move on the falling clock edge and writes on the rising one.**
+  Not a symmetry to tidy up: get it wrong and the value is plausibly
+  shaped and off by one bit position, which is exactly the kind of wrong
+  that reads as a real date on some seconds and not others.
+- **The port `0x37` read had to become two devices at once.** It returned
+  a constant `0xFF` before, which is a data line stuck high — the clock
+  appeared to answer, with all bits set. The HRU II PROM's low nibble and
+  the clock's bit 7 now come from the same read.
+- **CS is inverted between the latch and the chip**, so a *set* latch bit
+  deselects the clock.
+- **The ABC806 ties OUTSEL high**, which removes the chip's high-impedance
+  read state entirely. That simplification belongs to this board, not to
+  the chip, and is flagged in the source for anyone porting it.
+
+### Verified
+
+`make test-abc806` gains `disk-boot-and-rtc`, which boots real media and
+asserts the DOS agrees with the host about the date. It needs a disk image
+this repo does not commit, so it **skips loudly** without
+`ABC806_TEST_DISKS` — and a skip is counted separately from a pass.
+
 ## Known gaps
 
 Everything below is expected at this point: two milestones in, of five.
 
 - **No interactive mode.** `--type` delivers paced keystrokes and `--disk`
-  attaches ABC-bus media, both because milestone 2 needed them to rule
-  things out, but there is no live session yet. Milestone 3.
+  attaches ABC-bus media — and the machine genuinely boots real UFD-DOS
+  off that media — but there is no live session yet. Milestone 3.
 - **The high-resolution plane is not rendered.** `--screenshot` draws the
   text layer only.
 - **Flash is static.** `flash_on` is passed to the decode but nothing
   drives it; there is no frame clock yet.
-- **No high-resolution graphics.** Milestone 5. `HRU-I`, `HRU-II` and
-  `V50` are committed and unused; `RAD` is now in use.
+- **No high-resolution graphics.** Milestone 5. `HRU-I` and `V50` are
+  committed and unused; `RAD` and `HRU-II` are now in use — though HRU II
+  is only being read back through port `0x37`, not used to colour a
+  high-resolution plane.
 - **The PAL fuse map is not evaluated.** `ABC-P4-1.bin` is a well-formed
   JEDEC dump and the memory decode currently follows MAME's behavioural
   approximation instead — inheriting its `abc806 30K banking` gap. See
@@ -216,5 +278,8 @@ Everything below is expected at this point: two milestones in, of five.
   checks the machine's configuration and the decode instead.
 - **RAM is 32K directly addressable**, as on real hardware, with the rest
   reachable only through EME and the map. The 544K option is not modeled.
-- **No RTC, no protection device.** Both hang off the same 74ALS259; the
-  latch bits are decoded and dropped.
+- **No protection device.** It hangs off the same 74ALS259 as the clock;
+  its latch bit (3, PROT INI) is decoded and dropped.
+- **The clock is read-only in practice.** Writes are implemented — the DOS
+  can set the time — but nothing persists them, so a new run reads the
+  host clock again rather than whatever was last written.

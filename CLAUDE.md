@@ -315,6 +315,23 @@ the real row, the cursor being the same trick at scanline `0x0F`. Double
 width is described by the cell *before* it. And the glyph is six bits from
 the top of the font byte after a two-place left shift.
 
+It also **boots real UFD-DOS off `--disk` media and shows the right date
+and time**, which is the E050-16 RTC (`abc806/emu/src/rtc.c`). That chip
+has no bus at all: three bits of the 74ALS259 at port `0x36` drive chip
+select, clock and a bidirectional data line, and the line reads back as
+**bit 7 of port `0x37`**, sharing that port with the HRU II PROM's low
+nibble - so returning a constant there is not "unimplemented" but a data
+line stuck high, which is what made the DOS print `19é5-é5-é5`. Two
+details are not tidy-uppable: **reads move on the falling clock edge and
+writes on the rising one** (wrong, and the value is plausibly shaped and
+off by one bit), and **CS is inverted between the latch and the chip**.
+The ABC806 ties OUTSEL high, deleting the chip's hi-Z read state - a
+simplification belonging to this board, not the chip. The DOS's own date
+line is the whole regression test, and a strong one: every digit is a BCD
+nibble clocked through a shift register, so a correct date means the
+command encoding, register order, clock edges and bit order are all right
+at once.
+
 Three further ABC806 facts worth knowing before touching that target, none
 guessable. **Its memory map is decided by a PAL16L8** (`ABC-P4-1.bin`,
 committed, a well-formed JEDEC fuse map) rather than by address decode;

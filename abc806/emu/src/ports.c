@@ -33,6 +33,7 @@
 #include "../../../abcbus/disk.h"
 #include "ports.h"
 #include "memory.h"
+#include "rtc.h"
 
 // --- The frame clock on DART channel B's RI input ---------------------
 //
@@ -415,6 +416,7 @@ static void sio_write_control(int channel, uint8_t value) {
 //   6 RTC CLK
 //   7 RTC DIO / PROT DIN
 static uint8_t sto_latch = 0;
+static bool hru2_a8 = false;
 
 // The 16-entry high-resolution colour lookup, written through port 0x07.
 static uint8_t hrc[16];
@@ -428,7 +430,13 @@ static void sto_write(uint8_t value) {
     switch (bit) {
         case 0: abc806_set_eme(state); break;
         case 1: col80 = !state; break;   // 40-column line
-        default: break;                  // RTC and protection: milestone 4+
+        case 2: hru2_a8 = state; break;  // palette PROM high address
+        // The clock's three lines. CS is inverted between the latch and
+        // the chip, which is why a set latch bit *deselects* it.
+        case 5: abc806_rtc_cs(!state); break;
+        case 6: abc806_rtc_clk(state); break;
+        case 7: abc806_rtc_dio_w(state); break;
+        default: break;                  // 3 = PROT INI, 4 = TXOFF
     }
 }
 
@@ -485,7 +493,7 @@ static Device decode_port(uint8_t port, int *index) {
 }
 
 static uint8_t io_in(Z80 *cpu, uint8_t port, uint8_t stored) {
-    (void)cpu; (void)stored;
+    (void)stored;
     uint8_t value = 0xFF;
     int index = 0;
 
@@ -508,8 +516,14 @@ static uint8_t io_in(Z80 *cpu, uint8_t port, uint8_t stored) {
             value = 0x7F;
             break;
         case DEV_SSO:
-            // Palette PROM (HRU II) read. Not modeled yet; milestone 5.
-            value = 0xFF;
+            // One port, two devices: the HRU II palette PROM answers in
+            // the low nibble and the real-time clock's data line in bit 7.
+            // The PROM's address comes from the *high* address byte, which
+            // for IN A,(C) is register B, plus the A8 line off the
+            // 74ALS259.
+            value = (uint8_t)(abc806_hru2_prom()[((hru2_a8 ? 1 : 0) << 8) |
+                                                 cpu->b] & 0x0F);
+            if (abc806_rtc_dio_r()) value |= 0x80;
             break;
         case DEV_ABCBUS:
             // The synthetic controller answers only when it is the

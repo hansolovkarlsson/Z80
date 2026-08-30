@@ -21,6 +21,94 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-29 (17) — the ABC806 asks what day it is, and now gets an answer
+
+Boot the ABC806 from a real 640K ABC832 UFD-DOS system disk and the DOS
+prints a date line. Until today it printed this:
+
+```
+Datum och tid: 19é5-é5-é5  é5.é5.é5
+```
+
+Now it prints this, with the host's own clock beside it for comparison:
+
+```
+host time:     2026-08-29 20.25.32
+Datum och tid: 2026-08-29 20.25.32
+```
+
+That was the whole job: the E050-16 real-time clock. It is the one device
+the ROM visibly asks for and did not get, which is exactly why it was
+worth doing next — small, and with a gate nobody can argue about.
+
+### Why the gate is stronger than it looks
+
+A date line is a weak-looking assertion. It is not. Every digit in it is a
+BCD nibble that reached the CPU one bit at a time through a shift
+register, so a date that reads correctly means the four-bit command
+encoding, the register order in the continuous-read latch, the clock edge
+each direction moves on, and the bit order within a byte are *all* right
+simultaneously. Any one of them wrong and the line is garbage again,
+usually differently-shaped garbage. There is no partial credit here, which
+makes it the rare case where one string comparison genuinely covers a
+whole protocol.
+
+### The device has no bus
+
+Worth stating plainly, because it shapes everything: the E050-16 is not
+memory-mapped and has no data bus. Three bits of the 74ALS259 addressable
+latch at port `0x36` drive chip select, clock and a bidirectional data
+line, and that data line is read back as **bit 7 of port `0x37`**. One
+register read is therefore thirty-odd `OUT`s and `IN`s of bit-banging by
+the DOS, and modelling it means modelling a shift register and its edges,
+not a register file.
+
+CS low arms a four-bit command — address in bits 3:1, read/write in bit 0.
+Address 7 is not a register but a mode, continuous read-out of all seven
+registers as a single 56-bit transfer, and that is the one the DOS uses.
+
+### Found the hard way
+
+- **Port `0x37` had to become two devices at once.** It was returning a
+  constant `0xFF`, which is not "unimplemented" — it is a data line stuck
+  high. The clock appeared to answer every read with all bits set, which
+  is where `é5` came from. The port now returns the HRU II palette PROM's
+  low nibble *and* the clock's bit 7 from the same read, which is what the
+  hardware does and what MAME's `cli_r` already said it does.
+- **Reads move on the falling clock edge, writes on the rising one.** This
+  looks like an asymmetry to tidy away and is not. Getting it wrong yields
+  a value that is plausibly shaped and off by one bit position — the worst
+  failure mode available, because it reads as a real date on some seconds
+  and not others.
+- **CS is inverted between the latch and the chip.** A *set* latch bit
+  deselects the clock.
+- **The ABC806 ties OUTSEL high**, which deletes the chip's
+  high-impedance read state and its special case. That simplification is
+  the board's, not the chip's — flagged in `rtc.c`'s own header, because
+  anyone porting this to another ABC800-family machine needs to know it is
+  not free.
+
+### The test, and what it costs
+
+`make test-abc806` gains `disk-boot-and-rtc`: boot real media, assert the
+DOS agrees with the host about the date. It copies the image to a
+temporary directory first, because the DOS writes to media and a test must
+never mutate the user's archive — a lesson from [entry (7)](#2026-08-29-7--driving-the-real-thing-and-what-a-live-session-found)
+earlier today, where a shared test disk made the user's own writes look
+like an emulator bug.
+
+It needs an image this repo deliberately does not commit, so it **skips
+loudly** and is counted apart from the passes. That is the same bargain
+the ABC80 and ABC802 suites already make, and it is the right one: a check
+that silently passes when its subject is absent is worse than no check.
+
+The assertion is on the *doubled* text — `--screen` dumps raw character
+cells and this ROM writes its banner double-width, so `2026` is `22002266`
+in character RAM. Asserting on the doubled form is deliberate rather than
+sloppy: it is what the machine actually put in memory, and normalising it
+away would quietly stop testing the double-width path that took two bugs
+to get right this morning.
+
 ## 2026-08-29 (16) — the ABC806 draws: a delay loop, and two bugs the picture caught
 
 `bin/abc806 --screenshot` now renders **ABC806**, the ROM's own sign-on.

@@ -22,6 +22,7 @@
 #include "memory.h"
 #include "png.h"
 #include "ports.h"
+#include "rtc.h"
 #include "step.h"
 
 #define DEFAULT_ROM_DIR "abc806/resources/rom"
@@ -97,6 +98,7 @@ int main(int argc, char **argv) {
     if (!abc806_memory_init(&cpu, rom_dir, dos_rom)) return 1;
     abc806_memory_attach(&cpu);
     abc806_ports_attach(&cpu);
+    abc806_rtc_init();
 
     for (int d = 0; d < disk_count; d++)
         if (!abcbus_disk_attach_arg(disk_paths[d])) return 1;

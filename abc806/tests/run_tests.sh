@@ -62,4 +62,39 @@ else
     tl_end "$(diff "$FIXTURES/chargen.txt" <("$CHARGEN_DUMP" 2>&1) | head -20)"
 fi
 
+# --- The real-time clock, on real media ---------------------------------
+#
+# The only end-to-end check of the E0516, and it needs a disk: nothing in
+# the ROM alone reads the clock. A 640K UFD-DOS system image prints
+# `Datum och tid:` during boot, straight out of the chip, so the assertion
+# is simply that the machine agrees with the host about what day it is.
+#
+# Point ABC806_TEST_DISKS at a directory holding sys832-ufd.img (an ABC832
+# UFD-DOS system disk - see abc802/resources/disks/README.md for where to
+# get one). Skips loudly without it; a skip is never counted as a pass.
+double() { printf '%s' "$1" | sed 's/./&&/g'; }
+
+RTC_IMAGE="${ABC806_TEST_DISKS:-}/sys832-ufd.img"
+if [ -z "${ABC806_TEST_DISKS:-}" ]; then
+    tl_skip "disk-boot-and-rtc" "set ABC806_TEST_DISKS to a directory holding sys832-ufd.img (a 640K ABC832 UFD-DOS system disk)"
+elif [ ! -f "$RTC_IMAGE" ]; then
+    tl_skip "disk-boot-and-rtc" "$RTC_IMAGE not found"
+else
+    # Copy first: the DOS writes to media, and a test must never mutate
+    # the user's archive.
+    WORK="$(mktemp -d)"
+    trap 'rm -rf "$WORK"' EXIT
+    cp "$RTC_IMAGE" "$WORK/sys.img"
+    out=$("$ABC806" --cycles 200000000 --disk "$WORK/sys.img" --screen 2>&1)
+    tl_begin "disk-boot-and-rtc"
+    # --screen dumps raw cells, and this ROM writes its text double-width,
+    # so every character appears twice. Asserting on the doubled form is
+    # deliberate: it is what the machine actually put in character RAM, and
+    # normalising it away would quietly stop testing the double-width path.
+    tl_want "$out" "$(double UFD-DOS)" "the DOS booting off real ABC832 media"
+    tl_want "$out" "$(double "$(date '+%Y-%m-%d')")" \
+            "the clock agreeing with the host about the date"
+    tl_end "$out"
+fi
+
 tl_summary "abc806"
