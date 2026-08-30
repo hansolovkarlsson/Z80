@@ -1042,7 +1042,13 @@ real screenshots: the ROM's own sign-on banner and genuine GRAPHICS-mode
 2×3 block-mosaic pixels both render correctly, real interactive keyboard
 input reaches BASIC, `--quickload`/`--quicksave` round-trip
 byte-identically against the CLI's own, and the live-audio tone's
-frequency is independently verified via zero-crossing analysis — see
+frequency is independently verified via zero-crossing analysis. It also has
+a headless `--screenshot` (with `--type` and `--steps`) that opens no
+window and claims no audio device, which is what gives it two automated
+checks in `abc80/tests/run_tests.sh` - they skip loudly when the opt-in
+binary is absent, and they assert on a *count* of lit pixels, the
+typed-vs-boot comparison being the half that catches a decode drawing from
+the wrong address — see
 `abc80/gtk/README.md` and `abc80/docs/ABC80_ROADMAP.md`'s Milestone 11
 for the full write-up (that milestone now has no open items).
 

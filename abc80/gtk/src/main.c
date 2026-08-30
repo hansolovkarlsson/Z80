@@ -429,6 +429,9 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
     }
 }
 
+// Defined below, beside pump_steps(), which shares it.
+static void maybe_quickload(AppState *app);
+
 static gboolean on_timer_tick(gpointer user_data) {
     AppState *app = user_data;
 
@@ -477,10 +480,7 @@ static gboolean on_timer_tick(gpointer user_data) {
         // after BASIC's boot-time BOFA/EOFA reset loop has fully exited
         // but before any keyboard input can be read - the only safe place
         // to inject a saved program without a race against either.
-        if (!app->quickload_done && app->cpu.pc == 0x02AA) {
-            abc80_cassette_quickload(app->ram, app->quickload_path);
-            app->quickload_done = true;
-        }
+        maybe_quickload(app);
 
         int cycles = abc80_step(&app->cpu, app->ram, &app->sound_log,
                                  &app->total_cycles, &app->next_pio_interrupt_at);
@@ -668,8 +668,25 @@ static int extract_line_numbers(const uint8_t *ram, uint16_t *out, int max_lines
 // pacing - this is a one-shot, bounded batch driven synchronously from
 // a menu action, the same style --quickload's own PC==0x02AA trigger
 // already works within) for `count` instructions, or until a halt.
+// The --quickload injection point, identical to abc80/emu/src/main.c's
+// own: 0x02AA is the ROM's line-reading routine entry, the one address
+// confirmed (by that file's own extensive comment) to run after BASIC's
+// boot-time BOFA/EOFA reset loop has fully exited but before any keyboard
+// input can be read - the only safe place to inject a saved program
+// without a race against either.
+//
+// Shared by the timer tick and the headless --screenshot pump so the two
+// cannot disagree about where a program gets injected.
+static void maybe_quickload(AppState *app) {
+    if (app->quickload_path && !app->quickload_done && app->cpu.pc == 0x02AA) {
+        abc80_cassette_quickload(app->ram, app->quickload_path);
+        app->quickload_done = true;
+    }
+}
+
 static void pump_steps(AppState *app, int count) {
     for (int i = 0; i < count; i++) {
+        maybe_quickload(app);
         int cycles = abc80_step(&app->cpu, app->ram, &app->sound_log,
                                  &app->total_cycles, &app->next_pio_interrupt_at);
         if (cycles < 0) return; // halted - nothing more this helper can do
@@ -930,6 +947,23 @@ static void on_load_program(GSimpleAction *action, GVariant *parameter, gpointer
 // all) rather than a second, potentially-drifting reimplementation.
 // draw_screen()'s own `area` parameter is unused in its body (cast to
 // void immediately), so passing NULL here is safe.
+// Renders the current screen to a PNG through the *identical*
+// draw_screen() the live window uses, against an offscreen surface. Used
+// by the File menu and by the headless --screenshot flag, so a saved image
+// is the same code path as a displayed one rather than a second
+// implementation that could drift.
+static bool write_screenshot(AppState *app, const char *path) {
+    int w = ABC80_GTK_PIXEL_WIDTH * ABC80_GTK_SCALE;
+    int h = ABC80_GTK_PIXEL_HEIGHT * ABC80_GTK_SCALE;
+    cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+    cairo_t *cr = cairo_create(surface);
+    draw_screen(NULL, cr, w, h, app);
+    bool ok = cairo_surface_write_to_png(surface, path) == CAIRO_STATUS_SUCCESS;
+    cairo_destroy(cr);
+    cairo_surface_destroy(surface);
+    return ok;
+}
+
 static void on_screenshot_response(GObject *source, GAsyncResult *res, gpointer user_data) {
     GtkFileDialog *dialog = GTK_FILE_DIALOG(source);
     AppState *app = user_data;
@@ -937,14 +971,9 @@ static void on_screenshot_response(GObject *source, GAsyncResult *res, gpointer 
     if (!file) return;
     char *path = g_file_get_path(file);
     if (path) {
-        int w = ABC80_GTK_PIXEL_WIDTH * ABC80_GTK_SCALE;
-        int h = ABC80_GTK_PIXEL_HEIGHT * ABC80_GTK_SCALE;
-        cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
-        cairo_t *cr = cairo_create(surface);
-        draw_screen(NULL, cr, w, h, app);
-        cairo_surface_write_to_png(surface, path);
-        cairo_destroy(cr);
-        cairo_surface_destroy(surface);
+        if (!write_screenshot(app, path)) {
+            fprintf(stderr, "Failed to write screenshot '%s'\n", path);
+        }
         g_free(path);
     }
     g_object_unref(file);
@@ -1263,6 +1292,12 @@ static void print_usage(const char *prog) {
     printf("                     the base ABC80's own) instead of the default white-on-black -\n");
     printf("                     text/background/border colors can all be changed afterward\n");
     printf("                     from the Colors menu regardless of this flag\n");
+    printf("  --screenshot FILE  headless: run, render one frame to FILE, exit.\n");
+    printf("                     Opens no window and claims no audio device -\n");
+    printf("                     this is how changes here get verified.\n");
+    printf("  --steps N          with --screenshot, instructions to run first\n");
+    printf("                     (default 4000000, enough to reach the prompt)\n");
+    printf("  --type TEXT        with --screenshot, type TEXT and Return first\n");
     printf("  --turbo N          Run at N times real ABC80 speed (e.g. --turbo 4) instead\n");
     printf("                     of the default real-hardware pacing (N=1). Live audio is\n");
     printf("                     disabled whenever N != 1 - see main.c's own comment for why.\n");
@@ -1280,6 +1315,9 @@ int main(int argc, char *argv[]) {
     const char *dos_rom = NULL;
     const char *quickload_path = NULL;
     const char *quicksave_path = NULL;
+    const char *screenshot_path = NULL;
+    const char *type_text = NULL;
+    long long screenshot_steps = 4000000;
     double turbo_multiplier = 1.0;
     int arg_i = 1;
     if (arg_i < argc && argv[arg_i][0] != '-') {
@@ -1297,6 +1335,12 @@ int main(int argc, char *argv[]) {
             quickload_path = argv[++arg_i];
         } else if (strcmp(argv[arg_i], "--quicksave") == 0 && arg_i + 1 < argc) {
             quicksave_path = argv[++arg_i];
+        } else if (strcmp(argv[arg_i], "--screenshot") == 0 && arg_i + 1 < argc) {
+            screenshot_path = argv[++arg_i];
+        } else if (strcmp(argv[arg_i], "--type") == 0 && arg_i + 1 < argc) {
+            type_text = argv[++arg_i];
+        } else if (strcmp(argv[arg_i], "--steps") == 0 && arg_i + 1 < argc) {
+            screenshot_steps = atoll(argv[++arg_i]);
         } else if (strcmp(argv[arg_i], "--turbo") == 0 && arg_i + 1 < argc) {
             const char *val = argv[++arg_i];
             char *endptr = NULL;
@@ -1388,6 +1432,31 @@ int main(int argc, char *argv[]) {
     abc80_keyboard_init_port_aliases();
     abc80_sound_log_init(&app.sound_log);
     app.next_pio_interrupt_at = ABC80_PIO_INTERRUPT_PERIOD_TSTATES;
+
+    // Headless render, and the reason this app has one at all: automating a
+    // screen capture against the user's real desktop steals focus and
+    // switches Spaces while they are working (see this directory's
+    // README). So the app is made to verify *itself* instead - which also
+    // gives bin/abc80-gtk the automated coverage it had none of.
+    //
+    // Deliberately before SDL and before any GtkApplication exists: no
+    // window is opened, no audio device claimed, and nothing touches the
+    // desktop. The machine runs unpaced, then one frame is rendered
+    // through the identical draw_screen() the live window uses.
+    if (screenshot_path) {
+        pump_steps(&app, (int)(screenshot_steps > 0 ? screenshot_steps : 0));
+        if (type_text) {
+            char *decoded = decode_utf8_to_abc80(type_text, strlen(type_text));
+            inject_line(&app, decoded ? decoded : type_text);
+            g_free(decoded);
+        }
+        if (!write_screenshot(&app, screenshot_path)) {
+            fprintf(stderr, "Failed to write '%s'\n", screenshot_path);
+            return EXIT_FAILURE;
+        }
+        printf("Wrote %s\n", screenshot_path);
+        return EXIT_SUCCESS;
+    }
 
     // Live audio (see audio_callback() above). SDL_INIT_AUDIO only -
     // never SDL_INIT_VIDEO/a window - so there's no overlap with GTK's

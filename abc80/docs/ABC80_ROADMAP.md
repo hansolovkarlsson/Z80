@@ -85,13 +85,15 @@ again as a list of things that are no longer missing.
   repo's flat-memory-model precedent for the CP/M target rather than
   introducing an abstraction early. Revisit only if something concrete
   needs it.
-- **The GTK app has no automated coverage.** `bin/abc80-gtk` shares
-  `abc80_step()` and the ABC-bus glue with the CLI, so the logic under it
-  is tested; what is not tested is the window itself. Unlike
-  `bin/abc802-gtk` it has no headless `--screenshot` mode, so the only
-  check available is a launch-and-terminate smoke test that opens a real
-  window — deliberately not in `make test`. Giving it the ABC802's
-  `--screenshot` treatment would make it testable.
+- **The GTK app's pixel decode is only checked coarsely.**
+  `bin/abc80-gtk --screenshot` now gives it two automated checks
+  (`gtk-headless-boot`, `gtk-headless-type`), but they count lit pixels
+  rather than compare an image — a committed reference PNG would be
+  hostage to the host's Cairo version. That catches a decode that stops
+  drawing or draws from the wrong place; it would not catch a subtly wrong
+  glyph. The ABC802 and ABC806 windows do not need this because their
+  decode is a pure function with its own ASCII-art fixture; this one
+  carries its own, since the CLI renders Unicode block glyphs instead.
 - **Non-interactive cursor blink is a fixed snapshot.** The end-of-run
   render hardcodes `blink_phase=1`; only `--interactive` computes it from
   elapsed time. A deliberate difference between the two modes' purposes.
@@ -131,12 +133,6 @@ None committed. Candidates, in rough order of how much they would add:
   mostly CLI plumbing. Testable: two distinct real images exist in the
   abc80.net archive set this project already uses (`disk001.img` and
   `disk003.img`; `disk002.img` is byte-identical to `disk001.img`).
-- **A headless `--screenshot` for `bin/abc80-gtk`**, copying what
-  `bin/abc802-gtk` does: render one frame through the identical
-  `draw_screen()` the live window uses, against an offscreen surface, with
-  no `GtkApplication` created. That is what makes the ABC802's window
-  checkable without a desktop, and it would let the GTK app join
-  `make test` instead of relying on a smoke test that steals focus.
 - **A UFD-DOS-formatted disk image.** `--dos-rom UFD80V20.bin` drives the
   card correctly (Milestone 12) but has only ever been pointed at
   ABC-DOS media, which it reads fine and then correctly reports has no

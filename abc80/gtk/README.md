@@ -432,3 +432,40 @@ removed): real `total_cycles` growth per wall-clock second measured
 exactly) and 14,976,002 cycles/sec at `--turbo 5` - exactly 5.0000x, not
 approximately. Invalid values (`--turbo 0`, negative, or unparseable)
 are rejected with a clear error rather than doing something undefined.
+
+## Headless rendering, and how changes here get verified
+
+`--screenshot FILE` runs the machine unpaced and renders one frame through
+the *identical* `draw_screen()` the live window uses, against an offscreen
+surface. It opens no window and claims no audio device.
+
+```
+bin/abc80-gtk resources/rom --screenshot boot.png
+bin/abc80-gtk resources/rom --screenshot typed.png --type 'PRINT 6*7'
+bin/abc80-gtk resources/rom --screenshot big.png --steps 8000000
+```
+
+`--type TEXT` types a line and Return through the real keyboard path
+(`abc80_keyboard_press()`), the same one live keys and the stdin-scripting
+path use, and decodes host UTF-8 first — so `--type 'PRINT "ÅÄÖ"'` reaches
+BASIC as three single ABC80 character bytes. `--steps N` sets how many
+instructions to run before rendering.
+
+That exists because automating a screen capture against the user's real
+desktop steals focus and switches Spaces while they are working, which is
+the lesson recorded at length below. The app verifies *itself* instead.
+
+`abc80/tests/run_tests.sh` now carries two checks built on it,
+`gtk-headless-boot` and `gtk-headless-type`. They skip loudly when
+`bin/abc80-gtk` is absent, since it is opt-in and `make test` does not
+build it.
+
+They assert on a **count of non-background pixels** (`tests/litpix.py`)
+rather than comparing images: a committed reference PNG would be hostage
+to the host's Cairo version. The second check is the stronger one — it
+requires typing to *add* pixels relative to the boot screen. Verified by
+pointing the framebuffer at the wrong RAM address on purpose: that reds
+`gtk-headless-type` while `gtk-headless-boot` still passes, because
+garbage lights plenty of pixels too. A count alone would not have caught
+it; the relative comparison did.
+

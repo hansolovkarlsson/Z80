@@ -318,4 +318,51 @@ else
     tl_end "$out"
 fi
 
+# --- bin/abc80-gtk, headlessly -----------------------------------------
+#
+# The GTK window is opt-in (`make abc80-gtk`) and is not built by
+# `make test`, so these skip loudly when it is absent rather than failing.
+#
+# They exist because that app had no automated coverage at all, and it is
+# the one target here carrying its *own* pixel decode - the CLI renders
+# Unicode block glyphs instead, so unlike the ABC802's and ABC806's
+# windows there is no shared, fixture-verified decode underneath it.
+#
+# `--screenshot` opens no window and claims no audio device, which is what
+# makes this runnable at all: automating a capture against the user's real
+# desktop steals focus and switches Spaces (see abc80/gtk/README.md).
+#
+# The assertion is a count of non-background pixels rather than an image
+# comparison. A committed reference PNG would be hostage to the host's
+# Cairo version; a pixel count still fails loudly if the decode breaks,
+# and the *relative* check below is the stronger half.
+GTK_BIN="$ROOT/bin/abc80-gtk"
+if [ ! -x "$GTK_BIN" ]; then
+    tl_skip "gtk-headless-boot" "bin/abc80-gtk not built (run 'make abc80-gtk')"
+    tl_skip "gtk-headless-type" "bin/abc80-gtk not built (run 'make abc80-gtk')"
+else
+    GTK_TMP="$(mktemp -d)"
+    trap 'rm -rf "$GTK_TMP"' EXIT
+
+    out=$("$GTK_BIN" resources/rom --screenshot "$GTK_TMP/boot.png" 2>&1)
+    boot_lit=$(python3 "$ROOT/abc80/tests/litpix.py" "$GTK_TMP/boot.png" 2>/dev/null || echo 0)
+    tl_begin "gtk-headless-boot"
+    tl_want "$out" "Wrote" "the headless render completing"
+    lit_ok=$([ "$boot_lit" -gt 300 ] && echo yes || echo no)
+    tl_want_eq "$lit_ok" "yes" \
+        "the sign-on lighting more than 300 pixels (got $boot_lit)"
+    tl_end "$out"
+
+    # Typing must add pixels. This is the half that cannot pass by
+    # accident: a render that drew nothing, or a keyboard path that
+    # delivered nothing, leaves the count at the boot value.
+    out=$("$GTK_BIN" resources/rom --screenshot "$GTK_TMP/typed.png" --type 'PRINT 6*7' 2>&1)
+    typed_lit=$(python3 "$ROOT/abc80/tests/litpix.py" "$GTK_TMP/typed.png" 2>/dev/null || echo 0)
+    tl_begin "gtk-headless-type"
+    more_ok=$([ "$typed_lit" -gt "$boot_lit" ] && echo yes || echo no)
+    tl_want_eq "$more_ok" "yes" \
+        "typed text adding pixels (got $typed_lit against the boot screen's $boot_lit)"
+    tl_end "$out"
+fi
+
 tl_summary "abc80"

@@ -21,6 +21,53 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (14) — bin/abc80-gtk verifies itself now
+
+`bin/abc80-gtk --screenshot FILE` renders one frame through the identical
+`draw_screen()` the live window uses, against an offscreen surface, opening
+no window and claiming no audio device. `--type TEXT` types a line first,
+through the real keyboard path.
+
+Two roadmap gaps closed with one change: the app had **no automated
+coverage at all**, and the reason was that it had no headless mode. It was
+the last of the three GTK apps without one — a straight port of what the
+ABC802's and ABC806's windows already do.
+
+### Why this one actually needed it more
+
+The other two windows are thin: their pixel decode is a pure function with
+its own ASCII-art fixture, so the window is only a Cairo blit and there is
+little left to get wrong. **This app carries its own decode**, because the
+ABC80 CLI renders Unicode block glyphs instead and there was nothing to
+share. So the one GTK app with real logic in it was the one with no tests.
+
+### The check, and the half that does the work
+
+Two checks: `gtk-headless-boot` asserts the sign-on lights more than 300
+pixels, and `gtk-headless-type` asserts that typing `PRINT 6*7` lights
+*more* than the boot screen did.
+
+Counting non-background pixels rather than comparing images is deliberate —
+a committed reference PNG would be hostage to the host's Cairo version. But
+the interesting part is which half earns its keep. Pointing the framebuffer
+at the wrong RAM address on purpose (`0x0000` instead of `0x7C00`) **reds
+`gtk-headless-type` while `gtk-headless-boot` still passes**: garbage lights
+plenty of pixels too. An absolute threshold would have shipped that bug; the
+relative comparison caught it.
+
+Which is a small argument for a general habit — a threshold test asks "is
+there output", a differential test asks "did the thing I did change the
+output", and only the second is about the feature.
+
+### Two small tidyings on the way
+
+`write_screenshot()` came out of the File-menu handler so the menu and the
+headless flag share one path rather than being two implementations that
+could drift. And the `--quickload` injection point — the ROM address
+`0x02AA`, which carries a long comment explaining why it is the *only* safe
+place — was duplicated between the timer tick and would have been a third
+time in the headless pump; it is now `maybe_quickload()`, called by both.
+
 ## 2026-08-30 (13) — the real schematics, and a wrong oracle for the third time
 
 Entry (12) ended saying the remaining PAL work needed the ABC806
