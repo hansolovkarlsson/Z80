@@ -47,6 +47,7 @@
 
 static uint8_t rom[ABC806_ROM_SIZE];
 static uint8_t char_rom[ABC806_CHAR_ROM_SIZE];
+static uint8_t rad_prom[ABC806_RAD_PROM_SIZE];
 static uint8_t char_ram[ABC806_CHAR_RAM_SIZE];
 static uint8_t attr_ram[ABC806_ATTR_RAM_SIZE];
 static uint8_t video_ram[ABC806_VIDEO_RAM_SIZE];
@@ -105,6 +106,10 @@ bool abc806_memory_init(Z80 *cpu, const char *rom_dir, const char *dos_rom_name)
                   rom + 0x7000, 0x1000)) return false;
     if (!load_rom(rom_dir, "ABC806-char.6490243-01.bin",
                   char_rom, ABC806_CHAR_ROM_SIZE)) return false;
+    // The RAD PROM turns attribute bits into a scanline address; without it
+    // underline, flash and double height have nothing to consult.
+    if (!load_rom(rom_dir, "RAD.bin", rad_prom, ABC806_RAD_PROM_SIZE))
+        return false;
 
     memset(char_ram, 0, sizeof char_ram);
     memset(attr_ram, 0, sizeof attr_ram);
@@ -219,6 +224,7 @@ uint8_t abc806_get_map(int page) { return page_map[page & 0x0F]; }
 const uint8_t *abc806_char_ram(void) { return char_ram; }
 const uint8_t *abc806_attr_ram(void) { return attr_ram; }
 const uint8_t *abc806_char_rom(void) { return char_rom; }
+const uint8_t *abc806_rad_prom(void) { return rad_prom; }
 
 void abc806_set_attr_latch(uint8_t value) { attr_latch = value; }
 uint8_t abc806_get_attr_latch(void) { return attr_latch; }

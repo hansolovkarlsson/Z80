@@ -20,6 +20,10 @@ void abc806_ports_tick(Z80 *cpu, int cycles);
 // MC6845 register file, for the renderer.
 uint8_t abc806_crtc_reg(int index);
 
+// The character-RAM address the CRTC's cursor is on, or -1 when R10's
+// cursor-mode bits say it is not displayed.
+int abc806_cursor_address(void);
+
 // True once the ROM has programmed the CRTC with a plausible display
 // (nonzero horizontal/vertical character counts), i.e. video is live.
 bool abc806_crtc_programmed(void);

@@ -7,8 +7,8 @@ is what actually works.
 
 There is no `ABC806_REFERENCE.md` yet. The hardware facts established so
 far live in `emu/src/memory.c`'s header and in `resources/rom/README.md`;
-a consolidated reference is worth writing once milestone 2 has produced
-enough of them to consolidate.
+a consolidated reference is worth writing once the machine does something
+visible, which it does not yet.
 
 ## Milestone 1: the memory map, and a boot — done
 
@@ -72,22 +72,88 @@ Both committed DOS PROMs (v.19 and v.20) boot identically.
   same pin, different wiring — and it would have half-worked silently if
   carried across unexamined.
 
+## Milestone 2: the text decode, and a renderer — done, with the gate changed
+
+`--screen` dumps the text screen, `--screenshot` writes a real PNG in the
+machine's eight colours, and `bin/abc806-chargen-dump` renders a synthetic
+screen exercising every attribute path.
+
+**The gate as written was not reachable, and was replaced rather than
+quietly dropped.** `ABC806_SCOPING.md` said "renders the ROM's own sign-on
+banner". This ROM draws no banner — see the open question below — so that
+gate tests something the machine does not do. The replacement is stronger,
+not weaker: the decode is verified against a *synthetic* screen that
+exercises colours, underline, flash, blank, keep-previous and double width,
+none of which a sign-on banner would have touched. That is exactly what
+[the boot-screen postmortem](../../docs/postmortems/2026-08-28-boot-screen-cannot-validate.md)
+already concluded on the ABC802, where the banner *did* render and still
+proved nothing about attributes.
+
+### What the decode actually is
+
+Nothing here transfers from the ABC802, whose attributes live in the
+character generator's own output byte. On the ABC806:
+
+- **An attribute byte whose foreground and background match is a command,
+  not a colour.** `(attr & 7) == ((attr >> 3) & 7)` selects a command in
+  bits 7:6 — keep previous, reserved, blank, double width. Black on black
+  is therefore unreachable as an ordinary attribute, which is what makes
+  the encoding work.
+- **Underline, flash and double height are never drawn.** They index the
+  RAD PROM, which answers with a *scanline address*, and the character
+  generator is addressed with that instead of the real row. The cursor is
+  the same trick: scanline `0x0F`, a solid bar in this font.
+- **Double width is described by the cell before it.** A command-3
+  attribute takes e5/e6 from its own low bits and the colours from the
+  *next* cell's attribute byte.
+- **The glyph is six bits from the top of the font byte after a two-place
+  left shift.** The low two bits are not pixels.
+
+### Verified
+
+`bin/abc806-chargen-dump` renders legible text — "WHITE ON BLACK" in pen 7
+on pen 0, "RED ON BLUE" in pen 1 on pen 4, the blank row genuinely blank —
+and its output is committed as `tests/fixtures/chargen.txt`. Deliberately
+changing the font shift by one bit turns `chargen-attributes` red, which
+is the only evidence worth having that the fixture is doing its job.
+
+`make test-abc806` runs three checks and is part of `make test`.
+
+## Open: the ROM draws nothing
+
+The machine boots, configures 80×25, clears the screen, and polls DART
+channel B forever without writing a single visible character. Established
+so far, all by tracing:
+
+- **The keyboard reaches it.** A sent byte moves RR0 from `0x24` to `0x25`
+  — receive-character-available — so the DART model and the wait loop
+  agree about what a keypress looks like.
+- **It is a real poll loop**, at `0x7621`-`0x762A` in the *option* PROM:
+  `LD A,0x10 / OUT (C),A / IN B,(C)` on port `0x23`, resetting external
+  status and reading RR0.
+- **It is not waiting for a disk.** Attaching a real ABC832 UFD-DOS system
+  image changes nothing.
+- **It is not the DOS PROM.** Both v.19 and v.20 behave identically.
+
+So the machine is waiting for something it has not been given, and the
+keyboard alone is not it. Milestone 3 is where this gets solved; the
+likeliest remaining candidates are the E0516 RTC and the protection
+device, both of which hang off the 74ALS259 whose bits are currently
+decoded and dropped.
+
 ## Known gaps
 
-Everything below is expected: milestone 1 was the memory map, nothing else.
+Everything below is expected at this point: two milestones in, of five.
 
-- **No video rendering.** The CRTC is a register file; nothing draws.
-  Milestone 2.
-- **No banner.** The ROM clears the screen and waits without writing any
-  visible text, where the ABC802 shows its sign-on first. Whether that is
-  a real difference, or something the machine wants before it will draw,
-  is the open question milestone 2 starts from. It polls the keyboard, so
-  milestone 3 may simply answer it.
-- **No keyboard, no disk, no interactive mode.** Milestones 3 and 4. The
-  ABC-bus is wired to the shared `abcbus/` card already, since the port
-  decode came across with the rest, but nothing has been attached.
-- **No high-resolution graphics.** Milestone 5. The video PROMs are
-  committed and unused.
+- **No interactive mode.** `--type` delivers paced keystrokes and `--disk`
+  attaches ABC-bus media, both because milestone 2 needed them to rule
+  things out, but there is no live session yet. Milestone 3.
+- **The high-resolution plane is not rendered.** `--screenshot` draws the
+  text layer only.
+- **Flash is static.** `flash_on` is passed to the decode but nothing
+  drives it; there is no frame clock yet.
+- **No high-resolution graphics.** Milestone 5. `HRU-I`, `HRU-II` and
+  `V50` are committed and unused; `RAD` is now in use.
 - **The PAL fuse map is not evaluated.** `ABC-P4-1.bin` is a well-formed
   JEDEC dump and the memory decode currently follows MAME's behavioural
   approximation instead — inheriting its `abc806 30K banking` gap. See
@@ -99,9 +165,8 @@ Everything below is expected: milestone 1 was the memory map, nothing else.
   is genuinely common*, which needs this target further along than
   milestone 1. `abcbus/` reached that point the same way — built inside one
   target, moved out when a second consumer proved the shape.
-- **Not in `make test`.** There is nothing stable to assert on yet beyond
-  the boot line. A check belongs here at milestone 2, when there is a
-  screen to compare.
+- **The test suite asserts no screen content**, because there is none. It
+  checks the machine's configuration and the decode instead.
 - **RAM is 32K directly addressable**, as on real hardware, with the rest
   reachable only through EME and the map. The 544K option is not modeled.
 - **No RTC, no protection device.** Both hang off the same 74ALS259; the

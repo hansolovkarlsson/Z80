@@ -276,16 +276,45 @@ CP/M program silently produced no output at all - a failure a plain
 `abc806/` is a *fourth* machine target - the Luxor ABC806 (1983), the top
 of the ABC800 family - added on the terms the other two established: it
 links the same `z80core/z80.o`/`alu.o` and mounts the same `abcbus/` card.
-It is at **milestone 1**: `bin/abc806` (opt-in, `make abc806`) boots the
+It is at **milestone 2**: `bin/abc806` (opt-in, `make abc806`) boots the
 real 32K firmware, programs the MC6845 for 80x25, clears the screen and
-parks polling the keyboard. No rendering, keyboard, disk or graphics yet.
+parks polling the keyboard; `--screen` dumps the text screen and
+`--screenshot` writes a real PNG in the machine's eight colours. No live
+session or high-resolution graphics yet.
 See `abc806/docs/ABC806_ROADMAP.md` for status and
 `abc806/docs/ABC806_SCOPING.md` for the feasibility review written before
 any of it - which now carries an outcome section comparing what it
 predicted against what happened, the same shape
 `ABC802_FLOPPY_SCOPING.md` uses.
 
-Three ABC806 facts worth knowing before touching that target, none
+**The ROM draws no visible text**, which is the target's central open
+question rather than a rendering bug: it clears the screen and polls DART
+channel B forever. Ruled out by tracing - the keyboard does reach it (a
+sent byte moves RR0 from `0x24` to `0x25`), it is not waiting on a disk
+(real ABC832 media changes nothing), and both DOS PROMs behave alike. The
+remaining candidates are the E0516 RTC and the protection device, both on
+the 74ALS259 whose bits are currently decoded and dropped.
+
+That is also why `bin/abc806-chargen-dump` is not optional cover but the
+*only* check on the character decode, and why milestone 2's gate was
+rewritten: the scoping document asked for the ROM's sign-on banner, and
+there is none to render. Its replacement - a synthetic screen exercising
+colours, underline, flash, blank, keep-previous and double width - is the
+boot-screen postmortem's own conclusion reached from a new direction.
+
+**The ABC806's text attributes share nothing with the ABC802's.** That
+machine hides them in the character generator's output byte; this one has
+a parallel 2K attribute plane plus the `RAD` PROM. An attribute byte whose
+foreground and background *match* is a command rather than a colour (keep
+previous / reserved / blank / double width), so black-on-black is
+unreachable as an ordinary attribute - which is what makes the encoding
+work. Underline, flash and double height are never drawn: they index `RAD`
+for a *scanline address* and the font is addressed with that instead of
+the real row, the cursor being the same trick at scanline `0x0F`. Double
+width is described by the cell *before* it. And the glyph is six bits from
+the top of the font byte after a two-place left shift.
+
+Three further ABC806 facts worth knowing before touching that target, none
 guessable. **Its memory map is decided by a PAL16L8** (`ABC-P4-1.bin`,
 committed, a well-formed JEDEC fuse map) rather than by address decode;
 `emu/src/memory.c` currently follows MAME's behavioural form of it, which

@@ -433,7 +433,13 @@ static Device decode_port(uint8_t port, int *index) {
     if (port == 0x34) return DEV_MAP;
     if (port == 0x35) return DEV_ATTR;
     if (port == 0x36) return DEV_STO;
-    if ((port & ~0x18) == 0x37) return DEV_SSO;
+    // 0x37 with MAME's mirror(0x18) means bits 3 and 4 are don't-care,
+    // but the base already has bit 4 set - so the mirrored set is
+    // {0x27, 0x2F, 0x37, 0x3F}, and 0x27/0x2F collide with DART mirrors.
+    // Nothing reads this port yet (DEV_SSO is a stub), so the narrow,
+    // certainly-correct pair is taken and the collision left documented
+    // rather than resolved by guessing which device wins.
+    if (port == 0x37 || port == 0x3F) return DEV_SSO;
     if ((port & 0xE0) == 0x00) { *index = port & 0x07; return DEV_ABCBUS; }
     if ((port & 0xF0) == 0x20) { *index = port & 0x03; return DEV_DART; }
     if ((port & 0xF9) == 0x31 || (port & 0xF9) == 0x38 || (port & 0xF9) == 0x39) {
@@ -634,6 +640,13 @@ void abc806_ports_tick(Z80 *cpu, int cycles) {
             return;
         }
     }
+}
+
+int abc806_cursor_address(void) {
+    // R10 bits 6:5 = 01 is "cursor not displayed"; every other value shows
+    // it, blinking or not.
+    if ((crtc_regs[10] & 0x60) == 0x20) return -1;
+    return ((crtc_regs[14] << 8) | crtc_regs[15]) & 0x7FF;
 }
 
 void abc806_ports_attach(Z80 *cpu) {

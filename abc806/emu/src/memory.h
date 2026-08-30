@@ -18,6 +18,7 @@
 #define ABC806_CHAR_RAM_SIZE  0x800   // 2K, overlaid at 0x7800-0x7FFF
 #define ABC806_ATTR_RAM_SIZE  0x800   // 2K, written alongside character RAM
 #define ABC806_CHAR_ROM_SIZE  0x1000  // 4K character generator
+#define ABC806_RAD_PROM_SIZE  0x200   // 512-byte RAD: the character line address
 
 // Load the eight PROM images out of rom_dir. `dos_rom_name` selects which
 // DOS PROM occupies 0x6000. Returns false, with a message on stderr, if
@@ -71,7 +72,8 @@ void abc806_videoram_write(uint32_t addr, uint8_t value);
 void abc806_set_hrs(uint8_t value);
 uint8_t abc806_get_hrs(void);
 
-// The character generator, for the renderer.
+// The character generator and the RAD PROM, for the renderer.
 const uint8_t *abc806_char_rom(void);
+const uint8_t *abc806_rad_prom(void);
 
 #endif // ABC806_MEMORY_H

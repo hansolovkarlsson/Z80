@@ -214,9 +214,14 @@ CP/M-specific — see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
   own DOS keeps its directory in the same place, but that path has not
   been tested.
 - `abc806/` — the Luxor ABC806 machine target (`make abc806`), at
-  milestone 1: it boots the real 1983 firmware, programs the CRTC for
-  80×25 and clears the screen, then waits for a key. No video rendering,
-  keyboard, disk or graphics yet. See
+  milestone 2: it boots the real 1983 firmware, programs the CRTC for
+  80×25 and clears the screen, then waits for a key, and renders that
+  screen as text (`--screen`) or as a real PNG in the machine's eight
+  colours (`--screenshot`). The ROM draws no visible text of its own yet —
+  the target's central open question — so the character and attribute
+  decode is verified against a synthetic screen by
+  `bin/abc806-chargen-dump` instead. No live session or high-resolution
+  graphics. See
   [`ABC806_ROADMAP.md`](abc806/docs/ABC806_ROADMAP.md) for status and
   [`ABC806_SCOPING.md`](abc806/docs/ABC806_SCOPING.md) for the feasibility
   review written before any of it, now carrying an outcome section

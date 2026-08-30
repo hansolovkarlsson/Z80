@@ -21,6 +21,84 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-29 (15) — ABC806 milestone 2: a decode verified, and a gate replaced
+
+The text renderer works: `--screen`, `--screenshot` in eight colours, and
+`bin/abc806-chargen-dump` exercising every attribute path. Three checks in
+a new `abc806/tests/`, now part of `make test`.
+
+### The gate did not survive contact
+
+`ABC806_SCOPING.md` set milestone 2's gate as "renders the ROM's own
+sign-on banner". **This ROM draws no banner.** It boots, configures 80×25,
+clears the screen and polls the keyboard forever, writing not one visible
+character.
+
+So the gate tested something the machine does not do. I replaced it rather
+than quietly dropping it, and the replacement is stronger: verify the
+decode against a *synthetic* screen exercising colours, underline, flash,
+blank, keep-previous and double width — none of which a banner would have
+touched.
+
+Which is the boot-screen postmortem's own conclusion, arriving from a new
+direction. On the ABC802 the banner rendered and still proved nothing
+about attributes; here it does not render at all. **A gate written before
+the work can be wrong about the machine, not just about the effort** — and
+the fix is to ask what would actually constitute evidence, not to lower
+the bar until the machine clears it.
+
+### What the decode is
+
+Nothing transfers from the ABC802. That machine hides attributes in the
+character generator's output byte; this one has a parallel plane and a
+PROM:
+
+- An attribute byte whose fg and bg **match** is a *command*, not a
+  colour — keep previous, reserved, blank, double width. Black on black is
+  unreachable as an ordinary attribute, which is what makes it work.
+- Underline, flash and double height are **never drawn**. They index the
+  RAD PROM, which returns a *scanline address*, and the font is addressed
+  with that instead of the real row. Same idea as the ABC802's attribute
+  trick, different mechanism.
+- Double width is described by the cell *before* it: command 3 takes its
+  own e5/e6 and the colours from the next cell's attribute byte.
+- The glyph is six bits from the top of the font byte after a two-place
+  left shift; the low two bits are not pixels.
+
+Changing that shift by one bit turns the fixture red, which is the only
+evidence worth having that it is checking anything.
+
+### The compiler found a bug I would not have
+
+`(port & ~0x18) == 0x37` — flagged as always false. It is: `~0x18` clears
+bits 3 and 4, and 0x37 has bit 4 set, so the test can never match. MAME's
+`mirror(0x18)` on a base that already has bit 4 set produces the set
+{0x27, 0x2F, 0x37, 0x3F}, and 0x27/0x2F collide with DART mirrors.
+
+Nothing reads that port yet, so I took the narrow certainly-correct pair
+and documented the collision instead of guessing which device wins. Worth
+noting that `-Wtautological-bitwise-compare` caught a *masking* error, the
+same class as milestone 1's two — three now, all in port and map decode.
+
+### The banner, ruled down
+
+Not solved, but the search space is much smaller, and every step was a
+trace rather than a guess:
+
+- The keyboard **does** reach the machine — a sent byte moves RR0 from
+  `0x24` to `0x25`, receive-character-available.
+- The loop at `0x7621` is a real poll: `LD A,0x10 / OUT (C),A / IN B,(C)`
+  on port `0x23`, in the *option* PROM.
+- It is **not** waiting for a disk: a real ABC832 UFD-DOS system image
+  changes nothing.
+- It is **not** the DOS PROM: v.19 and v.20 are identical.
+
+So it wants something it has not been given, and the keyboard is not it.
+The remaining candidates are the RTC and the protection device, both on
+the 74ALS259 whose bits are decoded and dropped. That is milestone 3.
+
+---
+
 ## 2026-08-29 (14) — ABC806 milestone 1: a fourth machine boots
 
 `bin/abc806` runs the real Luxor ABC806 firmware and passes the gate
