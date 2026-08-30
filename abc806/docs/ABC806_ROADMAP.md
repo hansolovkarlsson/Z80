@@ -39,6 +39,10 @@ Full write-ups, including what each milestone found the hard way, are in
 | — | Real-time clock | The DOS prints the host's date and time to the second |
 | 5 | High-resolution graphics | `FGCTL 2` then `FGLINE` draws red, green and yellow lines over the text |
 
+`bin/abc806-gtk` (opt-in, `make abc806-gtk`) is a real GTK4 window on the
+same terms as the other two ABC targets' — see
+[`../gtk/README.md`](../gtk/README.md).
+
 `make test-abc806` runs 13 checks, and 16 with `ABC806_TEST_DISKS` set;
 it is part of `make test`.
 
@@ -46,26 +50,18 @@ it is part of `make test`.
 
 No milestone is outstanding. In rough order of value:
 
-1. **`bin/abc806-gtk`.** The other two ABC targets have Cairo framebuffer
-   front-ends and this one does not. `abc806_step()` is already extracted,
-   `text.c` is pure, and `chargen.c` renders real pixels including the
-   high-resolution layer — so this should be shorter than either
-   predecessor, the same way `bin/abc802-gtk` was shorter than
-   `bin/abc80-gtk`.
-2. **Evaluate the PAL fuse map.** `ABC-P4-1.bin` is a well-formed JEDEC
+1. **Evaluate the PAL fuse map.** `ABC-P4-1.bin` is a well-formed JEDEC
    dump and the memory decode currently follows MAME's behavioural
    approximation, inheriting its `abc806 30K banking` TODO. Doing it for
    real is the same move this project already made with ABC80's `attr`,
    `hsync` and `line` PROMs.
-3. **The remaining graphics modes.** Only the four-colour mode is
+2. **The remaining graphics modes.** Only the four-colour mode is
    exercised; `FGCTL`'s other arguments program the palette differently.
 
 ## Known gaps
 
 Everything below is expected at this point: two milestones in, of five.
 
-- **No GTK front-end.** `bin/abc80-gtk` and `bin/abc802-gtk` have no
-  ABC806 equivalent yet. `abc806_step()` is already extracted for one.
 - **Right arrow is dropped, on inference rather than evidence.** The
   ABC802's line editor was swept byte by byte and turned out to have no
   cursor movement at all; this ROM is from the same family and the same

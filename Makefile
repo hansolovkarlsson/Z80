@@ -92,6 +92,23 @@ ABC806_TARGET := $(BIN_DIR)/abc806
 ABC806_CHARGEN_DUMP_OBJS := $(ABC806_SRC_DIR)/chargen_dump.o $(ABC806_SRC_DIR)/chargen.o $(ABC806_SRC_DIR)/text.o $(ABC806_SRC_DIR)/png.o
 ABC806_CHARGEN_DUMP_TARGET := $(BIN_DIR)/abc806-chargen-dump
 
+# bin/abc806-gtk: a GTK4 window for the ABC806. Opt-in (`make abc806-gtk`),
+# never part of `make`/`make test`, on the same terms as the other two.
+#
+# Shorter than either predecessor for a reason worth keeping: the pixel
+# decode is already a pure function verified by bin/abc806-chargen-dump, and
+# abc806_step() is already shared with the CLI's --interactive loop, so this
+# app only turns palette indices into a Cairo surface. Needs gtk4 alone - no
+# SDL2 and no threads, since this machine's only sound is a strobe the
+# emulator does not sound.
+ABC806_GTK_SRC_DIR := abc806/gtk/src
+ABC806_GTK_SRCS := $(wildcard $(ABC806_GTK_SRC_DIR)/*.c)
+ABC806_GTK_OBJS := $(ABC806_GTK_SRCS:.c=.o) $(ABC806_SRC_DIR)/memory.o $(ABC806_SRC_DIR)/ports.o $(ABC806_SRC_DIR)/render.o $(ABC806_SRC_DIR)/text.o $(ABC806_SRC_DIR)/chargen.o $(ABC806_SRC_DIR)/rtc.o $(ABC806_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC806_GTK_TARGET := $(BIN_DIR)/abc806-gtk
+ABC806_GTK_PKGS := gtk4
+ABC806_GTK_CFLAGS := $(shell pkg-config --cflags $(ABC806_GTK_PKGS) 2>/dev/null)
+ABC806_GTK_LIBS := $(shell pkg-config --libs $(ABC806_GTK_PKGS) 2>/dev/null)
+
 # bin/abcdisk: creates and inspects ABC-bus floppy images. Lives beside
 # abcbus/disk.c for that file's own reason - the bus is not a machine, and
 # both ABC targets mount the same media - and needs no CPU core, since it
@@ -196,7 +213,7 @@ ABC80_GTK_PKGS := gtk4 sdl2
 ABC80_GTK_CFLAGS := $(shell pkg-config --cflags $(ABC80_GTK_PKGS) 2>/dev/null)
 ABC80_GTK_LIBS := $(shell pkg-config --libs $(ABC80_GTK_PKGS) 2>/dev/null)
 
-.PHONY: all emulator assembler disassembler abcdisk gtk abc80 abc802 abc806 abc806-chargen-dump abc802-chargen-dump abc802-gtk abc80-gtk abc80-chargen-dump abc80-video-timing-dump abc80-render-demo abc80-sound-demo run test test-cpm test-abc80 test-abc802 test-abc806 clean
+.PHONY: all emulator assembler disassembler abcdisk gtk abc80 abc802 abc806 abc806-chargen-dump abc802-chargen-dump abc806-gtk abc802-gtk abc80-gtk abc80-chargen-dump abc80-video-timing-dump abc80-render-demo abc80-sound-demo run test test-cpm test-abc80 test-abc802 test-abc806 clean
 
 all: emulator assembler disassembler abcdisk
 
@@ -219,6 +236,8 @@ abc806: $(ABC806_TARGET)
 abc806-chargen-dump: $(ABC806_CHARGEN_DUMP_TARGET)
 
 abc802-chargen-dump: $(ABC802_CHARGEN_DUMP_TARGET)
+
+abc806-gtk: $(ABC806_GTK_TARGET)
 
 abc802-gtk: $(ABC802_GTK_TARGET)
 
@@ -280,6 +299,9 @@ $(GTK_TARGET): $(GTK_OBJS) | $(BIN_DIR)
 $(ABC80_GTK_TARGET): $(ABC80_GTK_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(ABC80_GTK_OBJS) $(ABC80_GTK_LIBS)
 
+$(ABC806_GTK_TARGET): $(ABC806_GTK_OBJS) | $(BIN_DIR)
+	$(CC) $(CFLAGS) -o $@ $(ABC806_GTK_OBJS) $(ABC806_GTK_LIBS)
+
 $(ABC802_GTK_TARGET): $(ABC802_GTK_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(ABC802_GTK_OBJS) $(ABC802_GTK_LIBS)
 
@@ -291,6 +313,9 @@ $(GTK_SRC_DIR)/%.o: $(GTK_SRC_DIR)/%.c
 
 $(ABC80_GTK_SRC_DIR)/%.o: $(ABC80_GTK_SRC_DIR)/%.c
 	$(CC) $(CFLAGS) $(ABC80_GTK_CFLAGS) -c $< -o $@
+
+$(ABC806_GTK_SRC_DIR)/%.o: $(ABC806_GTK_SRC_DIR)/%.c
+	$(CC) $(CFLAGS) $(ABC806_GTK_CFLAGS) -c $< -o $@
 
 $(ABC802_GTK_SRC_DIR)/%.o: $(ABC802_GTK_SRC_DIR)/%.c
 	$(CC) $(CFLAGS) $(ABC802_GTK_CFLAGS) -c $< -o $@
@@ -325,7 +350,7 @@ test-abc802: abc802 abc802-chargen-dump
 DEPS := $(EMU_OBJS:.o=.d) $(ASM_OBJS:.o=.d) $(DASM_OBJS:.o=.d) $(GTK_OBJS:.o=.d) $(ABC80_OBJS:.o=.d) $(ABC802_OBJS:.o=.d) $(ABCBUS_OBJS:.o=.d) $(ABCDISK_OBJS:.o=.d) $(ABC806_OBJS:.o=.d) $(ABC806_CHARGEN_DUMP_OBJS:.o=.d) $(ABC80_GTK_OBJS:.o=.d) $(ABC80_CHARGEN_DUMP_OBJS:.o=.d) $(ABC80_VIDEO_TIMING_DUMP_OBJS:.o=.d) $(ABC80_RENDER_DEMO_OBJS:.o=.d) $(ABC80_SOUND_DEMO_OBJS:.o=.d)
 
 clean:
-	rm -f $(DEPS) $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(ABC80_OBJS) $(ABC80_GTK_OBJS) $(ABC80_CHARGEN_DUMP_OBJS) $(ABC80_VIDEO_TIMING_DUMP_OBJS) $(ABC80_RENDER_DEMO_OBJS) $(ABC80_SOUND_DEMO_OBJS) $(ABC802_OBJS) $(ABC806_OBJS) $(ABC806_CHARGEN_DUMP_OBJS) $(ABC806_CHARGEN_DUMP_TARGET) $(ABCBUS_OBJS) $(ABCDISK_OBJS) $(ABCDISK_TARGET) $(ABC806_TARGET) $(ABC802_TARGET) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(ABC80_TARGET) $(ABC80_GTK_TARGET) $(ABC80_CHARGEN_DUMP_TARGET) $(ABC80_VIDEO_TIMING_DUMP_TARGET) $(ABC80_RENDER_DEMO_TARGET) $(ABC80_SOUND_DEMO_TARGET) $(EMU_TEST_INTERRUPTS_TARGET)
+	rm -f $(DEPS) $(EMU_OBJS) $(ASM_OBJS) $(DASM_OBJS) $(GTK_OBJS) $(ABC80_OBJS) $(ABC80_GTK_OBJS) $(ABC80_CHARGEN_DUMP_OBJS) $(ABC80_VIDEO_TIMING_DUMP_OBJS) $(ABC80_RENDER_DEMO_OBJS) $(ABC80_SOUND_DEMO_OBJS) $(ABC802_OBJS) $(ABC806_OBJS) $(ABC806_CHARGEN_DUMP_OBJS) $(ABC806_CHARGEN_DUMP_TARGET) $(ABC806_GTK_OBJS) $(ABC806_GTK_TARGET) $(ABC802_GTK_OBJS) $(ABC802_GTK_TARGET) $(ABC802_CHARGEN_DUMP_OBJS) $(ABC802_CHARGEN_DUMP_TARGET) $(ABCBUS_OBJS) $(ABCDISK_OBJS) $(ABCDISK_TARGET) $(ABC806_TARGET) $(ABC802_TARGET) $(EMU_TARGET) $(ASM_TARGET) $(DASM_TARGET) $(GTK_TARGET) $(ABC80_TARGET) $(ABC80_GTK_TARGET) $(ABC80_CHARGEN_DUMP_TARGET) $(ABC80_VIDEO_TIMING_DUMP_TARGET) $(ABC80_RENDER_DEMO_TARGET) $(ABC80_SOUND_DEMO_TARGET) $(EMU_TEST_INTERRUPTS_TARGET)
 
 # Header dependencies recorded by -MMD (see CFLAGS above). Leading `-` so a
 # clean tree with no .d files yet is not an error.

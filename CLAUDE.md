@@ -296,8 +296,23 @@ text screen, `--screenshot` writes a real PNG, and `--disk` boots real
 UFD-DOS — `BYE` reaches the DOS command shell and the shell loads and runs
 `LIB` off the media, which is the assertion worth making since `LIB` is a
 program on the disk rather than a shell built-in. `FGCTL 2` followed by
-`FGLINE` draws real coloured lines. No GTK front-end yet - that is the
-next job.
+`FGLINE` draws real coloured lines.
+
+`bin/abc806-gtk` (`abc806/gtk/`, opt-in via `make abc806-gtk`) is the third
+Cairo framebuffer window here and the shortest, because nothing about the
+machine lives in it: `abc806_step()` is already shared with the CLI's
+`--interactive` loop and the pixel decode is already a pure function
+verified by `bin/abc806-chargen-dump`, so the app only turns palette
+indices into a Cairo surface. The whole picture - colour attributes, the
+RAD substitutions, double width, the cursor, and the high-resolution layer
+- therefore comes along for free and cannot drift from what `--screenshot`
+produces. Two things differ from `bin/abc802-gtk`, both because this is the
+colour machine: the framebuffer is **palette-indexed rather than
+monochrome**, and **the flash phase has to be supplied** from real time,
+where the ABC802's ROM blinks its own cursor in software. Needs `gtk4`
+alone - no SDL2 and no threads. Its own `--screenshot` renders headlessly
+through the identical `draw_screen()` the window uses, which is how changes
+to it get verified without a desktop.
 
 **The machine draws into its high-resolution plane**, and the mechanism is
 the least guessable thing in this target. **When the instruction currently

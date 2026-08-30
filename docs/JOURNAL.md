@@ -21,6 +21,65 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (9) — bin/abc806-gtk, and the value of having nothing left to write
+
+The third Cairo framebuffer window in this repository, and the shortest —
+612 lines against the ABC802's 591 and the ABC80's 1,452. It renders the
+ROM's sign-on, real coloured text, and the high-resolution layer, takes
+live keyboard input, and quits cleanly on `SIGTERM`.
+
+The interesting thing is how little of it is about the ABC806. Nothing
+machine-specific lives in the file at all: `abc806_step()` was already
+shared with the CLI's `--interactive` loop, and the pixel decode was
+already a pure function with its own fixture. So the app turns palette
+indices into a Cairo surface and stops. The colour attribute plane, the RAD
+PROM's scanline substitutions, double width, the cursor and the
+high-resolution layer all arrive for free — and, more usefully, *cannot
+drift* from what `--screenshot` produces, because they are the same code.
+
+That is the return on two earlier decisions that both looked like overhead
+at the time: extracting `abc806_step()` in milestone 1, and splitting the
+drawing out of `render.c` into a pure `text.c` so a fixture could reach it.
+
+### Two differences from bin/abc802-gtk, both from colour
+
+- **The framebuffer is palette-indexed, not monochrome.** That app maps
+  every non-zero pixel onto one amber foreground. Here each byte is a pen
+  0-7 and the surface is built through `abc806_palette()`.
+- **The flash phase has to be supplied.** The ABC802 blinks its cursor in
+  software through the CRTC, so pacing execution was the whole
+  implementation there. The ABC806's flash is a hardware attribute with no
+  software clock behind it, so the phase comes from elapsed real time.
+
+One detail in the headless path is deliberate: **the flash phase is
+pinned** rather than taken from the clock, so a screenshot is reproducible.
+A render that sometimes catches the dark half of the flash cycle is a
+render that sometimes fails, and that is a miserable thing to debug later.
+
+### Verified without disturbing a desktop
+
+The rule this repository already learned — automating a screen capture
+against the user's real desktop steals focus and switches Spaces while they
+are working — means the app has to verify itself. Clean build; a headless
+render of the sign-on; a headless render of
+`FGCTL 2:FGPOINT 10,10,1:FGLINE 200,120,1` showing white text above a red
+line at 2x; and a launch/terminate cycle exiting **0** with an empty log.
+
+Worth noting a small honesty check on that last one. My first attempt
+backgrounded the process in a subshell and read `$?` from `wait`, which
+reported **127** — `wait` complaining about a non-child, not the app
+failing. Reporting that as the app's exit status would have been wrong in
+either direction; re-running it under a real parent gave 0.
+
+### And a pre-existing gap the work exposed
+
+`make clean` did not remove `bin/abc802-gtk`, `bin/abc802-chargen-dump` or
+either's objects — they had been added to the build without being added to
+the sweep, and my new target would have joined them. All four are in now,
+and a clean/rebuild cycle was run to confirm the tree really does come back
+empty. That is the same class of omission as the stale roadmap claims
+entry (8) turned up: things appended in one place and not the other.
+
 ## 2026-08-30 (8) — splitting the ABC806's docs, and writing its reference
 
 Housekeeping, but the kind this project treats as part of the work rather
