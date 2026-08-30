@@ -15,9 +15,13 @@ Cross-cutting failures that are worth understanding on their own get a
 full write-up in [`postmortems/`](postmortems/) rather than being buried
 in an entry here.
 
+Several entries can share a date. Where a day has more than a handful they
+are numbered in the order they happened — `(1)` earliest — rather than
+strung out with "later still"; the file itself stays newest-first.
+
 ---
 
-## 2026-09-01 (last) — the right disk, and a bug that halved every one I made
+## 2026-08-29 (13) — the right disk, and a bug that halved every one I made
 
 The user pointed at <https://www.abc80.net/archive/luxor/>. Its
 `640k/index.txt` transcribes the physical disk labels, so `grep -i ufd`
@@ -71,7 +75,7 @@ A formatter can produce a perfectly working disk of the wrong size. Every
 functional check here passed throughout — save, load, list, round trip —
 because none of them asked how much room there was.
 
-That is the fourth time this week that ABC830-vs-ABC832 hid a defect, and
+That is the fourth time today that ABC830-vs-ABC832 hid a defect, and
 the second where **one sample of 640K media was mistaken for the format**.
 The rule that keeps earning itself: a constant derived from a single
 artefact is a description of that artefact.
@@ -96,7 +100,7 @@ manual that anchors the language reference came from it.
 
 ---
 
-## 2026-09-01 (later) — the DOS's file-extent semantics, and a converted disk that boots
+## 2026-08-29 (12) — the DOS's file-extent semantics, and a converted disk that boots
 
 Went back at the extent question. It is answered, and the proof is a
 160K disk converted to 640K that autoboots the real ORD 800 word
@@ -164,7 +168,7 @@ roadmap rather than guessed at.
 
 ---
 
-## 2026-09-01 — converting 160K to 640K: the diagnosis holds, the image does not
+## 2026-08-29 (11) — converting 160K to 640K: the diagnosis holds, the image does not
 
 Converted `sys10sw.dsk` to a 640K ABC832 image to test whether `LIB` and
 `DOSGEN` work once an `MF` controller is fitted. Partial result, one real
@@ -221,7 +225,7 @@ ABC832 image. Fixed and verified against the machine: a file BASIC just
 saved to a fresh `MF` disk now reports sector 32, which is where the bus
 trace shows the DOS actually wrote it.
 
-This is the third time this week that ABC830-vs-ABC832 has hidden a defect
+This is the third time today that ABC830-vs-ABC832 has hidden a defect
 by making a wrong formula look right. The interleave was the first, the
 directory-on-a-track-boundary the second, and `cluster == sector` the
 third. **On this machine, anything verified only against 160K media is
@@ -236,7 +240,7 @@ from "convert and test" and would be reverse-engineering someone else's
 
 ---
 
-## 2026-08-31 (last) — LIB disassembled: one cause, not two, and a third correction
+## 2026-08-29 (10) — LIB disassembled: one cause, not two, and a third correction
 
 Disassembled `LIB.ABS` and found where it gets its directory. The answer
 folds `LIB` and `DOSGEN` into a single root cause, and corrects a claim
@@ -321,7 +325,7 @@ geometry differs at four sectors per cluster.
 
 ---
 
-## 2026-08-31 (later) — why LIB lists nothing: not the reason I published
+## 2026-08-29 (9) — why LIB lists nothing: not the reason I published
 
 Chased the `LIB` gap. It is still open, but three plausible explanations
 are now dead and one published claim was wrong.
@@ -386,7 +390,7 @@ correctly and needs no machine at all.
 
 ---
 
-## 2026-08-31 — BYE was never broken, and there *is* a formatter
+## 2026-08-29 (8) — BYE was never broken, and there *is* a formatter
 
 Chasing why `BYE` printed `Abort 48` took one command to answer and then
 opened up the whole other half of the machine.
@@ -484,7 +488,7 @@ carries no DOS utilities.
 
 ---
 
-## 2026-08-30 (last) — driving the real thing, and what a live session found
+## 2026-08-29 (7) — driving the real thing, and what a live session found
 
 `bin/abcdisk` and `--interleave` were both verified through scripted runs.
 This session put them under a genuine `--interactive` session and worked
@@ -571,7 +575,7 @@ not have.
 
 ---
 
-## 2026-08-30 (later) — bin/abcdisk, and a filesystem read out of the media
+## 2026-08-29 (6) — bin/abcdisk, and a filesystem read out of the media
 
 A CLI tool that creates formatted, empty ABC-bus disk images, and lists
 what is on one. `abcbus/mkdisk.c`, beside `disk.c` and for that file's own
@@ -624,7 +628,7 @@ without booting a machine. It immediately did two things worth more than
 that.
 
 It **replaced a wrong analysis**. The ad-hoc Python parser used earlier
-this week to tabulate what was on each disk had the record framing off by
+earlier today to tabulate what was on each disk had the record framing off by
 four bytes and reported three disks as undecodable. The tool reads all
 ten, and those three turned out to be perfectly ordinary — `ord800.dsk`
 holds the *ORD 800* word processor with an `INITIERA.*` file per printer
@@ -670,7 +674,7 @@ the suite went from 10 passing to 14.
 
 ---
 
-## 2026-08-30 — interleave belongs to the dump, not the drive
+## 2026-08-29 (5) — interleave belongs to the dump, not the drive
 
 `--interleave N` on both `bin/abc802` and `bin/abc80`, plus a home and a
 README for disk images. What forced it was a user dropping ten real `.dsk`
@@ -758,7 +762,7 @@ problem rather than a test-writing one. Noted in the roadmap.
 
 ---
 
-## 2026-08-29 (last) — a BASIC II reference, read out of the ROM
+## 2026-08-29 (4) — a BASIC II reference, read out of the ROM
 
 `abc802/docs/ABC802_BASIC_REFERENCE.md`: how to actually *use* the
 machine, alongside the disk drives and how a disk is stored. The ABC80
@@ -858,7 +862,7 @@ borrowing the confidence.
 
 ---
 
-## 2026-08-29 (later still) — regression suites for the machine targets
+## 2026-08-29 (3) — regression suites for the machine targets
 
 Three machine targets, one covered by `make test`. Everything the ABC
 targets had ever been verified by lived in a hand-run matrix retyped each
@@ -944,7 +948,7 @@ of its own — it had simply never been run automatically. It is now.
 
 ---
 
-## 2026-08-29 (later) — ABC80 Milestone 12: retiring the PC-address trap
+## 2026-08-29 (2) — ABC80 Milestone 12: retiring the PC-address trap
 
 The ABC802 roadmap's top candidate, taken up directly: replace the ABC80
 target's floppy trap with the real ABC-bus card the ABC802 already had.
@@ -1028,7 +1032,7 @@ audited it.
 
 ---
 
-## 2026-08-29 — ABC802 Milestone 9: a real SIO, and testing from inside
+## 2026-08-29 (1) — ABC802 Milestone 9: a real SIO, and testing from inside
 
 Documented the line editor's keys in `ABC802_REFERENCE.md` (and refreshed
 its ABC-bus section, which still claimed no card was modeled), then took
