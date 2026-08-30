@@ -119,27 +119,74 @@ is the only evidence worth having that the fixture is doing its job.
 
 `make test-abc806` runs three checks and is part of `make test`.
 
-## Open: the ROM draws nothing
+## The ROM draws nothing — solved
 
-The machine boots, configures 80×25, clears the screen, and polls DART
-channel B forever without writing a single visible character. Established
-so far, all by tracing:
+It does now. The sign-on renders:
 
-- **The keyboard reaches it.** A sent byte moves RR0 from `0x24` to `0x25`
-  — receive-character-available — so the DART model and the wait loop
-  agree about what a keypress looks like.
-- **It is a real poll loop**, at `0x7621`-`0x762A` in the *option* PROM:
-  `LD A,0x10 / OUT (C),A / IN B,(C)` on port `0x23`, resetting external
-  status and reading RR0.
-- **It is not waiting for a disk.** Attaching a real ABC832 UFD-DOS system
-  image changes nothing.
-- **It is not the DOS PROM.** Both v.19 and v.20 behave identically.
+```
+$ bin/abc806 --cycles 80000000 --screenshot abc806.png
+```
 
-So the machine is waiting for something it has not been given, and the
-keyboard alone is not it. Milestone 3 is where this gets solved; the
-likeliest remaining candidates are the E0516 RTC and the protection
-device, both of which hang off the 74ALS259 whose bits are currently
-decoded and dropped.
+gives **`ABC806`** in white on black with the cursor beneath it, which is
+milestone 2's gate *as originally written* — reached after the fact.
+
+### What it was waiting for
+
+The routine at `0x7617` in the option PROM is a delay loop, and
+disassembling it was the whole answer:
+
+```
+7619: LD C,23h          ; DART channel B, control
+761B: LD A,10h
+761D: OUT (C),A         ; WR0 = reset external status
+761F: IN B,(C)          ; B = RR0, the baseline
+7621: LD A,10h
+7623: OUT (C),A
+7625: IN A,(C)
+7627: XOR B             ; what changed?
+7628: AND 10h           ; bit 4 only
+762A: JR Z,7621         ; spin until it does
+```
+
+It waits for **RR0 bit 4 to change state** — the DART's RI input. Not for
+a keypress, which is why sending one changed nothing even though the
+keystroke demonstrably arrived. With nothing driving RI the bit never
+changes and the machine waits there forever, having booted perfectly.
+
+`ports.c` now drives channel B's RI from a 50 Hz square wave. Stated as
+inference in the source, because it is one: MAME drives channel A's RI and
+channel B's CTS and leaves this alone, so it is not read out of another
+implementation. What is *observed* is that the loop waits on a change to
+this bit and that a periodic source satisfies it; the frequency is the
+part that matters, and if the real machine sources it from a timer rather
+than the frame the behaviour is indistinguishable.
+
+### And a rendering bug the picture caught
+
+With the ROM finally drawing, the text dump said `AABBCC880066` and the
+PNG said `A B C 8 0 6` — thin letters with gaps. Two views of one screen
+disagreeing is a bug by definition.
+
+The banner is written as alternating attribute bytes `FF, 07`: `0xFF` has
+foreground equal to background, so it is *command 3, double width*, with
+e5/e6 set in its low bits and the colours taken from the `0x07` beside it.
+The renderer got the skip right and the width wrong twice over — it drove
+pixel doubling from the screen's 40-column flag rather than from e5/e6,
+and then computed x as `column × width` rather than advancing a pen by
+what was actually drawn. Both are fixed; the banner is solid.
+
+**The fixture did not catch either.** Its double-width row used attribute
+`0xC0`, which is command 3 with e5/e6 *clear* — so it exercised the
+attribute-inheritance branch while never doubling a pixel. It now uses the
+ROM's own alternating `FF`/`07` pattern and renders visibly doubled
+glyphs. Worth stating plainly: a synthetic screen is only as good as the
+sub-cases it picks, and this one picked the command without the operand.
+
+**Still unproven:** reverting the x-position fix does not change the
+fixture output, and I could not work out why within a reasonable time. So
+that specific regression is currently covered by *looking at the real
+ROM's banner*, not by the suite. Left as an open item rather than
+described as covered.
 
 ## Known gaps
 

@@ -21,6 +21,77 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-29 (16) — the ABC806 draws: a delay loop, and two bugs the picture caught
+
+`bin/abc806 --screenshot` now renders **ABC806**, the ROM's own sign-on.
+That is milestone 2's gate *as originally written* — reached a few hours
+after I replaced it for being unreachable.
+
+### What it was waiting for
+
+Disassembling the loop was the whole answer, and I should have done it
+first instead of ruling out the disk and the DOS PROM by experiment:
+
+```
+7621: LD A,10h / OUT (C),A   ; reset external status on DART channel B
+7625: IN A,(C) / XOR B       ; what changed since the baseline read?
+7628: AND 10h / JR Z,7621    ; spin until bit 4 changes
+```
+
+It waits for **RR0 bit 4 to change** — the DART's RI input — as a delay.
+Not for a keypress. Which is why sending one changed nothing even though
+the keystroke demonstrably arrived: I had been testing the right stimulus
+against the wrong hypothesis, and the loop's shape said so in nine
+instructions.
+
+Channel B's RI is now driven from a 50 Hz square wave. Written up in the
+source as inference, because it is: MAME drives channel A's RI and channel
+B's CTS and leaves this one alone. What is observed is that the loop waits
+on a *change* and that a periodic source satisfies it; the rate is the
+part that matters.
+
+### Two rendering bugs, both found by looking
+
+With the ROM finally drawing, `--screen` said `AABBCC880066` and
+`--screenshot` said `A B C 8 0 6`. **Two views of the same screen
+disagreeing is a bug by definition**, and that disagreement is the only
+reason either was found.
+
+The banner is written as alternating attributes `FF, 07`. `0xFF` has
+foreground equal to background, so it is command 3 — double width — with
+e5/e6 in its low bits and the colours taken from the `0x07` beside it. The
+renderer got the column skip right and the width wrong twice: pixel
+doubling was driven by the screen's 40-column flag rather than by e5/e6,
+and x was computed as `column x width` rather than by advancing a pen
+across what was actually drawn.
+
+### My own fixture missed both
+
+Its double-width row used attribute `0xC0` — command 3 with e5/e6
+*clear*. So it exercised the attribute-inheritance branch and never
+doubled a pixel. The synthetic screen that exists specifically because a
+boot screen cannot validate attributes had itself picked the command
+without the operand.
+
+Fixed to use the ROM's own `FF`/`07` pattern, which renders visibly
+doubled glyphs. The general lesson is sharper than "test the feature":
+**a hand-written test input encodes the author's model of the feature, so
+it fails in exactly the places the model is wrong.** The real ROM's
+attribute pattern was available the whole time and would have been a
+better source than my idea of one.
+
+### And one thing I could not close
+
+Reverting the x-position fix does not change the fixture output, and I
+could not work out why within a reasonable time — the instrumented run
+shows the pen at 0/12/24 where the broken form would give 0/24/48, so the
+outputs should differ and do not. Recorded in the roadmap as unproven
+rather than described as covered. That specific regression is currently
+caught by looking at the real banner, which is weaker than a check and
+should be said so.
+
+---
+
 ## 2026-08-29 (15) — ABC806 milestone 2: a decode verified, and a gate replaced
 
 The text renderer works: `--screen`, `--screenshot` in eight colours, and

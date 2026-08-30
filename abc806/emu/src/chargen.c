@@ -72,14 +72,19 @@ bool abc806_render_pixels(const Abc806Screen *s, uint8_t *pixels, size_t size) {
     if (w <= 0 || h <= 0 || (size_t)(w * h) > size) return false;
     memset(pixels, 0, (size_t)(w * h));
 
-    const int wide = s->forty ? 2 : 1;
-
     for (int row = 0; row < s->rows; row++) {
         // Attributes persist across a row until something changes them:
         // command 0 means "use previously selected". They reset per row,
         // which is why these live inside this loop.
         int fg = 7, bg = 0, underline = 0, flash = 0;
         int e5 = s->forty, e6 = s->forty, th = 0;
+
+        // The pen advances by what was actually drawn, which is not
+        // `column * width`: a double-width cell occupies two cells' worth
+        // of pixels and then the paired cell is skipped, so deriving x
+        // from the column index leaves a gap exactly the size of the cell
+        // that was doubled.
+        int pen_x = 0;
 
         for (int column = 0; column < s->columns; column++) {
             uint16_t ma = (uint16_t)(s->start_addr + row * s->columns + column);
@@ -118,6 +123,10 @@ bool abc806_render_pixels(const Abc806Screen *s, uint8_t *pixels, size_t size) {
                 e6 = s->forty;
             }
 
+            // Constant for the whole cell, so computed once rather than
+            // per scanline.
+            int rep_count = (e5 || e6) ? 2 : 1;
+
             for (int ra = 0; ra < s->scanlines; ra++) {
                 int rad;
                 if (s->cursor_addr >= 0 && (int)(ma & 0x7FF) == s->cursor_addr) {
@@ -138,17 +147,24 @@ bool abc806_render_pixels(const Abc806Screen *s, uint8_t *pixels, size_t size) {
                 // the font byte's low two bits are not pixels.
                 uint8_t bits = (uint8_t)(s->char_rom[caddr & 0xFFF] << 2);
 
-                int px = column * ABC806_CHAR_WIDTH * wide;
+                // Pixel doubling follows e5/e6, *not* the screen's own
+                // 40-column flag. Those are different things: the flag
+                // seeds e5/e6 at the start of a row, but a double-width
+                // attribute sets them mid-row on an otherwise 80-column
+                // screen.
+                int px = pen_x;
                 int py = row * s->scanlines + ra;
                 for (int bit = 0; bit < ABC806_CHAR_WIDTH; bit++) {
                     int colour = (bits & 0x80) ? fg : bg;
-                    for (int rep = 0; rep < wide; rep++) {
+                    for (int rep = 0; rep < rep_count; rep++) {
                         if (px < w) pixels[py * w + px] = (uint8_t)colour;
                         px++;
                     }
                     bits = (uint8_t)(bits << 1);
                 }
             }
+
+            pen_x += ABC806_CHAR_WIDTH * rep_count;
 
             // A double-width cell consumed the next column's attribute
             // byte and occupies its space too.

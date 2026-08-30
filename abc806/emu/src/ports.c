@@ -33,6 +33,36 @@
 #include "../../../abcbus/disk.h"
 #include "ports.h"
 #include "memory.h"
+
+// --- The frame clock on DART channel B's RI input ---------------------
+//
+// The option PROM's routine at 0x7617 is a delay: it samples RR0 on
+// channel B, then spins until *bit 4 changes state*
+// (`IN A,(C) / XOR B / AND 10h / JR Z`). Bit 4 of a Z80 DART's RR0 is RI,
+// and with nothing driving it the machine waits there forever - which is
+// exactly where this target sat for two milestones, having booted
+// perfectly and drawn nothing.
+//
+// What makes a status bit flip on its own is a periodic input, and the
+// only periodic signal a 1983 machine has to hand at this point in its
+// boot is the video frame. Driving RI from a 50 Hz square wave unblocks
+// the routine and the ROM immediately writes its sign-on to the screen.
+//
+// Stated as inference, because it is: MAME drives channel A's RI and
+// channel B's CTS and leaves channel B's RI alone, so this is not read out
+// of another implementation. What is *observed* is that the loop waits on
+// a change to this bit and that a periodic source satisfies it. If the
+// real machine sources it from something else at the same rate - a
+// hardware timer, a mains-derived tick - the behaviour here is
+// indistinguishable, and the frequency is the part that matters.
+#define ABC806_CPU_HZ    3000000
+#define ABC806_FRAME_HZ  50
+static long long frame_cycles = 0;
+
+static bool frame_phase(void) {
+    long long half = ABC806_CPU_HZ / (ABC806_FRAME_HZ * 2);
+    return ((frame_cycles / half) & 1) != 0;
+}
 #include "memory.h"
 
 static int trace_io = 0;   // ABC806_TRACE_IO=1
@@ -250,6 +280,8 @@ static uint8_t dart_read_control(int channel) {
         uint8_t status = 0x04;
         if (ch->rx_ready) status |= 0x01;
         if (channel == 0 && config_80_columns) status |= 0x10;
+        // Channel B's RI is the frame clock - see the note at the top.
+        if (channel == 1 && frame_phase()) status |= 0x10;
         if (channel == 1 && config_50hz)       status |= 0x20;
         return status;
     }
@@ -591,6 +623,8 @@ static int io_out(Z80 *cpu, uint8_t port, uint8_t value) {
 // --------------------------------------------------------------- timing
 
 void abc806_ports_tick(Z80 *cpu, int cycles) {
+    frame_cycles += cycles;
+
     for (int i = 0; i < 4; i++) {
         CtcChannel *ch = &ctc[i];
         // Only timer mode is driven by the CPU clock; counter mode waits

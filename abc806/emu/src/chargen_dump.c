@@ -70,16 +70,42 @@ int main(int argc, char **argv) {
         {"FLASH           bit 7",        0x87},  // fg 7 + flash
         {"BLANK           cmd 2",        0x80},  // fg==bg, cmd 2
         {"KEEP PREVIOUS   cmd 0",        0x00},  // fg==bg, cmd 0
-        {"DOUBLE WIDTH    cmd 3",        0xC0},  // fg==bg, cmd 3
+        // 0xFF, not 0xC0. Both are command 3, but the low two bits are
+        // e5/e6 - the bits that actually turn doubling on - and 0xC0
+        // leaves them clear. The first version of this fixture used 0xC0
+        // and so exercised command 3's attribute inheritance while never
+        // doubling a pixel, which let a real x-position bug through. The
+        // ROM's own sign-on uses 0xFF.
+        {"DOUBLE WIDTH    cmd 3",        0xFF},  // fg==bg, cmd 3, e5+e6 set
         {"GREEN ON BLACK  colours",      0x02},  // fg 2
     };
 
     for (int r = 0; r < ROWS; r++) {
         const char *t = rows[r].text;
+        int len = (int)strlen(t);
         for (int c = 0; c < COLUMNS; c++) {
             int idx = r * COLUMNS + c;
-            cram[idx] = (uint8_t)(c < (int)strlen(t) ? t[c] : ' ');
+            cram[idx] = (uint8_t)(c < len ? t[c] : ' ');
             aram[idx] = rows[r].attr;
+        }
+    }
+
+    // The double-width row needs the ROM's own pattern rather than a
+    // uniform attribute. Real double width alternates a command cell
+    // (0xFF: fg==bg, command 3, e5+e6 set) with a colour cell (0x07) that
+    // the command reads its colours from, and duplicates the character
+    // across both. Filling the row with 0xFF instead makes every cell
+    // white-on-white and tests nothing - which is how the first version of
+    // this fixture managed to pass while the renderer put double-width
+    // cells at the wrong x.
+    {
+        const char *t = "ABC806 DOUBLE";
+        int row = 6;
+        for (int c = 0; c < COLUMNS; c++) {
+            int idx = row * COLUMNS + c;
+            int src = c / 2;
+            cram[idx] = (uint8_t)(src < (int)strlen(t) ? t[src] : ' ');
+            aram[idx] = (c & 1) ? 0x07 : 0xFF;
         }
     }
 

@@ -287,13 +287,14 @@ any of it - which now carries an outcome section comparing what it
 predicted against what happened, the same shape
 `ABC802_FLOPPY_SCOPING.md` uses.
 
-**The ROM draws no visible text**, which is the target's central open
-question rather than a rendering bug: it clears the screen and polls DART
-channel B forever. Ruled out by tracing - the keyboard does reach it (a
-sent byte moves RR0 from `0x24` to `0x25`), it is not waiting on a disk
-(real ABC832 media changes nothing), and both DOS PROMs behave alike. The
-remaining candidates are the E0516 RTC and the protection device, both on
-the 74ALS259 whose bits are currently decoded and dropped.
+**The ROM's sign-on renders**, but only because DART channel B's RI is
+driven. The option PROM's routine at `0x7617` is a *delay*: it samples
+RR0 and spins until **bit 4 changes** (`IN A,(C) / XOR B / AND 10h / JR
+Z`). Bit 4 is the DART's RI, and with nothing driving it the machine waits
+there forever having booted perfectly - which is where this target sat for
+two milestones. `ports.c` drives it from a 50 Hz square wave; that is
+inference, not something read out of MAME, which drives channel A's RI and
+channel B's CTS and leaves this alone.
 
 That is also why `bin/abc806-chargen-dump` is not optional cover but the
 *only* check on the character decode, and why milestone 2's gate was
