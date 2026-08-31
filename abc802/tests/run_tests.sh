@@ -247,6 +247,114 @@ else
     tl_end "$out"
 fi
 
+# --- DOSGEN, the DOS's own disk generator -------------------------------
+#
+# DOSGEN is the program that makes a filesystem, and it is a file on a
+# system disk rather than anything in ROM - which is why bin/abcdisk
+# exists at all. Running it end to end exercises more of the bus model
+# than any other single thing here: a program loaded off the media, an
+# interactive dialogue, a full 2560-sector verify pass, and writes back.
+#
+# It needs sys832-ufd.img, which the other checks above do not, so it
+# gates separately.
+#
+# Note the cycle budget. 700,000,000 is measured, not copied: the run
+# completes by 450,000,000 and this leaves a comfortable margin. An
+# earlier hand-run of this used 30,000,000,000 and took 41 seconds
+# against the 2 it actually needs.
+UFD_IMAGE="$MEDIA/sys832-ufd.img"
+dosgen_skip_reason=""
+if [ -z "$MEDIA" ]; then
+    dosgen_skip_reason="set ABC802_TEST_DISKS to a directory holding sys832-ufd.img (a 640K ABC832 UFD-DOS system disk)"
+elif [ ! -f "$UFD_IMAGE" ]; then
+    dosgen_skip_reason="$UFD_IMAGE not found"
+fi
+
+if [ -n "$dosgen_skip_reason" ]; then
+    for name in dosgen-completes dosgen-marks-beyond-media \
+                dosgen-filesystem-is-usable; do
+        tl_skip "$name" "$dosgen_skip_reason"
+    done
+else
+    # The dialogue: BYE to leave BASIC for the DOS shell, DOSGEN, the
+    # drive, "-" for filesystem-only (its F option is a low-level format,
+    # which a synthetic controller has nothing to do), then three separate
+    # confirmations - the program really does ask three times.
+    #
+    # The bare carriage returns are padding, not input. --type sends one
+    # string at a fixed pace and there is no way to wait inside it, so
+    # these fill the time while the DOS shell and then DOSGEN load. Keys
+    # arriving while nothing is reading are discarded, and the ones that
+    # do land at a prompt are answered harmlessly ("Felaktigt enhetsnamn")
+    # and reprompted.
+    dosgen_pad() { printf '\r%.0s' $(seq "$1"); }
+    DOSGEN_KEYS="BYE"$'\r'"$(dosgen_pad 40)DOSGEN"$'\r'"$(dosgen_pad 5)MF0:"$'\r''-'$'\r''J'$'\r''J'$'\r''J'$'\r'
+
+    cp "$UFD_IMAGE" "$WORKDIR/dosgen.img"
+    out=$("$ABC802" --columns 80 --screen --cycles 700000000 \
+          --type-at 200000000 --type "$DOSGEN_KEYS" \
+          --disk "$WORKDIR/dosgen.img" 2>&1)
+    tl_begin "dosgen-completes"
+    # Only the summary line, deliberately. DOSGEN's own banner has long
+    # scrolled off by the time it finishes - the screen is a 24-line
+    # window and the run prints 1272 bad-sector lines - so asserting on it
+    # fails for a reason that has nothing to do with the subject. That was
+    # checked by doing it.
+    #
+    # The count is the whole point anyway: 632 usable clusters of 4
+    # sectors on a 640-cluster drive. DOSGEN reaching a correct total is
+    # what says the load, the verify pass and the writes all worked.
+    tl_want "$out" "2528 användbara sektorer" "the correct usable-sector count for a 640K drive"
+    tl_want_not "$out" "Fel " "a DOS error during the run"
+    tl_end "$out"
+
+    # The "Sektor NNNN är dålig" lines DOSGEN prints past the end of the
+    # media are not an error, and this is what says so. DOSGEN initialises
+    # a fixed 240-byte free-list bitmap covering 1920 clusters; this drive
+    # has 640, so it marks clusters 640-1911 unusable and announces each
+    # one. Reading the bitmap it wrote is the direct evidence - the screen
+    # only shows the last few lines of the scroll.
+    tl_begin "dosgen-marks-beyond-media"
+    bitmap=$(python3 - "$WORKDIR/dosgen.img" <<'PY'
+import sys
+d = open(sys.argv[1], 'rb').read()[14*256:15*256]
+bits = [(d[i >> 3] >> (7 - (i & 7))) & 1 for i in range(240 * 8)]
+# The media is 640 clusters. Everything past it must be marked unusable,
+# and the usable region must not be.
+print("usable_clear=%d beyond_set=%d" % (
+    all(b == 0 for b in bits[16:640]),
+    all(b == 1 for b in bits[640:1912])))
+PY
+)
+    tl_want "$bitmap" "usable_clear=1" "the on-media clusters left free in the bitmap"
+    tl_want "$bitmap" "beyond_set=1" "clusters past the end of the media marked unusable"
+    tl_end "$bitmap"
+
+    # And the filesystem it built actually works, which no amount of
+    # reading its summary establishes. The DOSGEN'd disk goes on drive 1
+    # beside a pristine system disk, and BASIC saves to it.
+    #
+    # Across *two processes*, deliberately. Doing it in one - save, NEW,
+    # load, LIST - looks like a round trip and is not: the program text is
+    # on screen from the moment it was typed, so the assertion matches the
+    # echo whether or not anything was ever written. That check passed
+    # with the card's writes injected away, which is how this was found;
+    # it is the same trap as the postmortem in
+    # docs/postmortems/2026-08-29-test-matched-the-echoed-input.md. The
+    # second process never types the program text, so any occurrence of it
+    # came off the disk.
+    cp "$UFD_IMAGE" "$WORKDIR/dgsys.img"
+    "$ABC802" --columns 80 --cycles "$DISK_CAP" --type-at 200000000 \
+        --type $'10 PRINT "DOSGEN OK"\rSAVE MF1:NYFIL\r' \
+        --disk "$WORKDIR/dgsys.img" --disk "$WORKDIR/dosgen.img" > /dev/null 2>&1
+    out=$("$ABC802" --columns 80 --screen --cycles "$DISK_CAP" --type-at 200000000 \
+        --type $'LOAD MF1:NYFIL\rLIST\r' \
+        --disk "$WORKDIR/dgsys.img" --disk "$WORKDIR/dosgen.img" 2>&1)
+    tl_begin "dosgen-filesystem-is-usable"
+    tl_want "$out" '10 PRINT "DOSGEN OK"' "a program read back off the generated filesystem in a second process"
+    tl_end "$out"
+fi
+
 # --- Formatted blank media, with no external images needed ------------
 #
 # These are the only floppy checks that never SKIP: bin/abcdisk builds the

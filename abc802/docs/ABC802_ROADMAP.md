@@ -36,7 +36,7 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 | 7 | A second drive | `--disk` repeats for drives 0, 1, …; `MO1:`/`MF1:` work and are independent |
 | 8 | The line editor's vocabulary | swept every control code; Left arrow works, Right correctly does nothing — the machine has no cursor movement |
 | 9 | A real Z80 SIO | registers, commands and the two DIP switches that reach the ROM through channel B's modem-status inputs |
-| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 18 checks (14 media-free), part of `make test` |
+| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 21 checks (14 media-free), part of `make test` |
 
 ## Known gaps
 
@@ -96,18 +96,17 @@ Real, understood, and deliberately not solved yet — not oversights.
   **Note for whoever adds `SF`/`HD`:** interleave cannot be inferred. The
   two working drives need *opposite* settings, and a directory sector is
   readable under either mapping, so only booting real media settles it.
-  **Real software hits this, and it is the single cause of both known DOS
-  failures** — see the `LIB`/`DOSGEN` entry below.
-- **`DOSGEN` scans past the end of the modeled drive.** On a real 640K
-  UFD-DOS system disk it now starts and reaches its media-verify pass, but
-  walks cluster addresses well beyond the 640 a 2560-sector image has and
-  reports each as `Sektor NNNN är dålig - borttagen!`. Whether the real
-  card answers a beyond-media address differently, or whether DOSGEN needs
-  a drive-geometry reply this controller does not give, is not known.
-  `LIB` on the same disk works fully, so this is specific to DOSGEN's
-  verify pass rather than to the bus model. Low-level formatting (its `F`
-  option) is out of scope for a synthetic controller in any case; the `-`
-  option, which writes only the filesystem, is the reachable one.
+  **Real software hits this**, which is why it is worth the warning.
+- **`DOSGEN`'s bad-sector output past the end of the media is the DOS, not
+  a defect** — this was carried here as an open question and is now
+  settled; see [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md). It runs to
+  completion, reports the correct `2528 användbara sektorer`, and the
+  filesystem it writes is usable. The `Sektor NNNN är dålig` lines are
+  DOSGEN filling a fixed 240-byte free-list bitmap that covers 1920
+  clusters on a drive that has 640. Three checks cover it. Low-level
+  formatting (its `F` option) remains out of scope for a synthetic
+  controller; the `-` option, which writes only the filesystem, is the one
+  that matters and is the one tested.
 - **The controller card itself is not emulated.** A real ABC830 is a
   complete second computer (its own Z80, Z80 DMA, FD1793 and firmware);
   what exists here models the *protocol* it speaks, not the card. Software
@@ -134,6 +133,16 @@ media booting real applications, drive independence, and a cross-drive
 load with its negative control — need `ABC802_TEST_DISKS` pointed at a
 directory holding `disk001.img`, `mf001.img` and `mf002.img`, and skip
 loudly without it.
+
+Three more run `DOSGEN`, the DOS's own disk generator, end to end: it
+completes with the correct usable-sector count, the free-list bitmap it
+writes marks every cluster past the end of the media, and a program saved
+to the filesystem it built is read back **in a second process**. They need
+`sys832-ufd.img` in the same directory, which the four above do not, so
+they gate separately. The two-process form is not fussiness — done in one
+process the check matches the program text still echoed on screen from
+when it was typed, and passes with the card's writes injected away. That
+happened, and is why the split exists.
 
 Those three are `.img` dumps in physical sector order, so they run at the
 default interleave. Images from other archives may be dumped in logical

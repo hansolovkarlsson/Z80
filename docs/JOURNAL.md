@@ -21,6 +21,79 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-31 (5) — DOSGEN's bad sectors were never a bug
+
+Last of the day's roadmap items, and the third in a row whose stated
+premise did not survive contact with a measurement. The ABC802 roadmap
+carried this: on real 640K UFD-DOS media, `DOSGEN` walks cluster addresses
+well past the end of the drive and reports each as `Sektor NNNN är dålig`,
+cause unknown, with two hypotheses attached — that the real card answers a
+beyond-media address differently, or that DOSGEN wants a drive-geometry
+reply this controller does not give.
+
+The first thing I found is what the entry did not mention: **DOSGEN
+finishes**, and its answer is right — `2528 användbara sektorer`, which is
+632 usable clusters of 4 on a 640-cluster drive. That reframes the whole
+question from "why is it broken" to "why is it noisy".
+
+### Getting there
+
+Driving it was most of the work. `--type` sends one string at a fixed
+pace with no way to wait inside it, and the DOS shell and DOSGEN each take
+far longer to load than the string takes to type. Padding with bare
+carriage returns solves it — keys arriving while nothing is reading are
+discarded, and the ones that land at a prompt get an "invalid device name"
+and a reprompt. Then the dialogue itself: drive, `-` for filesystem-only,
+and three separate confirmations, the last being `ABSOLUT säker ??`.
+
+### The experiment that settled it
+
+Rather than reason about what a real controller does, I removed the
+range check entirely so out-of-range sectors read as zeros and *succeed*.
+DOSGEN's output came back **byte-identical** — same bad-sector lines, same
+final sector 7644, same total. The card's answer has no influence at all,
+which refutes both recorded hypotheses at once.
+
+### The disk had the answer
+
+DOSGEN writes exactly four sectors, and sector 14 is the free-list bitmap:
+240 bytes, so 1920 clusters, on a drive with 640. Bits 0-8 set (system
+area), 9-639 clear (the usable media), and **640-1911 set**. That last
+range is 1272 clusters — exactly the 1272 out-of-range sector requests I
+had counted in the bus trace, from a completely independent measurement.
+It is a fixed-size structure being filled out for a smaller drive. The
+noise is cosmetic and the filesystem is correct, which I then proved by
+saving to it and reading back in a second process.
+
+### I walked into the echoed-input trap
+
+Three checks, and the injection sweep caught my own usability check being
+a fake. Written as one process — save, `NEW`, load, `LIST` — it **passed
+with the card's writes injected away**, because the program text is on
+screen from the moment it was typed and the assertion matched the echo.
+This project has a postmortem about precisely this, written after the same
+thing happened in this same suite. Knowing about it did not stop me
+writing it; running the sabotage did. Two processes fixes it — the second
+never types the program text.
+
+Also: `dosgen-completes` first asserted on DOSGEN's banner and failed,
+because 1272 bad-sector lines scroll it off a 24-line screen. A real
+failure, for a reason with nothing to do with the subject.
+
+### Three for three
+
+Today's three roadmap items each had a stated reason, and all three were
+wrong: ABC-DOS does not scan eight drives at boot, the ABC80's slowness
+was not video timing, and DOSGEN was not waiting on the controller. The
+postmortem written after the second one predicted the third. That is
+mildly reassuring about the postmortem and quite damning about the
+roadmaps.
+
+The cap story repeated too: my hand-run used 30,000,000,000 T-states and
+took 41 seconds where 450,000,000 finishes. Milestone 10 already learned
+that lesson for this suite. Measuring the budget is apparently something
+you have to do every time rather than something you learn once.
+
 ## 2026-08-31 (4) — the ABC80's speed limit was a syscall, not the video timing
 
 The roadmap had carried this for a while: `bin/abc80` runs at ~1.7M

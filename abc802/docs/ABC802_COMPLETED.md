@@ -709,3 +709,93 @@ address bit during the mutation sweep failed this check and nothing else.
 other images autoboot an application, which swallows the typed commands —
 found the direct way, by writing the check against `mf001.img` and
 watching drive 1 never get written.
+
+## `DOSGEN`'s "bad sectors" — investigated, and not a defect
+
+This sat in the roadmap as an open question: on a real 640K UFD-DOS
+system disk, `DOSGEN` reaches its media-verify pass and then walks cluster
+addresses well past the 640 a 2560-sector image has, reporting each as
+`Sektor NNNN är dålig - borttagen!`. Two hypotheses were recorded — that
+the real card answers a beyond-media address differently, or that DOSGEN
+needs a drive-geometry reply this controller does not give.
+
+**Both are wrong, and there is nothing to fix.**
+
+### It completes, and the answer is right
+
+The first thing the roadmap entry did not say is that DOSGEN *finishes*.
+It reports `2528 användbara sektorer` — 632 usable clusters of 4 sectors
+on a 640-cluster drive — and returns to the DOS prompt. Getting there
+means driving its full dialogue: `BYE` to the DOS shell, `DOSGEN`, the
+drive name, `-` for filesystem-only, and then **three** separate
+confirmations, the last of them `ABSOLUT säker ??`.
+
+### The card's answer has no effect whatsoever
+
+The decisive experiment was to remove the controller's range check
+entirely, so out-of-range sectors read as zeros and succeed instead of
+returning `AUX_SEEK_ERROR`. DOSGEN's output is **byte-identical**: the
+same bad-sector lines, the same last sector 7644, the same 2528 total.
+
+So it is not probing for capacity, not reacting to an error, and not
+waiting for a geometry reply. Whatever it is doing, the bus model is not
+part of it.
+
+### What it is actually doing
+
+The disk says so. DOSGEN writes exactly four sectors — 14, 16, 17 and 18 —
+and sector 14 is the free-list bitmap. Decoded:
+
+| bits | value | meaning |
+|---|---|---|
+| 0-8 | 1 | the system area, allocated |
+| 9-639 | 0 | free — the usable media |
+| **640-1911** | **1** | **marked unusable** |
+| 1912-1919 | mixed | trailer |
+
+The bitmap is 240 bytes — 1920 clusters — in a 256-byte sector. This drive
+has 640. So DOSGEN marks clusters 640 upward as unusable and prints a line
+for each, and **1272 clusters marked is exactly the 1272 out-of-range
+sector requests counted in the bus trace.** The two numbers come from
+completely different places and agree.
+
+That is a fixed-size structure being filled out for a smaller drive. The
+noise is cosmetic; the filesystem is correct.
+
+### And it works
+
+Proven rather than inferred: the DOSGEN'd image goes on drive 1 beside a
+pristine system disk, BASIC saves a program to `MF1:`, and a **second
+process** loads and lists it back.
+
+### Three checks, and one of them was wrong first
+
+`dosgen-completes`, `dosgen-marks-beyond-media` (which decodes the bitmap
+out of the image), and `dosgen-filesystem-is-usable`.
+
+The usability check was originally one process — save, `NEW`, load,
+`LIST` — and it **passed with the card's writes injected away**. Of course
+it did: the program text is on screen from the moment it was typed, so the
+assertion matched the echo and never needed the disk at all. Exactly the
+trap
+[the echoed-input postmortem](../../docs/postmortems/2026-08-29-test-matched-the-echoed-input.md)
+describes, found the same way it was the first time — by breaking the
+thing the check was supposed to be watching. Splitting it across two
+processes fixes it: the second never types the program text, so any
+occurrence came off the disk.
+
+Two other notes from the sweep. `dosgen-completes` first asserted on
+DOSGEN's own banner and failed, because 1272 bad-sector lines scroll it
+off a 24-line screen long before the run ends — a real failure for a
+reason unrelated to its subject. And an injection masking the
+within-cluster address field to 2 bits changed nothing, which is not a
+coverage gap: with 4 sectors per cluster the field never exceeds 3, so the
+injection is a no-op for this drive. It would matter for the ABC830, whose
+checks need media not present here.
+
+### Cost
+
+The run needs 450M T-states and the check budgets 700M, which is about 2
+seconds. The hand-run that found all this used 30,000,000,000 and took 41
+— the same "measure the cap rather than copy it forward" lesson milestone
+10 already learned, arrived at again.
