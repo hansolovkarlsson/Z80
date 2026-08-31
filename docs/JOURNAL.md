@@ -21,6 +21,78 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-31 (8) — the cassette works, and my CRC diagnosis was wrong
+
+Yesterday's entry ended with cassette "one step short", blaming the SIO's
+unmodeled **hardware CRC generator** for the load failing. That diagnosis
+was wrong, and checking two bits would have shown it in a minute: `WR5`
+bit 0 (Tx CRC enable) is 0 in every value the ROM writes, and `WR3` bit 3
+(Rx CRC enable) is 0 too. The SIO's CRC hardware is never switched on.
+
+I wrote a postmortem this same day about roadmap justifications being the
+least-tested prose in the repo, and then published an unverified mechanism
+of my own in a commit message. The difference is only that this one was
+caught the next session instead of six weeks later.
+
+### What the ROM actually does
+
+Its receive ISR says it plainly:
+
+```
+739D: IN A,(42h)          ; the byte
+73A2: LD HL,(FFE6h)       ; running checksum
+73A5: ADD HL,BC           ; += byte
+73A6: LD (FFE6h),HL
+73A9: LD HL,(FFE4h)       ; current state handler
+73B0: JP (HL)
+```
+
+A 16-bit additive checksum, dispatched through a state pointer. The record
+format falls out and checks arithmetically: 256 data bytes, an `0x03` end
+mark, then the sum little-endian — `sum(data) + 3 = 0x07E9` against the
+`E9 07` on the tape.
+
+### The real cause was pacing
+
+I was feeding a byte on every instruction, roughly 20,000x faster than a
+tape. The ISR collects bytes but the **mainline** advances the record
+state, and with a byte always waiting the mainline barely ran: each `RETI`
+was followed immediately by another interrupt. Record 0 survived it;
+record 1 stopped after its 256 data bytes, never took the end mark or the
+checksum, and reported `Error 35` — which is exactly what a checksum
+failure looks like. That is why the wrong diagnosis was so comfortable.
+
+Measuring separated them at once:
+
+| rate | outcome |
+|---|---|
+| byte / 200 T-states | 586 read, `Error 35` |
+| byte / 500 - 6000 | 590 read, **load succeeds** |
+| byte / 15000 - 25000 | 588 read, succeeds (ROM skips the trailing `FF FF`) |
+
+A 50x working range, so the 2500 default is a plateau rather than a tuned
+constant. `ABC802_CASSETTE_TSTATES` overrides it, which is how the table
+was made.
+
+### What I'd take from it
+
+The failure mode had two candidate explanations that produce an identical
+symptom, and I picked one and wrote it down as fact because it *sounded*
+mechanical and specific. "The ROM drives the SIO's hardware CRC generator"
+reads like something I looked up. I hadn't. The thing that would have
+saved me was three minutes decoding two register bits I already had in a
+trace on screen.
+
+There is a real lesson about emulator speed here too, and it is not
+intuitive: **being too fast is a correctness bug.** Every other part of
+this emulator benefits from running as fast as the host allows; a device
+that interrupts does not, because the guest's own progress between
+interrupts is part of the contract.
+
+`cassette-load-round-trip` now runs the load in a second process, which
+never types the program text. Four injections, all caught, including the
+pacing one.
+
 ## 2026-08-31 (7) — cassette: byte-level after all, and stopped one step short
 
 The last real capability on the ABC802 roadmap, described there as
@@ -86,6 +158,10 @@ stream` asserts the recording's structure, and
 `cassette-load-reads-the-recording` asserts an incomplete state *and says
 so in its own comment*, defending the interrupt and the hunt phase without
 pretending the round trip works.
+
+**Correction, next session:** the CRC diagnosis above is wrong — the SIO's
+CRC hardware is never enabled by this ROM, and the real cause was delivery
+pacing. See the entry for 2026-08-31 (8).
 
 ## 2026-08-31 (6) — the ABC802's terminal render learns the row attributes
 

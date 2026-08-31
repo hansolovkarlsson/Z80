@@ -531,7 +531,17 @@ void abc802_ports_tick(Z80 *cpu, int cycles) {
     // matters with no analogue timing to reproduce.
     {
         SioChannel *b = &sio[1];
-        if (abc802_cassette_present() && (b->wr[3] & 0x01) && !b->rx_ready) {
+        static long cas_tstates = 0;
+        static long cas_period = 0;
+        if (cas_period == 0) {
+            const char *env = getenv("ABC802_CASSETTE_TSTATES");
+            cas_period = env ? atol(env) : 0;
+            if (cas_period <= 0) cas_period = 2500;
+        }
+        cas_tstates += cycles;
+        bool cas_due = cas_tstates >= cas_period;
+        if (cas_due) cas_tstates = 0;
+        if (cas_due && abc802_cassette_present() && (b->wr[3] & 0x01) && !b->rx_ready) {
             // Hunt phase: discard until the sync pattern matches. WR4 bits
             // 5:4 choose how wide that pattern is, and getting it wrong is
             // not a hang but a *checksum* failure - the ROM programs 16-bit

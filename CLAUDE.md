@@ -213,20 +213,25 @@ the ABC80's editor, which has a non-destructive cursor-right at `0x09`.
 Left arrow therefore maps to `0x08` and Right is deliberately dropped;
 that is hardware, not a missing feature.
 
-A partial cassette exists: `--cassette FILE` records what `SAVE "CAS:name"`
-transmits on SIO channel B, and `LOAD` reads it all back byte-exactly, but
-the load fails its integrity check. The roadmap had called this bit-level
-work; a trace shows the ROM handing the SIO **whole bytes** (the FSK
-modulation is hardware past the SIO), so the data port is the protocol
-boundary the way the four-byte header is for `abcbus/`. Two things the
-receive side needed, neither guessable: **the SIO's receive interrupt is a
-level, not an edge** (the ROM enables the receiver via WR3 *before* setting
-the interrupt mode in WR1, so latching on arrival never fires), and **the
-hunt phase matches a 16-bit sync pattern** (`WR4 = 0x10` is bisync, so
-`WR6,WR7` = `16 02`) - matching only WR6 shifts the stream one byte and
-produces a checksum failure rather than a hang. What is missing is the
-SIO's **hardware CRC generator**, which the ROM drives through the WR0 CRC
-commands; nothing writes the CRC bytes, so `LOAD` ends in `Error 35`.
+Milestone 12 adds a working cassette: `--cassette FILE` gives a real
+`SAVE`/`LOAD` round trip on SIO channel B. The roadmap had called this
+bit-level work; a trace shows the ROM handing the SIO **whole bytes** (the
+FSK modulation is hardware past the SIO), so the data port is the protocol
+boundary the way the four-byte header is for `abcbus/`. Three things were
+needed, none guessable. **The SIO's receive interrupt is a level, not an
+edge** - the ROM enables the receiver via WR3 *before* setting the
+interrupt mode in WR1, so latching on arrival never fires. **The hunt phase
+matches a 16-bit sync pattern** (`WR4 = 0x10` is bisync, so `WR6,WR7` =
+`16 02`); matching only WR6 shifts the stream a byte. And **the tape must
+be delivered slowly** - a byte per instruction starves the ROM's mainline,
+which is what advances the record state, and the failure looks exactly
+like a checksum error. Anything from ~500 to ~25,000 T-states per byte
+works (default 2500, `ABC802_CASSETTE_TSTATES` to override), so it is a
+range rather than a tuned constant. Note the SIO's *hardware* CRC is never
+enabled by this ROM (WR5 bit 0 and WR3 bit 3 are both 0); the integrity
+check is a **software 16-bit additive checksum** accumulated in the ROM's
+own ISR at `0x739A`, and a record is 256 data bytes, an `0x03` end mark,
+then that sum little-endian.
 
 Milestone 9 replaced the SIO stub with a real register model. The reason
 it mattered is not the RS-232 port: **two configuration DIP switches reach

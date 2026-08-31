@@ -930,13 +930,11 @@ the same command in the mosaic one, so attribute *detection* lands
 identically either way. The line stays, with a comment saying it is not
 independently observable, so nobody deletes it as dead.
 
-## Cassette — recorded, read back, and stopped one step short
+## Cassette — a real SAVE/LOAD round trip
 
 `--cassette FILE` attaches a tape on SIO channel B. `SAVE "CAS:name"`
 records a real, deterministic 590-byte stream and `LOAD "CAS:name"` reads
-every byte of it back correctly. It then rejects the recording with
-`Error 35` — and the reason is exact rather than mysterious, which is why
-this is written up as an unfinished thing rather than left as a guess.
+every byte of it back correctly. A program saved in one process lists back correctly in another.
 
 ### The premise in the roadmap was wrong
 
@@ -997,23 +995,60 @@ being leader its hunt phase is supposed to skip — and every delivered byte
 matches the recording exactly, checked by diffing the trace of the data
 port against the file.
 
-### Where it stops, and what would finish it
+### The CRC diagnosis in the first write-up was wrong
 
-The ROM drives the SIO's **hardware CRC generator**: the save trace
-carries WR0 CRC commands (`C7`, `E6`, `EC`, all with bits 7:6 = 11) issued
-right after the 295th transmitted byte, at the boundary between the two
-records. On real hardware the SIO appends two CRC bytes there. This
-emulator computes no CRC, so **the recording has no CRC bytes in it** —
-record 0's trailer is a single `FF` and then the next leader — and the
-loader's integrity check fails.
+That version said the ROM drove the SIO's **hardware CRC generator** and
+that the missing CRC bytes were why a load failed. Both halves are false,
+and checking the enable bits would have shown it in a minute: `WR5` bit 0
+(Tx CRC enable) is **0** in every value the ROM writes, and `WR3` bit 3
+(Rx CRC enable) is **0** too. The SIO's CRC hardware is never turned on.
 
-Finishing it means implementing the SIO's CRC-16 for both directions. That
-is a bounded job with a genuinely good oracle: this ROM's own loader
-either accepts a recording or does not. The unknowns are the polynomial
-and preset, the byte order, and exactly which WR0 command makes the
-transmitter insert the bytes — a small enough space to settle by
-experiment rather than by guessing, which is why it was left rather than
-attempted here.
+What the ROM actually uses is a **software checksum**, and its own receive
+interrupt handler says so:
+
+```
+739A: PUSH AF / PUSH HL / PUSH BC
+739D: IN A,(42h)         ; the received byte
+739F: LD B,0 / LD C,A
+73A2: LD HL,(FFE6h)      ; running checksum
+73A5: ADD HL,BC          ; += byte
+73A6: LD (FFE6h),HL
+73A9: LD HL,(FFE4h)      ; the current state handler
+73B0: JP (HL)
+```
+
+A 16-bit additive sum at `0xFFE6`, dispatched through a state pointer. The
+record format follows from it and is confirmed arithmetically: **256 data
+bytes, an `0x03` end mark, then that sum little-endian.** For the tape
+saved here, `sum(256 data) + 3 = 0x07E9`, and the two bytes after the end
+mark are `E9 07`.
+
+### The real cause was delivery pacing
+
+The receiver was being fed a byte on every instruction — perhaps 20,000
+times faster than a real tape. The ROM's interrupt handler collects bytes,
+but its **mainline** is what advances the record state, and with a byte
+always waiting the mainline barely ran: after each `RETI` the next
+instruction took another interrupt. Record 0 survived that; record 1
+stopped after its 256 data bytes, never taking the `0x03` and the
+checksum, and reported `Error 35`.
+
+The symptom was indistinguishable from a checksum problem, which is how
+the wrong diagnosis got written down. What separated them was measuring
+rather than reasoning: slowing the feed and watching the byte count.
+
+| bytes read | outcome |
+|---|---|
+| one byte / 200 T-states | 586 read, `Error 35` |
+| one byte / 500 - 6000 | **590 read, load succeeds** |
+| one byte / 15000 - 25000 | 588 read, load succeeds (the ROM skips the trailing `FF FF`) |
+
+The working range spans at least 50x, so the default of 2500 T-states per
+byte is not a tuned constant - anything that leaves the mainline room to
+run works. `ABC802_CASSETTE_TSTATES` overrides it, which is how the table
+above was measured. The real tape's rate is not known here and is not
+claimed; what is claimed is only that the delivery must be slower than the
+ROM's own loop.
 
 ### Tests
 
@@ -1021,11 +1056,9 @@ attempted here.
 32-byte leader, the `16 02` sync, and the header naming `T` / `BAC` — not
 just its length, which 590 bytes of anything would satisfy.
 
-`cassette-load-reads-the-recording` deliberately asserts an incomplete
-state, and says so: 586 bytes consumed and `Error 35` reached. It defends
-everything up to the CRC, because without the interrupt or the 16-bit hunt
-the ROM reads nothing and hangs. It should be replaced by a real
-`SAVE`/`LOAD` round trip when the CRC lands.
+`cassette-load-round-trip` runs the load in a **second process**, which
+never types the program text, so anything it lists came off the tape.
 
-Three injections, all caught: the receive interrupt removed, the sync
-width forced to 8 bits, and recorded bytes never reaching the file.
+Four injections, all caught: the receive interrupt removed, the sync width
+forced to 8 bits, the tape delivered one byte per instruction, and
+recorded bytes never reaching the file.

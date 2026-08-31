@@ -22,7 +22,7 @@ that machine's documentation thins out.
 
 ## Completed work
 
-Milestones 1-11 are done. Their full write-ups — including what each one
+Milestones 1-12 are done. Their full write-ups — including what each one
 found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 
 | # | Milestone | Outcome |
@@ -38,7 +38,7 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 | 9 | A real Z80 SIO | registers, commands and the two DIP switches that reach the ROM through channel B's modem-status inputs |
 | 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 25 checks (18 media-free), part of `make test` |
 | 11 | Row attributes in the terminal render | `--screen` and `--interactive` run the pixel renderer's own attribute walk and draw Row Graphic as Unicode sextants |
-| — | Cassette (partial) | `--cassette` records a real byte stream and reads it back byte-exactly; the load fails its CRC check, which is unmodeled |
+| 12 | Cassette | `--cassette` gives a real `SAVE`/`LOAD` round trip on SIO channel B, with a genuine receive interrupt and bisync hunt |
 
 ## Known gaps
 
@@ -68,25 +68,6 @@ Real, understood, and deliberately not solved yet — not oversights.
   scanline model (Milestone 2) — but anything genuinely tied to field
   timing, including the hardware cursor-blink modes (R10 bits 6:5 = 10/11)
   and the character generator's Row Flash attribute, still is not.
-- **Cassette records but does not load back**, and the reason is exact:
-  the ROM drives the SIO's **hardware CRC generator** (the WR0 CRC
-  commands), which is not modeled, so nothing ever writes the CRC bytes a
-  loader checks. `--cassette FILE` and `SAVE "CAS:name"` produce a real,
-  deterministic 590-byte recording, and `LOAD` reads all of it back
-  byte-exactly through a genuine receive path — 16-bit hunt-phase sync
-  detection and a real SIO receive interrupt — before rejecting it with
-  `Error 35`, "CRC or address-mark error". Finishing it means implementing
-  the SIO's CRC-16 for both directions, which has a good oracle (this
-  ROM's own loader) and a small search space (polynomial, preset, byte
-  order, and where the transmitter inserts the bytes). See
-  [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md) for what was measured.
-
-  Note that the roadmap used to describe this as bit-level work — "the
-  signal modulated through the SIO's synchronous clocks and demodulated by
-  frequency detection". Tracing a real `SAVE` shows the ROM handing the
-  SIO whole *bytes*; the modulation is hardware past the SIO, so the byte
-  stream is the protocol boundary, exactly as the four-byte command header
-  is for `abcbus/disk.c`.
 - **Channel A's RS-232 port has nothing attached.** Transmitted bytes are
   discarded and nothing is ever received.
 - **Two drive types, one card.** `MO` (ABC830, 160KB) and `MF`

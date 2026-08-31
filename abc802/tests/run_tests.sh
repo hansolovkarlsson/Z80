@@ -192,24 +192,27 @@ tl_want "$structure" "sync=1" "the 16-bit sync pattern the ROM programs into WR6
 tl_want "$structure" "header=1" "the header record naming T.BAC"
 tl_end "$out$structure"
 
-# The receive side: hunt-phase sync detection and a real SIO receive
-# interrupt, which was the one slot in the IM 2 daisy chain that had
-# nothing in it.
+# The round trip, across two processes. The second never types the program
+# text, so anything it lists came off the tape - the same discipline the
+# DOSGEN check needs, and for the same reason.
 #
-# This asserts an *incomplete* state on purpose, and should be replaced by
-# a real SAVE/LOAD round trip when it stops being true. The ROM reads the
-# recording back byte-exactly - 586 of the 590 bytes, the rest being the
-# leader its hunt phase correctly skips - and then rejects it with Error
-# 35, "CRC or address-mark error". That is honest: the ROM drives the
-# SIO's *hardware* CRC generator (WR0 CRC commands) and this emulator does
-# not implement it, so nothing ever wrote the CRC bytes the loader checks.
-# What this check defends is everything up to that point: without the
-# interrupt or the 16-bit hunt the ROM reads nothing at all and hangs.
-out=$("$ABC802" --columns 80 --cassette "$CASSETTE_TAPE" --cycles 400000000 \
-      --type $'LOAD "CAS:T"\r' --screen 2>&1)
-tl_begin "cassette-load-reads-the-recording"
-tl_want "$out" "586 read" "the ROM consuming the whole recording through the SIO"
-tl_want "$out" "Error 35" "the ROM reaching its CRC check - see cassette.h for what is missing"
+# The receive side is a real one: 16-bit hunt-phase sync detection (WR4
+# selects bisync, so the pattern is WR6,WR7 = 16 02, and matching only WR6
+# leaves the stream one byte out of step) and a genuine SIO receive
+# interrupt, which was the one slot in the IM 2 daisy chain with nothing in
+# it. The ROM never polls: LOAD programs "interrupt on all received
+# characters" and waits.
+#
+# The carriage returns are padding, holding LIST back until the load has
+# finished; they are discarded while nothing is reading.
+CASSETTE_PAD=$(printf '\r%.0s' $(seq 15))
+out=$("$ABC802" --columns 80 --screen --cycles 200000000 \
+      --cassette "$CASSETTE_TAPE" \
+      --type "LOAD \"CAS:T\"$CASSETTE_PAD"$'LIST\r' 2>&1)
+tl_begin "cassette-load-round-trip"
+tl_want "$out" "590 read" "the ROM consuming the whole recording through the SIO"
+tl_want "$out" '10 PRINT "HEJ"' "the program listed back off the tape in a second process"
+tl_want_not "$out" "Error" "any error from the load"
 tl_end "$out"
 
 # --- Row attributes in the terminal render ----------------------------
