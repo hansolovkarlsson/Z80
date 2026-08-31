@@ -399,10 +399,14 @@ Project history lives in the top-level `docs/` too, and is worth
 consulting before repeating an investigation: `docs/JOURNAL.md` is a
 running log organized by *when* (what was worked on, why an approach was
 chosen, what turned out to be wrong first), and `docs/postmortems/` holds
-write-ups of failures whose lesson outlived the fix — currently the
-missing block I/O opcodes, `--type`'s raw-UTF-8 bug, the DART's
-single-receive-byte constraint, and the "boot screen cannot validate the
-feature" near-miss. Each machine target's *finished* work now lives in its
+write-ups of failures whose lesson outlived the fix. Its own
+`README.md` indexes them with a one-line lesson each and is the thing to
+read rather than this list; as of writing they cover the missing block I/O
+opcodes, `--type`'s raw-UTF-8 bug, the DART's single-receive-byte
+constraint, the "boot screen cannot validate the feature" near-miss, a
+status bit invented from one ROM, a test that matched its own input, a
+pass/fail oracle that hid its own premises, and naming a source without
+consulting it. Each machine target's *finished* work now lives in its
 own `*_COMPLETED.md` (`cpm/docs/COMPLETED.md`,
 `abc80/docs/ABC80_COMPLETED.md`, `abc802/docs/ABC802_COMPLETED.md`,
 `abc806/docs/ABC806_COMPLETED.md`) rather than in its roadmap, so each `ROADMAP.md` answers only "what works, what

@@ -23,6 +23,8 @@ Each one answers the same four questions:
 
 | Date | Postmortem | One-line lesson |
 |---|---|---|
+| 2026-08-30 | [A binary oracle hides its premises](2026-08-30-binary-oracle-hides-its-premises.md) | When the subject is unknown, prefer an instrument that renders over one that judges |
+| 2026-08-30 | [Naming a source is not consulting it](2026-08-30-naming-a-source-is-not-consulting-it.md) | A note saying what would settle a question is a task, not a status |
 | 2026-08-29 | [The test that matched its own input](2026-08-29-test-matched-the-echoed-input.md) | A check is finished when it has been seen to fail for the right reason, not when it passes |
 | 2026-08-28 | [A status bit invented from one ROM](2026-08-28-status-bit-invented-from-one-rom.md) | A field the only consumer never reads cannot be validated by any test — only by a second consumer |
 | 2026-08-28 | [The boot screen cannot validate the feature](2026-08-28-boot-screen-cannot-validate.md) | A test whose input never exercises the code proves nothing, however real the input is |

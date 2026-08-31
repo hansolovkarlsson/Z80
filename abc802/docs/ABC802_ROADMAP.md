@@ -36,7 +36,7 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 | 7 | A second drive | `--disk` repeats for drives 0, 1, …; `MO1:`/`MF1:` work and are independent |
 | 8 | The line editor's vocabulary | swept every control code; Left arrow works, Right correctly does nothing — the machine has no cursor movement |
 | 9 | A real Z80 SIO | registers, commands and the two DIP switches that reach the ROM through channel B's modem-status inputs |
-| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 14 checks, part of `make test` |
+| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 18 checks (14 media-free), part of `make test` |
 
 ## Known gaps
 

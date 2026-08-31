@@ -21,6 +21,59 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (16) — a documentation pass, and two lessons promoted to postmortems
+
+A deliberate sweep to get everything from this session's working memory into
+files, so nothing depends on a session's context surviving.
+
+### Two postmortems
+
+Both are lessons that recurred often enough today to outgrow a journal
+entry:
+
+- **[A binary oracle hides its premises](postmortems/2026-08-30-binary-oracle-hides-its-premises.md)**
+  — a pass/fail check discarded the correct PAL column layout *twice* and
+  was then wrong about the machine's whole ROM/RAM model, because it
+  encoded premises nobody had written down. Same shape as reporting three
+  coloured lines as "all white" from looking at a small image instead of
+  sampling its pixels. The rule: when the subject is unknown, prefer an
+  instrument that renders over one that judges. Explicitly *not* an
+  argument against the regression suites, which test known behaviour and
+  should stay binary.
+- **[Naming a source is not consulting it](postmortems/2026-08-30-naming-a-source-is-not-consulting-it.md)**
+  — twice a roadmap correctly identified the document that would unblock an
+  investigation, and twice the next session did more of what had already
+  stopped paying. Both documents were public and both contained the answer.
+  Cost: roughly two sessions.
+
+The second happened *after* the first was written up, which is the honest
+part of it. Being able to describe a mistake is not the same as having the
+reflex to avoid it.
+
+### Finished work moved out of the roadmap, again
+
+The ABC806 roadmap's "what is next" had quietly become an archive — forty
+lines of PAL narrative describing work that was *done*. That is the same
+drift the roadmap/completed split was made to stop, recurring within a day
+of the split, because a section named for the future is a comfortable place
+to put a result.
+
+It is now in `ABC806_COMPLETED.md` alongside the milestones and the GTK
+app, and the item reads as what it is: **closed, not deferred**. The
+scoping document had carried "evaluate the PAL properly" from the start as
+though it would replace `memory.c`. It would not — the outputs are
+inter-board disable lines, so one board's PAL cannot express a two-board
+decode. Recording that is worth more than leaving an aspiration open.
+
+### A currency sweep
+
+Two roadmaps claimed check counts that had drifted (17 against 19, 14
+against 18). Every relative link in every documentation file was resolved —
+100 of them, all good once function-call syntax in backticks is discounted.
+
+Nothing dramatic, but the counts are the kind of thing that rots silently
+and then makes a reader distrust the parts that are still true.
+
 ## 2026-08-30 (15) — making the BASIC reference's claims executable
 
 Wrote `ABC806_BASIC_REFERENCE.md` and then noticed it was a document full
@@ -153,8 +206,9 @@ the *third* time in this investigation that a pass/fail check encoding an
 unexamined assumption told me a correct thing was wrong — twice about the
 column layout, once now about the whole ROM/RAM model.
 
-The pattern is specific enough to name. **A binary oracle hides its own
-premises.** When it says False you learn nothing about *which* of its
+The pattern is specific enough to name, and now has its own write-up:
+[a binary oracle hides its premises](postmortems/2026-08-30-binary-oracle-hides-its-premises.md):
+**a binary oracle hides its own premises.** When it says False you learn nothing about *which* of its
 assumptions failed, and the natural reading — "the thing under test is
 wrong" — is exactly the one that keeps being false. Printing the equations
 instead of scoring them is what broke the deadlock both times.
@@ -687,6 +741,10 @@ region it clears was "not where you would put a fill routine by accident."
 That was the mechanism, visible a day before I could read it.
 
 ### The lesson I actually want to keep
+
+(Written up as [naming a source is not consulting
+it](postmortems/2026-08-30-naming-a-source-is-not-consulting-it.md), after
+it happened a second time the next day.)
 
 Entry (4) is a good piece of work — five mechanisms eliminated, each with
 evidence — and it ends with "the ROM alone has given up everything it is

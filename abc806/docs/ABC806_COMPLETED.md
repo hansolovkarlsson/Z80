@@ -570,3 +570,82 @@ precisely what allowed a working renderer to look broken.
 - **Only the four-colour mode is exercised.** `FGCTL 64` and `FGCTL 255`
   program `hrc[C]` as well and with different values, so other modes exist
   and none is tested.
+
+## bin/abc806-gtk — done
+
+A GTK4 window on the terms the other two ABC targets' front-ends
+established: a Cairo pixel framebuffer running the core in-process, sharing
+`abc806_step()` with the CLI's `--interactive` loop. See
+[`../gtk/README.md`](../gtk/README.md).
+
+It is the shortest of the three, and that is the point: nothing about the
+machine lives in it. The decode is already a pure function with its own
+fixture, so the app turns palette indices into a Cairo surface and stops —
+the colour attribute plane, the RAD substitutions, double width, the cursor
+and the high-resolution layer all arrive for free and cannot drift from
+what `--screenshot` produces.
+
+Two differences from `bin/abc802-gtk`, both because this is the colour
+machine: the framebuffer is palette-indexed rather than monochrome, and the
+flash phase must be supplied from real time, where the ABC802's ROM blinks
+its own cursor in software.
+
+## The memory-mapper PAL — investigated to a conclusion
+
+`ABC-P4-1.bin`, the PAL16L8 that decides this machine's memory map, was
+carried on the roadmap from the scoping document onward as an opportunity:
+MAME approximates it behaviourally and leaves `abc806 30K banking` as an
+open TODO beside its own commented-out PAL lookup.
+
+[`scripts/palanalyse.py`](../../scripts/palanalyse.py) now decodes it into
+readable equations. What that produced:
+
+### The fuse map verifies against MAME
+
+Both this machine's PALs do, on CRC32 *and* SHA1 — sixteen of sixteen ROM
+images rather than fourteen. They had been recorded here as having "no MAME
+entry to check against", which was wrong twice over: MAME carries both in
+regions it never reads, and they could not be compared directly anyway,
+since the archive ships JEDEC ASCII while MAME stores the 260-byte binary
+its `jedparse` produces. [`scripts/jed2bin.py`](../../scripts/jed2bin.py)
+converts, and the packing convention was established by sweeping the four
+plausible ones until *both* files matched at once.
+
+### The fetch-window rule is in the silicon
+
+`HRAL` (pin 13) and `HRBL` (pin 14) each appear complemented in the other's
+product terms: a cross-coupled SR latch, set by
+
+```
+A15' . I3' . A14 . B13 . B12 . B11 . M1L' . (ENL + EME') . XML
+```
+
+— the `0x7800`-`0x7FFF` window during an opcode fetch. `HRAL` then appears
+directly in `ROMD`'s and `HRE`'s terms.
+
+That is exactly the rule `emu/src/memory.c` implements, which had been
+derived from watching the machine. The array confirms it independently and
+explains the part behaviour could not: **why it is a latch** rather than a
+combinatorial test, and therefore why the diversion persists through an
+instruction's data cycles after the fetch that set it.
+
+### And why the array alone cannot give the memory map
+
+`ROMD` goes to P2-4 "ROMDIS" and `RAMD` to P1-7 "RAMDIS", each with a
+330 ohm pull-up to Vcc: they are inter-board **disable** lines to the
+processor unit, not local chip selects. The memory map is a property of two
+boards, and reading one of them was never going to reproduce it.
+
+So the standing item "evaluate the PAL properly" is **closed, not
+deferred**. It was never going to replace `memory.c`. Its value was
+settling specific questions, and it settled two — the fetch-window latch,
+and `RAMD` being asserted across the whole low 32K unconditionally, which
+corroborates the ROM-overlay-over-DRAM model.
+
+### Found the hard way
+
+Both lessons outgrew this target and have their own write-ups:
+[a pass/fail oracle that hid its own premises](../../docs/postmortems/2026-08-30-binary-oracle-hides-its-premises.md),
+which discarded the correct column layout twice, and
+[naming a source without consulting it](../../docs/postmortems/2026-08-30-naming-a-source-is-not-consulting-it.md),
+which cost roughly two sessions across MAME's driver and the schematics.

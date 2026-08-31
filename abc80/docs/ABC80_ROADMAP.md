@@ -31,7 +31,7 @@ ends and the hardware facts each one had to establish — live in
 | 10 | Left/right arrow keys | mapped from the ROM's own line editor, by disassembly |
 | 11 | A real GTK window | `bin/abc80-gtk`, Cairo framebuffer with live SN76477 audio |
 | 12 | Retiring the PC-address trap | a real ABC-bus card (`abcbus/disk.c`, shared with the ABC802) replaces the DOS-ROM trap |
-| 13 | An automated regression suite | `abc80/tests/run_tests.sh`, 17 checks, part of `make test` |
+| 13 | An automated regression suite | `abc80/tests/run_tests.sh`, 19 checks (14 media-free), part of `make test` |
 
 ## Memory map (grounded, not guessed)
 

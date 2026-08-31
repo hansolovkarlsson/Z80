@@ -51,47 +51,18 @@ of `make test`.
 
 ## What is next
 
-No milestone is outstanding. In rough order of value:
+No milestone is outstanding, and the PAL investigation reached its own
+conclusion (see [`ABC806_COMPLETED.md`](ABC806_COMPLETED.md)). What is left
+is small:
 
-1. **Finish evaluating the PAL fuse map.** Substantially advanced.
-   [`scripts/palanalyse.py`](../../scripts/palanalyse.py) now decodes
-   `ABC-P4-1.bin` into readable equations: the column layout came from the
-   PAL16L8 logic diagram in TI's SRPS016 datasheet, and is self-validating,
-   since the terms come out as recognisable memory decode where two earlier
-   guesses produced none.
-
-   **It confirmed the fetch-window rule independently.** `HRAL`/`HRBL` are
-   a cross-coupled SR latch set by
-   `A15'.I3'.A14.B13.B12.B11.M1L'.(ENL+EME').XML` — the `0x7800`-`0x7FFF`
-   window during an opcode fetch — and `HRAL` gates `ROMD` and `HRE`. That
-   is the rule `memory.c` implements, arrived at from behaviour, and the
-   array explains why it is a *latch*: the diversion has to persist through
-   the instruction's data cycles.
-
-   **The real schematics settled most of the rest.**
-   `ABC806-schema.pdf` on abc80.net (sheet 5, PAL at position 2D) confirms
-   the pinout from the board, shows `RKDL` carrying a 22k pull-up to Vcc —
-   so it is high whenever the PAL tri-states it — and identifies `XML`,
-   `M1L` and `KDL` as the active-low board signals `/XM`, `/MI` and `/HR`
-   from the processor unit, with `ENL` coming from the 74F189 that *is* the
-   page map. It also corroborates the ROM overlay: one of `RAMD`'s terms is
-   the bare literal `A15'`, so RAM is selected across the whole low 32K and
-   `ROMD` only decides whether ROM overrides on a read.
-
-   **And it explains why the array alone cannot give the memory map.**
-   `ROMD` goes to P2-4 "ROMDIS" and `RAMD` to P1-7 "RAMDIS", each with a
-   330 ohm pull-up: they are inter-board *disable* lines to the processor
-   unit, not local chip selects. So no term needs to enable ROM between
-   `0x4000` and `0x77FF` — the processor board decodes that itself and this
-   PAL only intervenes. `memory.c` should therefore not be rewritten "from
-   the PAL"; the array's value is settling specific questions, which it has
-   now done twice.
-
-   Genuinely open: **`I3` (pin 1)**, untraced beyond sheet 5, and the
-   polarity of ROMDIS/RAMDIS.
-
-2. **The remaining graphics modes.** Only the four-colour mode is
-   exercised; `FGCTL`'s other arguments program the palette differently.
+1. **The remaining graphics modes.** Only the four-colour palette
+   (`FGCTL 2`) is mapped; `FGCTL`'s other arguments program the lookup
+   differently, and `FGPICTURE` has never been exercised. See
+   [`ABC806_BASIC_REFERENCE.md`](ABC806_BASIC_REFERENCE.md).
+2. **`I3` (pin 1) on the memory-mapper PAL**, untraced beyond sheet 5 of
+   the schematics, and the polarity of its `ROMDIS`/`RAMDIS` outputs.
+   Nothing depends on either today.
+3. **The 544K RAM option**, and the protection device on the 74ALS259.
 
 ## Known gaps
 
