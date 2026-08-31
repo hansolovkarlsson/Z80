@@ -131,8 +131,9 @@ That is the read-from-ROM, write-through-to-DRAM arrangement above.
 
 ### The board's own wiring
 
-From the real schematics (`ABC806-schema.pdf`, sheet 5 "Graphic Control",
-PAL at position 2D — its pinout matches MAME's comment exactly):
+From the real schematics (see **Sources** at the end of this file —
+`ABC806-schema.pdf`, sheet 5 "Graphic Control", PAL at position 2D; its
+pinout matches MAME's comment exactly):
 
 | PAL pin | Driven by |
 |---|---|
@@ -387,3 +388,31 @@ alongside them. Between them those are the ingredients of the
 fetch-window rule this emulator implements, which was derived from
 behaviour rather than from the fuse map, so evaluating the array would be
 an independent check on it.
+
+## Sources
+
+Everything above is either read out of the committed ROM images, observed
+in this emulator, or taken from one of these.
+
+| Source | Where |
+|---|---|
+| **ABC806 schematics**, ten sheets, Luxor Datorer AB 1983 | <https://www.abc80.net/archive/luxor/ABC80x/ABC806-schema.pdf> |
+| ABC806 service manual | <https://www.abc80.net/archive/luxor/ABC80x/ABC806-dator-servicemanual.pdf> |
+| ABC806 user manual, BASIC II manual | same directory, `ABC806-dator-bruksanvisning.pdf` and `ABC806-dator-manual-BASIC-II.pdf` |
+| ROM and PROM images | <https://www.abc80.net/archive/luxor/Prom/fw/ABC806/> — provenance in [`../resources/rom/README.md`](../resources/rom/README.md) |
+| MAME's ABC800-family driver | `src/mame/luxor/abc80x.cpp` and `abc80x_v.cpp` (BSD-3-Clause, Curt Coder) |
+| PAL16L8 fuse-map layout | TI datasheet SRPS016, the "logic diagram (positive logic)" page |
+
+**Reading the schematics.** They are vector PDFs, so individual chips are
+legible at high resolution even though a whole sheet is not. `pdftoppm`
+crops at render time, which avoids producing a 5000-pixel page image just
+to read one part:
+
+```
+pdftoppm -f 6 -l 6 -r 600 -x 1400 -y 800 -W 1900 -H 1100 -png ABC806-schema.pdf pal
+```
+
+That command produced the readable view of the memory-mapper PAL used
+above: page 6 (sheet 5), 600 dpi, cropped to the region around position 2D.
+Sheet 1 is bus isolation and carries the RTC, the 74ALS259 and the HRU II
+PROM; sheet 2 the CRTC; sheet 5 graphic control and the memory mapper.
