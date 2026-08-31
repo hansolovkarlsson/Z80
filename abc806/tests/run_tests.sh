@@ -316,6 +316,69 @@ tl_want "$out" "banks: 0" "the line still sitting in bank 0"
 tl_want_not "$out" " 1=" "colour 1 in the picture while another bank is displayed"
 tl_end "$out"
 
+# --- The 480-pixel-wide mode -------------------------------------------
+#
+# The palette carries the horizontal resolution: one plane nibble indexes
+# one hrc entry, and that entry is *itself* two pixels of four bits. Both
+# halves alike gives a doubled pixel and a 240-wide picture; halves that
+# differ give two independent pixels and a 480-wide one.
+#
+# No FGCTL argument programs an entry whose halves differ - all 128 of
+# them were swept - so this mode is unreachable through FGCTL and every
+# other graphics check in this suite runs at 240. It is reached instead by
+# writing hrc directly, and BASIC can: the entry index is register B, which
+# the Z80 puts on the top half of the address bus during OUT (C),A, so
+# `OUT 15*256+7,v` writes hrc[F]. That is not a trick, it is how the
+# hardware is addressed.
+#
+# A single dot is the whole experiment, because a dot is exactly one plane
+# nibble - so it renders as precisely the two pixels one hrc entry
+# describes, and the census can read them.
+#
+# What the census cannot read is *which* half is the left pixel: it counts
+# colours, not positions, so swapping the two halves of every entry leaves
+# all of these green. That was checked by doing it. The spatial half of the
+# claim belongs to chargen-attributes instead, whose synthetic plane sets
+# hrc[2] = 0xA0 - opaque then transparent - and whose fixture is ASCII art,
+# so a swap moves a character and reds the diff.
+while IFS='|' read -r name setup want desc; do
+    [ -n "$name" ] || continue
+    out=$("$ABC806" --cycles 300000000 \
+          --type "$setup"$'\r'"FGPOINT 100,100,3"$'\r' 2>&1)
+    tl_begin "$name"
+    # The dot reached the plane at all. One byte, every time, whatever the
+    # palette says - so a palette check cannot pass by drawing nothing.
+    tl_want "$out" "High-resolution plane: 1/131072 bytes nonzero" \
+            "the dot reaching the plane"
+    tl_want "$out" "Pixels by colour: $want" "$desc"
+    tl_end "$out"
+done <<'WIDE'
+graphics-240-dot-is-doubled|FGCTL 2|0=118768 3=2|a dot under a both-halves-alike entry rendering as two pixels of one colour
+graphics-480-dot-is-two-pixels|OUT 3847,154|0=118640 1=1 2=1|a dot under hrc[F]=9A rendering as one red and one green pixel
+graphics-480-alike-halves-control|OUT 3847,153|0=118638 1=2|hrc[F]=99 doubling again, so it is the halves differing that splits the pixel
+graphics-480-half-transparency|OUT 3847,144|0=118647 1=1|hrc[F]=90 drawing one pixel only, the opaque bit being per-half
+WIDE
+
+# The same thing along a whole line, which is what makes it a resolution
+# rather than a curiosity: 181 plane pixels come out as 181 red and 181
+# green rather than 362 of one colour. Under FGCTL 2 the identical line is
+# 362 yellow - asserted here as well, since the pair is the claim.
+out=$("$ABC806" --cycles 400000000 \
+      --type "OUT 3847,154"$'\r'"FGPOINT 20,20,3:FGLINE 200,20,3"$'\r' 2>&1)
+tl_begin "graphics-480-line-alternates"
+tl_want "$out" "High-resolution plane: 91/131072 bytes nonzero" \
+        "the line reaching the plane"
+tl_want "$out" " 1=181 2=181" "181 red and 181 green, not 362 of one colour"
+tl_end "$out"
+
+out=$("$ABC806" --cycles 400000000 \
+      --type "FGCTL 2"$'\r'"FGPOINT 20,20,3:FGLINE 200,20,3"$'\r' 2>&1)
+tl_begin "graphics-240-line-is-solid"
+tl_want "$out" "High-resolution plane: 91/131072 bytes nonzero" \
+        "the line reaching the plane"
+tl_want "$out" " 3=362" "the same line at 240 wide being 362 pixels of one colour"
+tl_end "$out"
+
 # --- The real-time clock, on real media ---------------------------------
 #
 # The only end-to-end check of the E0516, and it needs a disk: nothing in

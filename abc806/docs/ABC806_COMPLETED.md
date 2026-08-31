@@ -765,3 +765,81 @@ separates it from `FGCTL 1` is whether three lines are visible **in
 white** — which no "colour N is absent" assertion can see, the text being
 white too. That was a real weakness in the first draft of the check: it
 survived the `hrc` injection, and only pinning the counts caught it.
+
+## The 480-pixel-wide mode — driven, and tested
+
+The palette carries the horizontal resolution: one plane nibble indexes one
+`hrc` entry, and that entry is itself two pixels of four bits. Both halves
+alike is a doubled pixel and a 240-wide picture; halves that differ are two
+independent pixels and a 480-wide one. The renderer had always decoded it
+that way, and **nothing had ever driven it** — every `FGCTL` palette
+programs equal halves, so all 128 of them are 240.
+
+### BASIC can reach it, because the index is on the address bus
+
+The `hrc` entry written is selected by register **B**, which the Z80 puts
+on the top half of the address bus during `OUT (C),A`. BASIC's `OUT` takes
+a 16-bit port and loads it into `BC`, so `OUT 15*256+7,v` writes entry `F`
+— confirmed by trace, and by sweeping several ports to check the index
+tracked the high byte. That is the hardware being addressed normally, not
+a trick, and it means the mode needs no machine code to reach.
+
+### What it renders
+
+With `hrc[F] = 0x9A` (opaque red, then opaque green) and a line drawn in
+pen 3:
+
+| | plane bytes | rendered |
+|---|---|---|
+| `FGCTL 2` (`hrc[F] = 0xBB`) | 91 | 362 pixels of one colour, one run |
+| `hrc[F] = 0x9A` | 91 | 181 red + 181 green, **every run length 1** |
+
+Identical writes, different pictures. The run lengths came from decoding
+the PNG rather than looking at it — the whole point of a 480-wide claim is
+that *adjacent* pixels differ, which a count cannot show and an eye on a
+480-pixel image certainly cannot.
+
+A single dot is the cleaner experiment, since a dot is exactly one plane
+nibble and therefore exactly the two pixels one entry describes:
+
+| entry | census | meaning |
+|---|---|---|
+| `FGCTL 2`, `0xBB` | `3=2` | doubled: two pixels, one colour |
+| `0x9A` | `1=1 2=1` | split: two pixels, two colours |
+| `0x99` | `1=2` | doubled again — **the control** |
+| `0x90` | `1=1` | one opaque half, one transparent |
+
+The `0x99` row is the one that makes the rest mean anything. Without it,
+"the picture changed when I wrote `hrc` by hand" has a second explanation —
+that the direct write path differs from `FGCTL`'s — and the experiment
+would not distinguish them.
+
+### A check that did not test what it claimed
+
+Six new checks, and the injection sweep caught one of them being wrong.
+`graphics-480-half-order` was supposed to assert that the high half is the
+*left* pixel; swapping the two halves of every entry in the renderer left
+it green. Of course it did — the census counts colours, and a swap moves a
+pixel without changing any count. Nor can clipping expose it: the render's
+pairs are aligned to even screen positions, so both pixels of a pair are
+always visible or always clipped together.
+
+The ordering was already covered, by the right instrument: the
+`chargen-attributes` fixture sets `hrc[2] = 0xA0` — opaque then transparent
+— and its fixture is ASCII art, so a swap moves a character and reds the
+diff. It caught both injections. The check was renamed to
+`graphics-480-half-transparency`, which is what it actually establishes,
+and the suite now says out loud that position belongs to the fixture.
+
+Injections and what caught them:
+
+| Injected regression | Caught by |
+|---|---|
+| each entry's low half forced to match its high half (a 240-only decode) | `graphics-480-dot-is-two-pixels`, `-half-transparency`, `-line-alternates`, `chargen-attributes` |
+| the two halves swapped | `chargen-attributes` only |
+
+Worth noting that the 240-only decode reddens **no pre-existing graphics
+check at all** beyond the fixture. That is precisely the gap these close:
+every other check in the suite runs through a `FGCTL` palette, and every
+`FGCTL` palette has equal halves, so half the decode was invisible to all
+of them.

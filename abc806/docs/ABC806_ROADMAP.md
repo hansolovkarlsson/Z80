@@ -45,7 +45,7 @@ Full write-ups, including what each milestone found the hard way, are in
 same terms as the other two ABC targets' — see
 [`../gtk/README.md`](../gtk/README.md).
 
-`make test-abc806` runs 32 checks — 29 media-free, plus 3 that need a real
+`make test-abc806` runs 38 checks — 35 media-free, plus 3 that need a real
 disk image and otherwise skip loudly (set `ABC806_TEST_DISKS`). It is part
 of `make test`.
 
@@ -59,11 +59,6 @@ is small:
    the schematics, and the polarity of its `ROMDIS`/`RAMDIS` outputs.
    Nothing depends on either today.
 2. **The 544K RAM option**, and the protection device on the 74ALS259.
-3. **The 480-pixel-wide graphics mode.** The palette carries the
-   horizontal resolution, and no `FGCTL` argument programs an entry whose
-   two halves differ — so BASIC cannot reach 480 without writing `hrc`
-   through `OUT 7,…` by hand. The renderer already handles it; nothing has
-   ever driven it.
 
 ## Known gaps
 
@@ -78,10 +73,11 @@ not do, and why each one is deliberate rather than an oversight.
   consulted gives the ABC806's own divider, and the ROM does not blink its
   cursor in software the way the ABC802's does, so nothing in the machine
   supplies the phase.
-- **The 480-pixel-wide graphics mode has never been driven.** The decode
-  handles it — a palette entry whose two halves differ is two distinct
-  pixels — but no `FGCTL` argument programs one, so nothing here has ever
-  produced a 480-wide picture. See Planned next steps.
+- **The 480-pixel-wide mode is unreachable through `FGCTL`.** That is the
+  ROM, not a gap: none of its 128 palettes programs an entry whose halves
+  differ. The mode itself works and is tested — BASIC reaches it by writing
+  `hrc` directly, since the entry index is the port's high byte — but any
+  program wanting 480 has to do that for itself.
 - **The memory map still follows MAME's behavioural decode**, and so
   inherits its `abc806 30K banking` gap. The PAL itself is no longer the
   missing piece: `scripts/palanalyse.py` decodes `ABC-P4-1.bin` into

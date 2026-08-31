@@ -339,7 +339,35 @@ combinations rather than looking them up**.
 
 **No `FGCTL` argument selects the 480-pixel-wide mode.** Every entry it
 programs has both nibbles alike, which is the 240-wide case. Reaching 480
-means writing `hrc` directly through port `0x07`.
+means writing `hrc` directly — and BASIC can do that, see below.
+
+#### Writing `hrc` by hand: the index is the port's high byte
+
+The entry written is chosen by register **B**, which the Z80 puts on the
+top half of the address bus during `OUT (C),A`. BASIC's `OUT` takes a
+16-bit port and loads it into `BC`, so:
+
+```basic
+OUT 15*256+7, &H9A     ' hrc[F] = 9A
+```
+
+writes entry `F`. That is not a trick played on the emulator; it is how
+the latch is addressed on the board. It makes the 480-wide mode reachable
+from BASIC without any machine code, which is the only way it is reachable
+at all.
+
+**Confirmed by rendering, not by argument.** With `hrc[F] = 0x9A` — opaque
+red then opaque green — a single dot (one plane nibble) renders as one red
+pixel and one green pixel, and a horizontal line of 181 plane pixels
+renders as 181 red and 181 green with **every run length equal to 1**.
+The same line under `FGCTL 2` (`hrc[F] = 0xBB`) is one solid run of 362.
+The control that matters is `hrc[F] = 0x99`: halves alike again, and the
+dot goes back to two pixels of one colour — so what splits the pixel is
+the halves differing, not the fact that `hrc` was written directly.
+
+The **high half is the left pixel**. That ordering is covered by the
+`chargen-attributes` fixture rather than by the colour census, which counts
+colours and cannot see position.
 
 #### `FGPICTURE a,b` writes HRS
 

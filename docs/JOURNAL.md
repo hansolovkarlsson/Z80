@@ -21,6 +21,74 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-31 (2) — the 480-wide mode, and a check that tested nothing
+
+The last graphics item on the ABC806 roadmap, created by the session
+before it: the palette carries the horizontal resolution, no `FGCTL`
+argument programs an entry whose halves differ, and so the 480-wide mode
+had never been driven. The renderer decoded it; nothing had ever produced
+one.
+
+### Getting there was one fact
+
+`hrc` is indexed by register B, and the Z80 puts B on the top half of the
+address bus during `OUT (C),A`. BASIC's `OUT` takes a 16-bit port into
+`BC`, so `OUT 15*256+7,v` writes entry F. I checked this rather than
+assuming it — `OUT 7,v` latches entry 0, and sweeping the high byte walks
+the index — but it is just the hardware being addressed the ordinary way.
+No machine code, no POKE, no new emulator flag.
+
+### Proving it needed the right instrument, twice
+
+`hrc[F] = 0x9A` and a line in pen 3 gives `1=181 2=181` where `FGCTL 2`
+gives `3=362`. Same 91 plane bytes. That is suggestive but not proof: equal
+counts of red and green are also what you would get from a left half red
+and a right half green. The claim is that *adjacent* pixels differ, so I
+decoded the PNG and looked at run lengths — every run in the 480 case is
+length 1. That is the assertion, and no count could have made it.
+
+Then the reverse problem. A count *can* carry it once the experiment
+shrinks: a dot is exactly one plane nibble, so it renders as exactly the
+two pixels one entry describes, and `1=1 2=1` versus `3=2` is the whole
+thing in a form the suite can assert without a PNG.
+
+The control I nearly skipped is the one worth keeping. `hrc[F] = 0x99` —
+written by hand, halves alike — puts the dot back to `1=2`. Without it,
+"the picture changed when I wrote the palette directly" has a second
+explanation, and the experiment does not distinguish it from the one I
+wanted.
+
+### The check that tested nothing
+
+Six checks, then the injection sweep, and one of them was a fake.
+`graphics-480-half-order` claimed to establish that the high half is the
+left pixel. I swapped the two halves of every entry in the renderer and it
+stayed green — obviously, since the census counts colours and a swap moves
+a pixel without changing a count. I looked for a way to make position
+visible to a count (clip one pixel of the pair at a screen edge) and there
+isn't one: the pairs are aligned to even screen positions, so both are in
+or both are out.
+
+The ordering turned out to be covered already, by the instrument built for
+exactly this in milestone 2 — `chargen-attributes`, whose synthetic plane
+sets `hrc[2] = 0xA0` and whose fixture is ASCII art, so a swap moves a
+character. It caught both injections. So the check was renamed to
+`graphics-480-half-transparency`, which is what it does establish, and the
+suite now says where position is actually tested.
+
+This is the second time in two sessions that a check survived the
+injection meant for it, and both times for the same underlying reason: I
+wrote the assertion from what I believed the code did, rather than from
+what the *output* could distinguish. A census cannot see position. An
+absence-of-colour assertion cannot see white. Neither is subtle in
+hindsight, and neither was visible without running the sabotage.
+
+The other half of the sweep is worth recording as a positive: the
+240-only decode reddens no pre-existing graphics check beyond the fixture.
+Every other check in the suite goes through an `FGCTL` palette, and every
+`FGCTL` palette has equal halves, so half the decode was invisible to all
+of them. The gap was real.
+
 ## 2026-08-31 — the rest of FGCTL, and FGPICTURE turns out to be HRS
 
 Two items had stood open on the ABC806 roadmap since milestone 5: the

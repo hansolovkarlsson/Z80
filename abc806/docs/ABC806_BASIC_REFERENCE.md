@@ -130,8 +130,40 @@ cyan, white — ANSI's own. `FGCTL 1` is the common cause of confusion: drawing 
 1, 2 and 3 all comes out white, which looks like colour being broken.
 
 **No `FGCTL` argument gives the 480-pixel-wide mode.** Every one programs
-both halves of a palette entry alike, which is the 240-wide case; 480
-needs `OUT 7,…` written by hand.
+both halves of a palette entry alike, which is the 240-wide case. But
+BASIC can still reach 480 — see below.
+
+### The 480-wide mode, from BASIC
+
+One plane pixel indexes one palette entry, and that entry is *itself two
+pixels*. Both halves alike gives a doubled pixel and a 240-wide picture;
+halves that differ give two independent pixels and a 480-wide one. Since
+no `FGCTL` argument programs unequal halves, the only way there is to
+write the entry yourself.
+
+`OUT` does it, because **the entry index is the port's high byte**:
+
+```basic
+OUT 15*256+7,154
+FGPOINT 20,20,3:FGLINE 200,20,3
+```
+
+`154` is `&H9A` — opaque red in the left half, opaque green in the right —
+and `15*256+7` is entry `F`, which is the one pen 3 draws through. The
+line comes out **alternating red and green, one pixel each**, where the
+same line under `FGCTL 2` is solid yellow. A single dot is the clearest
+demonstration: two pixels of one colour at 240, one red and one green
+at 480.
+
+Two things to know before using it. The entry has to be written *after*
+`FGCTL`, since `FGCTL` rewrites the whole palette — or instead of it, as
+above, because an entry written by hand needs no `FGCTL` to become
+visible. And the four-bit halves are `opaque | colour`, so `&H90` gives a
+left pixel in red and a transparent right one: a genuine 480-wide dot,
+half of it showing whatever is behind.
+
+There is no BASIC command for this and no manual describes it. It is the
+hardware being addressed directly, which BASIC happens to allow.
 
 ### `FGPICTURE` — two pictures at once
 
@@ -272,6 +304,17 @@ appear and the ones that must not. `graphics-fgctl-0-is-transparent` and
 `graphics-fgctl-1-is-all-white` pin the whole census, because the thing
 separating those two is whether three lines are visible at all — and
 "visible, in white" cannot be told from the white text by colour alone.
+
+The 480-wide claims are tested too, by six checks named
+`graphics-240-*`/`graphics-480-*`, and the pairing is the point: the same
+dot and the same line are asserted at both resolutions, so a decode that
+could only ever produce 240 reds three of them while leaving the 240 pair
+green. `graphics-480-alike-halves-control` is the one that keeps the
+experiment honest — it writes `hrc` by hand with *equal* halves and
+expects the 240 answer, which rules out "writing the palette directly
+behaves differently" as the explanation. What none of them can check is
+which half is the left pixel; the census counts colours, not positions, and
+that half of the claim belongs to `chargen-attributes`.
 
 `graphics-fgpicture-draw-bank` and `graphics-fgpicture-display-bank` are
 the only checks anywhere that run with a non-zero HRS. They assert on

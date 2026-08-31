@@ -377,7 +377,13 @@ of the eight colours in lexicographic order (`2` being `(0,1,2,3)`, hence
 red/green/yellow), and `72`-`127` the 28 pairs in two pen mappings. No such
 table exists in any ROM image, so the ROM generates them; and **no `FGCTL`
 argument reaches the 480-wide mode**, since every entry it programs has
-both halves alike. **`FGPICTURE a,b` is not a drawing command at all** - it
+both halves alike - BASIC reaches it anyway by writing `hrc` directly,
+because **the entry index is the port's high byte** (register B, which the
+Z80 puts on the address bus during `OUT (C),A`), so `OUT 15*256+7,v` writes
+entry F. With `hrc[F]=9A` a dot renders as one red and one green pixel
+where `FGCTL 2` gives two of one colour, and every run length along a line
+is 1; the control that makes that mean something is `hrc[F]=99`, halves
+alike, which goes back to doubling. **`FGPICTURE a,b` is not a drawing command at all** - it
 writes HRS (`a` the bank drawn through, `b` the bank displayed), which
 makes it the machine's double-buffering command and the only BASIC-level
 way to exercise the bank shift. Its `Error 201` on any non-zero argument
