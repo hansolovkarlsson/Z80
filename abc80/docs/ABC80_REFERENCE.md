@@ -115,6 +115,21 @@ write (`0x60AA`).
 `UFD80V20.bin` is the more general driver: it masks its select to six bits
 and reads the value from a variable (`0x61C1`).
 
+**The drives are named `DR0:` through `DR6:`**, not the ABC800 family's
+`MO`/`MF`. There is a real device-name table at `0x6EB5` in
+`ABCDOS80.bin` — seven 7-byte entries, `DR0` to `DR6` — so a second drive
+is addressed as `DR1:` in `LOAD`, `SAVE` and the rest, and the unit number
+in the command header's second byte is what selects it.
+
+**ABC-DOS does not scan the drives at boot.** A full boot issues four bus
+commands, all to unit 0: the directory at sector 16, the free-space
+bitmap, and one more directory read. A second drive is touched only when
+something asks for it — the real `LIB` utility does, walking each drive it
+finds and printing that disk's own volume label. (An earlier version of
+the roadmap claimed a boot-time scan of all eight units. It does not
+happen on this machine; that behaviour belongs to the ABC800 family's DOS,
+whose ROM is a different one.)
+
 The status byte is shared with the ABC800 family; see
 `abc802/docs/ABC802_REFERENCE.md`'s ABC-bus section for the bit table. Two
 of those bits are pinned by *this* ROM rather than the ABC802's, which

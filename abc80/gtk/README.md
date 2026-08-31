@@ -46,7 +46,8 @@ share the CLI's own `abcbus.c`/`cassette.c` implementations unchanged), as
 does `--dos-rom`. The floppy is a real ABC-bus card (`abcbus/disk.c`,
 shared with the ABC802 target), so this window installs the same
 `io_in_hook`/`io_out_hook` the CLI does — without them `--disk` would
-attach an image nothing could talk to.
+attach an image nothing could talk to. It repeats, too: a second `--disk`
+becomes the ROM's `DR1:`, and `N:FILE` pins a drive number.
 `--quickload` injects at the same `PC == 0x02AA` trigger point the CLI
 uses; `--quicksave` has no bounded "end of run" to hook here the way the
 CLI does, so it flushes when the window closes instead (including via a

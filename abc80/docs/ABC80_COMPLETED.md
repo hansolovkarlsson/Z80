@@ -3098,3 +3098,82 @@ guessing the instruction caps: the hand-run matrix used values up to
 from an earlier session and never questioned. This target runs at roughly
 1.7M instructions/sec, so that was most of a minute per check spent on
 nothing.
+
+## Milestone 14: a second floppy drive — done
+
+`--disk` now repeats, so two plain arguments become the ROM's own `DR0:`
+and `DR1:`, and `N:FILE` pins a drive. All of the work was this machine's
+CLI: the shared card in `abcbus/disk.c` has served eight units since the
+ABC802 needed them (that target's Milestone 7), and
+`abcbus_disk_attach_arg()` already parsed both argument forms. Only
+`abc80_abcbus_init()` still took a single path, and it now takes the
+argument list.
+
+### The roadmap's stated reason was wrong
+
+The planned-work entry justified this by saying ABC-DOS scans all eight
+drives at boot, visible in `ABCBUS_TRACE=1` as a walk of units 0-7 reading
+directory sectors 16-23. It does not. A full boot to the prompt issues
+**four** bus commands and every one addresses unit 0:
+
+```
+[abcbus] cmd 03 00 02 00 -> unit 0 buf 0 sector 16   (the directory)
+[abcbus] cmd 03 00 00 C0 -> unit 0 buf 0 sector 6
+[abcbus] cmd 0C 00 00 C0 -> unit 0 buf 0 sector 6    (a write)
+[abcbus] cmd 03 00 03 00 -> unit 0 buf 0 sector 24
+```
+
+That behaviour belongs to the ABC800 family's DOS, which is a different
+ROM. Checking it first was worth the two minutes: the whole justification
+for the milestone would otherwise have gone into a test as an assertion
+that is simply false.
+
+What is true, and is the better ground, is that **the ROM names seven
+drives**. There is a device-name table at `0x6EB5` in `ABCDOS80.bin` —
+`DR0` through `DR6`, seven bytes each — so a second drive is reached the
+moment something asks for it by name.
+
+### What proves it works
+
+The real `LIB` utility walks the drives it can find and prints each one's
+volume label, so one run shows both:
+
+```
+Drive: 0
+Volym: SYSTEM-DISKETT ABC-80 Vers. 2.1.
+...
+Drive: 1
+Volym: SYSTEMSKIVA VER. 1.0
+```
+
+Two *different* labels, which is the point — the same image mounted twice
+would print one label twice. With a single `--disk` there is no `Drive: 1`
+section at all.
+
+Writing is the assertion a listing cannot make, and the round trip alone
+is not enough either: `SAVE DR1:XDRIVE` / `NEW` / `LOAD DR1:XDRIVE` /
+`LIST` would also succeed if the save had quietly gone to drive 0. So the
+check goes outside the emulator afterwards and inspects the images with
+`bin/abcdisk`: `XDRIVE` must be in drive 1's directory, must *not* be in
+drive 0's, and drive 0's image must still be byte-identical to the
+pristine archive copy. It is.
+
+### Media
+
+The two-drive checks need a second, genuinely different image, so
+`ABC80_TEST_DISKS` now wants `disk001.img` alongside `disk003.img` — the
+archive's only other distinct ABC80 disk, `disk002.img` being
+byte-identical to `disk001.img`. They skip loudly and separately when it
+is missing, so the existing five floppy checks still run with only
+`disk003.img` present.
+
+### Injections
+
+| Injected regression | Caught by |
+|---|---|
+| the card ignoring the unit field in the command header | all three new checks |
+| every bare `--disk` landing on drive 0 | `disk-two-drives`, `disk-drive1-roundtrip` |
+
+The second one correctly leaves `disk-pinned-drive` green, since `N:FILE`
+does not go through the sequential counter — which is the reason that
+check exists as well as the other two.

@@ -36,7 +36,11 @@
 // scheme, and nothing in this emulator was ever written for it; it drives
 // the same synthetic card correctly because the card implements the bus
 // rather than one ROM's routines.
-bool abc80_abcbus_init(const char *rom_dir, const char *dos_rom, const char *disk_path,
+// `disk_args` are --disk arguments in command-line order, each either a
+// plain path or a "N:path" form pinning a drive - see
+// abcbus_disk_attach_arg(). Two plain arguments become DR0: and DR1:.
+bool abc80_abcbus_init(const char *rom_dir, const char *dos_rom,
+                       const char *const *disk_args, int disk_count,
                        uint8_t *ram);
 
 // True once abc80_abcbus_init() has succeeded - gates the bus_read_hook's

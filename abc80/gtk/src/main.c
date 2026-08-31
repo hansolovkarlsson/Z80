@@ -1284,6 +1284,8 @@ static void print_usage(const char *prog) {
     printf("  --disk FILE        Load the real ABC-DOS ROM at 0x6000 and fit a real\n");
     printf("                     ABC-bus floppy controller serving FILE, a 160K ABC830\n");
     printf("                     image. Without it no card is fitted and the bus floats.\n");
+    printf("                     Repeat it for more drives: the second becomes DR1:,\n");
+    printf("                     and so on up to eight. 'N:FILE' pins a drive number.\n");
     printf("  --dos-rom FILE     Use FILE in rom_dir as the DOS ROM instead of the\n");
     printf("                     default %s.\n", ABC80_DEFAULT_DOS_ROM);
     printf("  --ram32k           Model the real 16KB RAM-expansion mod at 0x8000-0xBFFF\n");
@@ -1311,7 +1313,8 @@ static void print_usage(const char *prog) {
 
 int main(int argc, char *argv[]) {
     const char *rom_dir = "resources/rom";
-    const char *disk_path = NULL;
+    const char *disk_args[8];
+    int disk_count = 0;
     const char *dos_rom = NULL;
     const char *quickload_path = NULL;
     const char *quicksave_path = NULL;
@@ -1328,7 +1331,12 @@ int main(int argc, char *argv[]) {
             print_usage(argv[0]);
             return EXIT_SUCCESS;
         } else if (strcmp(argv[arg_i], "--disk") == 0 && arg_i + 1 < argc) {
-            disk_path = argv[++arg_i];
+            if (disk_count < (int)(sizeof disk_args / sizeof disk_args[0])) {
+                disk_args[disk_count++] = argv[++arg_i];
+            } else {
+                fprintf(stderr, "Too many --disk arguments\n");
+                return EXIT_FAILURE;
+            }
         } else if (strcmp(argv[arg_i], "--dos-rom") == 0 && arg_i + 1 < argc) {
             dos_rom = argv[++arg_i];
         } else if (strcmp(argv[arg_i], "--quickload") == 0 && arg_i + 1 < argc) {
@@ -1415,8 +1423,8 @@ int main(int argc, char *argv[]) {
         app.ram[addr] = 0xFF;
     }
 
-    if (disk_path) {
-        if (!abc80_abcbus_init(rom_dir, dos_rom, disk_path, app.ram)) {
+    if (disk_count > 0) {
+        if (!abc80_abcbus_init(rom_dir, dos_rom, disk_args, disk_count, app.ram)) {
             return EXIT_FAILURE;
         }
     }

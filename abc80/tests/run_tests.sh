@@ -237,6 +237,12 @@ tl_end
 # --- Floppy, on real media --------------------------------------------
 
 DISK003="${ABC80_TEST_DISKS:-}/disk003.img"
+# The two-drive checks need a *second*, genuinely different image. The
+# archive yields only two distinct ABC80 disks - disk001.img and
+# disk003.img - since disk002.img is byte-identical to disk001.img.
+# Different volume labels are the whole point: they are what proves the
+# two drives are not the same file read twice.
+DISK001="${ABC80_TEST_DISKS:-}/disk001.img"
 
 disk_skip_reason=""
 if [ -z "${ABC80_TEST_DISKS:-}" ]; then
@@ -245,10 +251,23 @@ elif [ ! -f "$DISK003" ]; then
     disk_skip_reason="$DISK003 not found"
 fi
 
+two_drive_skip_reason=""
+if [ -z "${ABC80_TEST_DISKS:-}" ]; then
+    two_drive_skip_reason="set ABC80_TEST_DISKS to a directory holding both disk003.img and disk001.img (the abc80.net 160K archive's two distinct ABC80 disks)"
+elif [ ! -f "$DISK003" ]; then
+    two_drive_skip_reason="$DISK003 not found"
+elif [ ! -f "$DISK001" ]; then
+    two_drive_skip_reason="$DISK001 not found (the two-drive checks need a second, different image)"
+fi
+
 # Each check gets its own copy: the DOS writes to the media, and a test
 # must never mutate the user's archive.
 fresh_disk() {
     cp "$DISK003" "$WORKDIR/$1.img" && echo "$WORKDIR/$1.img"
+}
+
+fresh_disk1() {
+    cp "$DISK001" "$WORKDIR/$1.img" && echo "$WORKDIR/$1.img"
 }
 
 if [ -n "$disk_skip_reason" ]; then
@@ -315,6 +334,68 @@ else
     if [ "$commands" -lt 20 ]; then
         tl_note "UFD-DOS issued only $commands bus commands; expected a real directory walk (20+)"
     fi
+    tl_end "$out"
+fi
+
+# --- Two drives --------------------------------------------------------
+#
+# The card has served eight units since it was shared with the ABC802;
+# until now only this machine's CLI limited it to one. `--disk` repeats,
+# and the ROM names the drives DR0: through DR6: - a real device table at
+# 0x6EB5 in ABCDOS80.bin, not an invention here.
+#
+# Note what these do *not* rest on. An earlier roadmap entry claimed
+# ABC-DOS scans all eight drives at boot; it does not. A full boot issues
+# four bus commands, all to unit 0. The second drive is reached when
+# something asks for it, which is why every check below asks.
+if [ -n "$two_drive_skip_reason" ]; then
+    for name in disk-two-drives disk-drive1-roundtrip disk-pinned-drive; do
+        tl_skip "$name" "$two_drive_skip_reason"
+    done
+else
+    # LIB walks the drives it can find and prints each one's volume label.
+    # Asserting on *both* labels is what makes this a two-drive check: the
+    # same image mounted twice would print one label twice, and a second
+    # drive that was not found prints no "Drive: 1" section at all.
+    out=$(run_basic $DISK_CAP $'RUN LIB\r\r' \
+          --disk "$(fresh_disk two0)" --disk "$(fresh_disk1 two1)")
+    tl_begin "disk-two-drives"
+    tl_want "$out" "Drive: 0" "LIB reaching the first drive"
+    tl_want "$out" "Drive: 1" "LIB reaching the second drive"
+    tl_want "$out" "SYSTEM-DISKETT ABC-80" "disk003's volume label on drive 0"
+    tl_want "$out" "SYSTEMSKIVA" "disk001's own, different volume label on drive 1"
+    tl_end "$out"
+
+    # A write to the second drive, which is the assertion a directory
+    # listing cannot make. The round trip through BASIC is only half of
+    # it: LOAD would also succeed if SAVE had quietly gone to drive 0, so
+    # the images themselves are checked afterwards - the file must appear
+    # on drive 1's image and drive 0's must be untouched, byte for byte.
+    d0=$(fresh_disk x0); d1=$(fresh_disk1 x1)
+    out=$(run_basic $DISK_CAP \
+        $'10 PRINT "TVA"\rSAVE DR1:XDRIVE\rNEW\rLOAD DR1:XDRIVE\rLIST\r' \
+        --disk "$d0" --disk "$d1")
+    tl_begin "disk-drive1-roundtrip"
+    tl_want "$out" '10 PRINT "TVA"' "the program read back off drive 1"
+    tl_want_not "$out" "ERR " "a DOS error during the round trip"
+    if ! "$ROOT/bin/abcdisk" list "$d1" 2>&1 | grep -q "XDRIVE"; then
+        tl_note "XDRIVE is not in drive 1's directory - the write did not land there"
+    fi
+    if "$ROOT/bin/abcdisk" list "$d0" 2>&1 | grep -q "XDRIVE"; then
+        tl_note "XDRIVE appears in drive 0's directory - the write went to the wrong drive"
+    fi
+    if ! cmp -s "$d0" "$DISK003"; then
+        tl_note "drive 0's image was modified by a write addressed to DR1:"
+    fi
+    tl_end "$out"
+
+    # "N:FILE" pins a drive, so an image can be put on drive 1 with drive
+    # 0 empty. That is the form that proves the assignment is real rather
+    # than just sequential: LIB finds a drive 1 and no drive 0.
+    out=$(run_basic $DISK_CAP $'RUN LIB\r\r' --disk "1:$(fresh_disk1 pin1)")
+    tl_begin "disk-pinned-drive"
+    tl_want "$out" "SYSTEMSKIVA" "the pinned image being readable as drive 1"
+    tl_want_not "$out" "SYSTEM-DISKETT ABC-80" "any trace of the drive-0 image"
     tl_end "$out"
 fi
 

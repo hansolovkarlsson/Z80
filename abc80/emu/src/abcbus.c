@@ -100,7 +100,8 @@ int abc80_abcbus_io_out(Z80 *cpu, uint8_t port, uint8_t value) {
 // attach the host file the card serves sectors from. Callers load this
 // after their own floating-bus fill, not before, so this ROM content
 // survives it (see main.c's own abc80_bus_read_hook()).
-bool abc80_abcbus_init(const char *rom_dir, const char *dos_rom, const char *disk_path,
+bool abc80_abcbus_init(const char *rom_dir, const char *dos_rom,
+                       const char *const *disk_args, int disk_count,
                        uint8_t *ram) {
     char dos_rom_path[1024];
     snprintf(dos_rom_path, sizeof(dos_rom_path), "%s/%s", rom_dir,
@@ -117,13 +118,19 @@ bool abc80_abcbus_init(const char *rom_dir, const char *dos_rom, const char *dis
         fprintf(stderr, "DOS ROM '%s' is not exactly 4096 bytes\n", dos_rom_path);
         return false;
     }
-    if (!abcbus_disk_attach(0, disk_path)) {
-        return false;
+    // In command-line order, so two plain --disk arguments become the
+    // ROM's own DR0: and DR1: without a second flag. The card has served
+    // eight units since it was shared with the ABC802; only this
+    // machine's CLI ever limited it to one.
+    for (int d = 0; d < disk_count; d++) {
+        if (!abcbus_disk_attach_arg(disk_args[d])) return false;
     }
     rom_loaded = true;
     printf("Loaded DOS ROM '%s' at 0x6000; ABC-bus: %s floppy controller, "
-           "disk image '%s', interleave %u\n",
-           dos_rom_path, abcbus_disk_type_name(), disk_path,
+           "%d disk image%s, interleave %u\n",
+           dos_rom_path, abcbus_disk_type_name(),
+           abcbus_disk_attached_count(),
+           abcbus_disk_attached_count() == 1 ? "" : "s",
            abcbus_disk_interleave());
     if (strcmp(abcbus_disk_type_name(), "mo") != 0) {
         fprintf(stderr,

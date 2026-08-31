@@ -21,6 +21,63 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-31 (3) — ABC80's second drive, and a justification that was false
+
+Small milestone, and the interesting part happened before any code.
+
+The roadmap had carried "a second drive" as the top candidate for a while,
+justified like this: the card supports eight units, ABC-DOS scans all
+eight at boot, visible in `ABCBUS_TRACE=1` as a walk of units 0-7 reading
+directory sectors 16-23, so this is mostly CLI plumbing. I went to
+reproduce that trace before building on it.
+
+It does not happen. A full boot to the prompt issues four bus commands and
+every one addresses unit 0. Whatever produced that sentence was the
+ABC800 family's DOS — a different ROM on a different target — and it had
+been sitting in ABC80's roadmap as a fact about this machine.
+
+The plumbing half of the claim was right, and the milestone took about
+twenty lines: `abcbus_disk_attach_arg()` has parsed both `--disk FILE` and
+`--disk N:FILE` since the ABC802 needed two drives, and only
+`abc80_abcbus_init()` still took a single path. But the *evidence* had to
+be found again. It is better evidence, as it happens: `ABCDOS80.bin` has a
+device-name table at `0x6EB5`, seven seven-byte entries reading `DR0`
+through `DR6`. The ROM names the drives. It just does not go looking for
+them until something asks.
+
+And something does: the real `LIB` utility walks each drive it can find
+and prints that disk's own volume label, so a single run shows
+`SYSTEM-DISKETT ABC-80 Vers. 2.1.` for drive 0 and `SYSTEMSKIVA VER. 1.0`
+for drive 1. Two different labels, which is exactly the assertion that
+distinguishes two drives from one image mounted twice — and with one
+`--disk` there is no `Drive: 1` section at all, so the check discriminates
+in both directions.
+
+### The round trip is not enough on its own
+
+`SAVE DR1:XDRIVE` / `NEW` / `LOAD DR1:XDRIVE` / `LIST` prints the program
+back, and that would also happen if the save had quietly gone to drive 0
+and the load read it straight back. The same shape as the suite's own
+older near-miss, where a check asserted on the echoed command line rather
+than BASIC's answer. So the check steps outside the emulator afterwards
+and reads both images with `bin/abcdisk`: `XDRIVE` present in drive 1's
+directory, absent from drive 0's, and drive 0's file still byte-identical
+to the pristine archive copy. All three hold.
+
+Two injections, both caught — the card ignoring the unit field in the
+command header, and every bare `--disk` landing on drive 0. The second
+correctly leaves `disk-pinned-drive` green, because `N:FILE` never goes
+through the sequential counter, which is why that third check is worth
+having separately.
+
+### Media
+
+`ABC80_TEST_DISKS` now wants `disk001.img` as well as `disk003.img`. It is
+the archive's only other distinct ABC80 disk (`disk002.img` is
+byte-identical to `disk001.img`), and the difference between the two
+volume labels is load-bearing. The new checks skip separately from the old
+five, so a directory with only `disk003.img` still runs everything it can.
+
 ## 2026-08-31 (2) — the 480-wide mode, and a check that tested nothing
 
 The last graphics item on the ABC806 roadmap, created by the session

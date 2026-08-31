@@ -76,7 +76,10 @@ piped input), cassette quickload/quicksave, a scoped SN76477 sound model,
 a real periodic PIO interrupt, a correctly-modeled (floating-bus-by-
 default, optional `--ram32k`) memory map, and `--disk` support giving
 genuine floppy `SAVE`/`LOAD` round trips against real ABC80 disk images
-through a real, unmodified DOS ROM. That last one was a *PC-address trap*
+through a real, unmodified DOS ROM - repeatable, so two images become the
+ROM's own `DR0:`/`DR1:` (it names seven drives, `DR0`-`DR6`, in a device
+table at `0x6EB5`, but unlike the ABC800 family's DOS it does *not* scan
+them at boot: a full boot issues four bus commands, all to unit 0). That last one was a *PC-address trap*
 on two DOS ROM routines from Milestone 6 until **Milestone 12 retired it**
 in favour of the shared `abcbus/` card, so the ROM's own bus protocol code
 now executes for real; `abc80/emu/src/abcbus.c` keeps only what is

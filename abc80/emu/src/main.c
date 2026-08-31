@@ -478,6 +478,10 @@ static void print_usage(const char *prog) {
     printf("  --disk FILE        Load the real ABC-DOS ROM at 0x6000 and fit a real\n");
     printf("                     ABC-bus floppy controller serving FILE, a 160K ABC830\n");
     printf("                     image. Without it no card is fitted and the bus floats.\n");
+    printf("                     Repeat it for more drives: the second becomes DR1:,\n");
+    printf("                     and so on up to eight. 'N:FILE' pins a drive number\n");
+    printf("                     instead. All images must be of the one drive type,\n");
+    printf("                     since one controller is modeled.\n");
     printf("  --interleave N     Override the sector interleave of the disk image.\n");
     printf("                     0 means none. Two dump conventions exist for the\n");
     printf("                     same media: abc80.net's .img archive stores ABC830\n");
@@ -496,7 +500,8 @@ int main(int argc, char *argv[]) {
     const char *quickload_path = NULL;
     const char *quicksave_path = NULL;
     const char *wav_path = NULL;
-    const char *disk_path = NULL;
+    const char *disk_args[8];
+    int disk_count = 0;
     const char *dos_rom = NULL;
 
     for (int i = 1; i < argc; i++) {
@@ -514,7 +519,12 @@ int main(int argc, char *argv[]) {
         } else if (strcmp(argv[i], "--interactive") == 0) {
             interactive_mode = true;
         } else if (strcmp(argv[i], "--disk") == 0 && i + 1 < argc) {
-            disk_path = argv[++i];
+            if (disk_count < (int)(sizeof disk_args / sizeof disk_args[0])) {
+                disk_args[disk_count++] = argv[++i];
+            } else {
+                fprintf(stderr, "Too many --disk arguments\n");
+                return EXIT_FAILURE;
+            }
         } else if (strcmp(argv[i], "--interleave") == 0 && i + 1 < argc) {
             char *end = NULL;
             long factor = strtol(argv[++i], &end, 10);
@@ -575,8 +585,8 @@ int main(int argc, char *argv[]) {
     // abc80_bus_read_hook's own comment) and open/create the host file
     // backing its virtual disk. Done after the floating-bus fill, not
     // before, so this ROM content survives it.
-    if (disk_path) {
-        if (!abc80_abcbus_init(rom_dir, dos_rom, disk_path, ram)) {
+    if (disk_count > 0) {
+        if (!abc80_abcbus_init(rom_dir, dos_rom, disk_args, disk_count, ram)) {
             return EXIT_FAILURE;
         }
     }

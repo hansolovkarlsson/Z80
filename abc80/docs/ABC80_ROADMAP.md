@@ -31,7 +31,8 @@ ends and the hardware facts each one had to establish — live in
 | 10 | Left/right arrow keys | mapped from the ROM's own line editor, by disassembly |
 | 11 | A real GTK window | `bin/abc80-gtk`, Cairo framebuffer with live SN76477 audio |
 | 12 | Retiring the PC-address trap | a real ABC-bus card (`abcbus/disk.c`, shared with the ABC802) replaces the DOS-ROM trap |
-| 13 | An automated regression suite | `abc80/tests/run_tests.sh`, 19 checks (14 media-free), part of `make test` |
+| 13 | An automated regression suite | `abc80/tests/run_tests.sh`, part of `make test` |
+| 14 | A second floppy drive | `--disk` repeats; the ROM's own `DR1:` reads and writes an independent image |
 
 ## Memory map (grounded, not guessed)
 
@@ -75,9 +76,6 @@ again as a list of things that are no longer missing.
   pointers directly; no signal is modulated, and real `.wav` tape audio
   cannot be loaded. Adequate for moving programs in and out, and unlikely
   to be worth more unless something needs real tape timing.
-- **One floppy drive.** The shared card supports eight units and ABC-DOS
-  scans all of them at boot, but `--disk` takes a single image. See
-  Planned next steps.
 - **No printer or IEC-bus ROM card.** `0x8000`-`0xBFFF` floats; only the
   DOS card at `0x6000` is modeled, and only because `--disk` loads a real
   image into it. No ROM image for the others is committed.
@@ -120,19 +118,19 @@ crossings, and that same register driven from BASIC through the CPU (the
 only coverage `step.c`'s `OUT`-instruction decoding has). Five floppy checks — boot, the card's status byte read
 from BASIC, the real `LIB` directory listing, a `SAVE`/`LOAD` round trip,
 and UFD-DOS over the same card — need `ABC80_TEST_DISKS` pointed at a
-directory holding `disk003.img`, and skip loudly without it.
+directory holding `disk003.img`, and skip loudly without it. Three more
+cover two drives (`LIB` reading both, a `DR1:` write round trip, and the
+pinned `N:FILE` form) and additionally need `disk001.img` in the same
+directory: the archive's only other distinct ABC80 disk, and it is the
+*difference* between the two volume labels that proves two drives rather
+than one image mounted twice.
+
+22 checks with both images present, 14 without.
 
 ## Planned next steps
 
 None committed. Candidates, in rough order of how much they would add:
 
-- **A second drive.** The card supports eight units and the ABC802 target
-  already exposes them (`--disk` repeated, `N:FILE` to pin one). ABC-DOS
-  scans all eight at boot — visible in `ABCBUS_TRACE=1` output, which
-  walks units 0-7 reading directory sectors 16-23 on each — so this is
-  mostly CLI plumbing. Testable: two distinct real images exist in the
-  abc80.net archive set this project already uses (`disk001.img` and
-  `disk003.img`; `disk002.img` is byte-identical to `disk001.img`).
 - **A UFD-DOS-formatted disk image.** `--dos-rom UFD80V20.bin` drives the
   card correctly (Milestone 12) but has only ever been pointed at
   ABC-DOS media, which it reads fine and then correctly reports has no
