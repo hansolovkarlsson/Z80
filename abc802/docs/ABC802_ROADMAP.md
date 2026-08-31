@@ -152,7 +152,7 @@ than a test-writing one.
 
 ## Planned next steps
 
-None committed. Milestones 2-10 closed the items that previously stood
+None committed. Milestones 2-12 closed the items that previously stood
 here, and the ABC80 target's PC-trap bypass has since been retired in
 favour of this controller — the card now lives at `abcbus/disk.c`, shared
 by both machines, and that work is written up as ABC80 Milestone 12 in
@@ -170,9 +170,13 @@ of how much they would add:
    table is shaped to take. Blocked on verified geometry and test media —
    and note that interleave cannot be inferred from the working drives,
    which need opposite settings.
-3. **A cassette on SIO channel B**, now that the chip around it is real.
-   Bit-level and therefore a milestone in its own right; the machine has
-   working disk storage, so this is fidelity rather than capability.
+3. **A GTK disk dialog and colour picker**, which `bin/abc80-gtk` has an
+   equivalent of and this window does not. Purely front-end work.
+4. **Real tape audio.** The cassette (Milestone 12) models the SIO's byte
+   stream, which is the protocol boundary and enough for this machine's
+   own `SAVE`/`LOAD`. Loading a `.wav` recorded from real hardware would
+   need the analogue layer underneath it — FSK modulation and frequency
+   detection — which nothing here needs today.
 
 ## Sources consulted
 

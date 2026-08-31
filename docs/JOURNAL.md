@@ -21,6 +21,59 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-31 (9) — a documentation sweep, so the day survives the session
+
+Nine pieces of work in a day, and most of what made them worth doing was
+in a session's working memory rather than in a file. This is the sweep
+that fixes that, plus two things that turned out to be missing.
+
+### A second postmortem from the cassette
+
+["Too fast is a correctness bug"](postmortems/2026-08-31-too-fast-is-a-correctness-bug.md).
+The lesson outgrew its fix: for a device the guest services by interrupt,
+the gap *between* events is part of the contract, and delivering data as
+fast as the host allows is not "no timing model" but the wrong one. Worth
+its own file because the habit it violates — go as fast as possible,
+correctness never depends on wall time — is correct everywhere else in
+this emulator, which is exactly what made it invisible. The floppy card
+gets away with the same thing only because the ROM *polls* it.
+
+### The roadmap postmortem needed extending, by me
+
+[The one written this morning](postmortems/2026-08-31-roadmap-why-lines-are-untested.md)
+said two stated reasons had proved false. By evening it was five — and one
+of them was mine, written into a commit message hours after I wrote the
+postmortem. It now says so. The point it originally made was about
+inheriting someone else's note; the honest version is broader, and a
+commit message is just as good a place to record an unverified mechanism
+as a planning document.
+
+### An instrument that should have existed all day
+
+`scripts/pngart.py` — print a rectangle of a PNG as ASCII art. I wrote
+some version of it three times today from scratch, in a scratch directory,
+to check the 480-wide mode's run lengths, the ABC802 mosaics against the
+pixel renderer, and the ABC806 palette. `abc80/tests/litpix.py` already
+*counts* lit pixels, which is right for a regression check and useless for
+an investigation. It is now a real script with the reasoning in its
+docstring and an entry in `scripts/README.md`.
+
+### Currency
+
+Check counts verified against actual runs rather than trusted: ABC80 22
+with media / 14 without, ABC802 25 / 18, ABC806 38 / 35. The ABC802
+roadmap still listed cassette as a next step *and* repeated the
+"bit-level" description the work had refuted; both fixed. Today's eight
+entries renumbered so the first is `(1)`, per this file's own convention.
+
+Two memories updated. The verification one gains the commit-message
+instance, with the observation that a mechanism which *sounds* specific
+reads as looked-up even when it was invented — prose style is not a signal
+of grounding. The media one now records that `abc802/resources/disks/`
+persists and serves both the ABC802 and ABC806 suites, while ABC80's two
+images have no durable home at all: the copies used today were in a
+background job's `tmp/`, which goes away with the job.
+
 ## 2026-08-31 (8) — the cassette works, and my CRC diagnosis was wrong
 
 Yesterday's entry ended with cassette "one step short", blaming the SIO's
@@ -511,7 +564,7 @@ Every other check in the suite goes through an `FGCTL` palette, and every
 `FGCTL` palette has equal halves, so half the decode was invisible to all
 of them. The gap was real.
 
-## 2026-08-31 — the rest of FGCTL, and FGPICTURE turns out to be HRS
+## 2026-08-31 (1) — the rest of FGCTL, and FGPICTURE turns out to be HRS
 
 Two items had stood open on the ABC806 roadmap since milestone 5: the
 `FGCTL` arguments beyond the single one that had been mapped, and

@@ -29,6 +29,39 @@ samples in `read()` and `__select()` against 66 in `abc80_step()`: the run
 loop was issuing two syscalls per emulated instruction to poll stdin.
 Nothing to do with video timing.
 
+## It kept happening, including to me
+
+Two more of the same shape turned up the same day, after this was written.
+
+**"The cassette interface is bit-level, modulated through the SIO's
+synchronous clocks and demodulated by frequency detection."** A trace of a
+real `SAVE` shows the ROM handing the SIO whole *bytes*. The modulation is
+hardware past the SIO, so the byte stream is the protocol boundary and the
+feature was a fraction of the predicted size.
+
+**"`DOSGEN` scans past the end of the modeled drive; whether the real card
+answers differently, or whether it needs a drive-geometry reply, is not
+known."** Neither. Removing the controller's range check entirely, so
+out-of-range sectors succeed, produces byte-identical output — the card's
+answer has no influence at all. DOSGEN is filling a fixed-size free-list
+bitmap, and it completes correctly.
+
+And then the same failure in my own writing, which is the part worth
+keeping. Having written this postmortem, I ended a commit message with a
+confident mechanism for why the cassette load failed: *the ROM drives the
+SIO's hardware CRC generator, and this emulator does not implement it.* It
+reads like something looked up. It was not: `WR5` bit 0 and `WR3` bit 3 —
+both visible in a trace already on screen — are 0, so that hardware is
+never enabled. The real cause was
+[delivery pacing](2026-08-31-too-fast-is-a-correctness-bug.md).
+
+So the failure is not specific to roadmaps, or to inheriting someone
+else's note. It is what happens whenever an explanation is written at the
+moment of least knowledge and then not re-checked, and a commit message is
+just as good a place to do that as a planning document. The only reason
+this one was caught in a day rather than in six weeks is that the next
+session happened to continue the same work.
+
 ## Root cause
 
 Not the individual errors — those are ordinary, and one of them was even

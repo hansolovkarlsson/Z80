@@ -465,8 +465,11 @@ opcodes, `--type`'s raw-UTF-8 bug, the DART's single-receive-byte
 constraint, the "boot screen cannot validate the feature" near-miss, a
 status bit invented from one ROM, a test that matched its own input, a
 pass/fail oracle that hid its own premises, naming a source without
-consulting it, and a roadmap's own "why" lines being the least-tested
-prose here - two of ABC80's were acted on in one day and both were false. Each machine target's *finished* work now lives in its
+consulting it, a roadmap's own "why" lines being the least-tested prose
+here (five stated reasons proved false in one day, including one written
+into a commit message by the session that had just written that
+postmortem), and "too fast is a correctness bug" - for a device the guest
+services by interrupt, the gap *between* events is part of the contract. Each machine target's *finished* work now lives in its
 own `*_COMPLETED.md` (`cpm/docs/COMPLETED.md`,
 `abc80/docs/ABC80_COMPLETED.md`, `abc802/docs/ABC802_COMPLETED.md`,
 `abc806/docs/ABC806_COMPLETED.md`) rather than in its roadmap, so each `ROADMAP.md` answers only "what works, what

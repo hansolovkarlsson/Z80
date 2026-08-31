@@ -19,3 +19,18 @@ outside the one place it was first needed lives here instead.
   `python3 scripts/8080_to_z80.py <input.asm> <output.asm>`. See its own
   header comment for the full approach, and `cpm/resources/ccp/derive.sh` for
   a real example of driving it as part of a larger build pipeline.
+- **`pngart.py`** — print a rectangle of a PNG as ASCII art, one character
+  per pixel, distinct colours as distinct characters with a legend. The
+  counterpart to `abc80/tests/litpix.py`, which *counts* lit pixels: a
+  count is the right instrument for a regression check and the wrong one
+  for an investigation, because it says whether something changed and
+  never what the picture is. Usage:
+  `python3 scripts/pngart.py FILE [y0 y1 [x0 x1]]`, plus `--hex` for raw
+  pixel values. Handles greyscale/RGB/palette and all five PNG filters
+  with no third-party libraries, the same constraint the emulators' own
+  `png.c` writers are under. Written after several investigations needed
+  it — three coloured lines misread as "all white" off a small image, a
+  480-pixel-wide graphics mode confirmable only by every horizontal run
+  having length 1, and a terminal renderer checked against the pixel
+  renderer cell by cell. See
+  [`../docs/postmortems/2026-08-30-binary-oracle-hides-its-premises.md`](../docs/postmortems/2026-08-30-binary-oracle-hides-its-premises.md).
