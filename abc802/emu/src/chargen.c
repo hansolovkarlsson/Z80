@@ -142,6 +142,47 @@ bool abc802_render_pixels(const Abc802Screen *s, uint8_t *pixels, size_t capacit
 // This emulator models no vertical sync, so the same rate is expressed in
 // T-states: 3,000,000 T-states/s / 50 fields/s = 60,000 per field, times
 // 33 fields = 1,980,000 T-states per phase.
+// The attribute walk, shared with the terminal renderer (render.c) so the
+// two are one decode rather than two. See chargen.h for why reading
+// scanline 0 is equivalent to what the pixel loop above does per scanline.
+int abc802_decode_row(const uint8_t *char_rom, const uint8_t *codes, int count,
+                      bool flash_on, Abc802Cell *cells, int max) {
+    int rg = 0, rf = 0, rc = 0, n = 0;
+
+    for (int column = 0; column < count; column++) {
+        uint8_t code = codes[column];
+        uint16_t rom_addr = (uint16_t)((code & 0x7F) << 4);
+        // Mirrors the pixel loop, and deliberately so, but note that with
+        // *this* font it changes nothing: every code that is an attribute
+        // command in the alphanumeric font is the same command in the
+        // mosaic one, so attribute detection lands identically either way.
+        // Removing it breaks no test. It stays because the rule is "read
+        // the font the row is in", not "read font 0", and a font that
+        // distinguished them would be silently mis-decoded without it.
+        if (rg) rom_addr |= 0x800;
+        uint8_t data = char_rom[rom_addr & 0xFFF];
+
+        if (data & ABC802_ATE) {
+            int value = (data & ABC802_ATD) ? 1 : 0;
+            switch (data & 0x03) {
+                case ABC802_ATTR_ROW_GRAPHIC: rg = value; break;
+                case ABC802_ATTR_ROW_FLASH:   rf = value; break;
+                case ABC802_ATTR_ROW_CLEAR:   rc = value; break;
+                default: break; // 0x03 is undefined
+            }
+            continue;   // an attribute cell draws nothing at all
+        }
+
+        if (n >= max) break;
+        cells[n].code = code;
+        cells[n].column = column;
+        cells[n].graphic = rg != 0;
+        cells[n].blanked = (flash_on && rf) || rc;
+        n++;
+    }
+    return n;
+}
+
 #define ABC802_FLASH_PHASE_TSTATES 1980000
 
 bool abc802_flash_phase(long long cycles) {

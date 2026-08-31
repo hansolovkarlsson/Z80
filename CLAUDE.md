@@ -190,6 +190,20 @@ Milestone 7 makes `--disk` repeatable (drives 0, 1, …, or `N:FILE` to pin
 one), so `MO1:`/`MF1:` work; all drives must share one type, since one
 controller is modeled.
 
+Milestone 11 gave `--screen` and `--interactive` the *pixel* renderer's own
+attribute walk (`abc802_decode_row()`), so a Row Graphic row now draws as
+Unicode sextants instead of one alphanumeric glyph per code. The mosaic
+font is a teletext 2x3 block set whose six cells come from character-code
+bits 0,1,2,3,4 and **6** - bit 5 is skipped, since teletext uses it to
+separate graphics codes from alphanumeric ones - read out of the ROM's own
+glyphs rather than taken from the standard. Two facts to know: the
+terminal walk reads scanline 0 where the pixel walk re-reads whichever
+scanline it draws, which is only safe because this font encodes the same
+command on every row (checked by `chargen-attribute-invariant`, since the
+*cursor* row's byte genuinely differs while its decoded command does not);
+and BASIC's own `PRINT` never puts these codes into character RAM, so the
+attributes are reachable only by a program that writes it directly.
+
 Milestone 8 settled the line editor by sweeping every control code rather
 than disassembling it (that routine is only entered indirectly, so
 `bin/z80dasm` renders it as `DB` bytes). Its entire vocabulary is

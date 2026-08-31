@@ -49,6 +49,37 @@ static inline int abc802_pixel_height(const Abc802Screen *s) {
     return s->rows * ABC802_CHAR_HEIGHT;
 }
 
+// One cell as the row's attribute walk resolved it. Attribute codes draw
+// nothing and never appear here - only cells that put something on screen.
+//
+// This exists so the terminal renderer stops being a second, simpler
+// decode that disagrees with the pixel one. It used to print one glyph per
+// character code and know nothing about the row attributes at all, so a
+// Row Graphic screen read correctly as a PNG and misleadingly in a
+// terminal.
+typedef struct {
+    uint8_t code;     // the character-RAM byte, inverse bit included
+    int column;       // its column in the row
+    bool graphic;     // Row Graphic in force: draw from the mosaic font
+    bool blanked;     // Row Flash (phase on) or Row Clear: draws nothing
+} Abc802Cell;
+
+// Resolve one row of character codes into its drawn cells. `codes` is
+// `count` bytes read straight out of character RAM; `flash_on` is the
+// flash clock's current phase.
+//
+// The walk reads scanline 0 of the character ROM to decide whether a code
+// is an attribute command, where the pixel renderer re-reads whichever
+// scanline it is drawing. For this font that is the same answer every
+// time: over the ten scanned rows an attribute code's byte is identical,
+// and on the two substituted rows (blank and cursor) only bits the decode
+// ignores differ - ATE, ATD and the attribute-select bits are unchanged.
+// Both facts are checked by the chargen-attribute-invariant test rather
+// than assumed, because a font where they did not hold would make these
+// two renderers disagree silently.
+int abc802_decode_row(const uint8_t *char_rom, const uint8_t *codes, int count,
+                      bool flash_on, Abc802Cell *cells, int max);
+
 // Render to one byte per pixel, row-major, 0 = background and 1 = lit.
 // `capacity` guards the caller's buffer; returns false if it is too small
 // or the screen geometry is not programmed yet.

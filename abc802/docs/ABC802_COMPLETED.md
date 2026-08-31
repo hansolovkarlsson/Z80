@@ -799,3 +799,87 @@ The run needs 450M T-states and the check budgets 700M, which is about 2
 seconds. The hand-run that found all this used 30,000,000,000 and took 41
 — the same "measure the cap rather than copy it forward" lesson milestone
 10 already learned, arrived at again.
+
+## Milestone 11: row attributes in the terminal render — done
+
+`--screen` and `--interactive` printed one glyph per character code and
+knew nothing about the row attributes, so a Row Graphic screen read
+correctly as a PNG and misleadingly in a terminal. Both now run the same
+attribute walk the pixel renderer does, and draw the mosaic font as
+Unicode sextants.
+
+### The font, read rather than assumed
+
+The Row Graphic attribute ORs `0x800` into the character-ROM address,
+selecting an alternate font. Rendering that font's glyphs straight out of
+the committed ROM shows what it is: a teletext 2x3 block mosaic, 6 pixels
+wide split 3+3 and ten scanlines split 3+4+3.
+
+The bit assignment is the part worth knowing. The six cells come from bits
+0, 1, 2, 3, 4 and **6** of the character code — bit 5 is skipped, because
+in teletext that bit is what separates the graphics codes from the
+alphanumeric ones. Confirmed against the ROM's own glyphs rather than
+taken from the standard: `0x21` is top-left alone, `0x3F` is everything
+but bottom-right, `0x60` is bottom-right alone, `0x7F` is all six.
+
+### One walk, not two
+
+`abc802_decode_row()` (chargen.c) now resolves a row into its drawn cells,
+and both renderers use it. That is the shape `abc806_decode_row()` already
+had, for the reason its own comment gives: two independent decodes
+disagree, and finding out costs bugs.
+
+The two walks are not identical, though, and the difference needed
+checking rather than asserting. The terminal walk reads **scanline 0** to
+decide whether a code is an attribute command; the pixel walk re-reads
+whichever scanline it is drawing, including the two substituted rows
+(blank `0x0E`, cursor `0x0F`). For this font those agree, and
+`chargen-attribute-invariant` is the check that says so: across the ten
+scanned rows an attribute code's byte is *identical*, and on the two
+substituted rows only bits the decode ignores differ — ATE, ATD and the
+attribute-select bits are unchanged. The cursor row genuinely does differ
+(`0x80` becomes `0xBC`), which is exactly why this is a test and not a
+sentence.
+
+### Attribute cells keep their column
+
+An attribute code occupies a real cell and draws nothing. `decode_row`
+does not emit those cells at all, so the renderers walk columns and print
+a space where no cell was produced — which keeps a text dump aligned
+column-for-column with the pixel render instead of shifting left by one
+per attribute.
+
+### Verified against the authoritative renderer
+
+Not by eye. A row POKEd with `17, 33, 35, 127, 1, 65` in 80-column mode:
+
+```
+terminal:   🬀🬂█ A
+pixels:    ......###...############............
+           ......###...############.........#..
+           ......###...############........#.#.
+           ..................######.......#...#
+           ..................######.......#####
+```
+
+Cell for cell — blank attribute, top-left sextant, top half, full block,
+blank attribute, and `A` back in the alphanumeric font because code 1
+turned Row Graphic off again. 80-column mode deliberately: in 40-column
+mode the ROM lays text out in the even cells, so consecutive POKEs do not
+correspond to what the video hardware draws, and comparing the two
+renders there compares different things. That cost a confusing detour.
+
+POKEd rather than printed, too, because BASIC's `PRINT` never puts these
+codes into character RAM — `CHR$(17)` is consumed on the way. Which is
+also the honest scope of this milestone: the attributes are reachable by a
+program that writes character RAM, not by ordinary BASIC output.
+
+### Injections
+
+`chargen-row-graphic-in-terminal` catches the teletext bit-6 fixup being
+dropped. A second injection — removing the mosaic-font selection from
+`decode_row` — caught nothing, and that is a real finding rather than a
+hole: every code that is an attribute command in the alphanumeric font is
+the same command in the mosaic one, so attribute *detection* lands
+identically either way. The line stays, with a comment saying it is not
+independently observable, so nobody deletes it as dead.

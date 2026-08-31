@@ -1,10 +1,13 @@
 // abc802/emu/src/render.c - text-screen rendering from character RAM.
 //
 // The ABC802 is a character-cell machine with no bitmap mode (that is the
-// main thing separating it from the ABC800M/806), so a text dump is a
-// genuine, complete rendering of what the screen shows - not the
-// approximation abc80/emu/src/render.c has to make for ABC80's GRAPHICS
-// mode block mosaics.
+// main thing separating it from the ABC800M/806), but a text dump is still
+// not simply one glyph per character code: the Row Graphic attribute
+// switches the whole rest of a row to a mosaic font, and Row Flash and Row
+// Clear blank it. Those go through the same attribute walk the pixel
+// renderer uses (abc802_decode_row(), chargen.c), and the mosaics are
+// drawn with Unicode sextants - the approximation abc80/emu/src/render.c
+// makes for ABC80's GRAPHICS mode, needed here for the same reason.
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -12,6 +15,7 @@
 #include <stdio.h>
 
 #include "render.h"
+#include "chargen.h"
 #include "memory.h"
 #include "ports.h"
 
@@ -88,6 +92,80 @@ size_t abc802_utf8_to_chars(const char *utf8, uint8_t *out, size_t out_size) {
     return n;
 }
 
+static void abc802_put_char(FILE *out, uint8_t code);
+
+// Row Graphic draws from the alternate font, which is a teletext 2x3
+// block mosaic: 6 pixels wide split 3+3, ten scanlines split 3+4+3. Six
+// cells, and the character code carries them in bits 0,1,2,3,4 and *6* -
+// bit 5 is skipped, because in teletext it is what separates the graphics
+// codes from the alphanumeric ones. Verified by rendering the font's own
+// glyphs out of the ROM rather than assumed from the standard: 0x21 is
+// top-left alone, 0x60 bottom-right alone, 0x7F all six.
+static uint8_t abc802_mosaic_cells(uint8_t code) {
+    return (uint8_t)((code & 0x1F) | ((code & 0x40) >> 1));
+}
+
+// Six mosaic cells to a Unicode codepoint, in reading order:
+// bit0=top-left, bit1=top-right, bit2=mid-left, bit3=mid-right,
+// bit4=bottom-left, bit5=bottom-right.
+//
+// Unicode's "Symbols for Legacy Computing" sextant block (U+1FB00-1FB3B)
+// omits the four patterns that already had characters - empty, full, and
+// the two half blocks - so the index has to skip them.
+//
+// Deliberately a near-copy of abc80/emu/src/render.c's own
+// abc80_sextant_codepoint(), not a shared helper. The two targets have no
+// build-time relationship, the callers differ (that one's cells arrive in
+// bits 0-5 already, this one has teletext's bit-6 quirk to undo), and
+// twelve lines is cheaper than inventing a shared dependency for them.
+// This is the same rule the charset table above is kept under, and the
+// same one abc806/emu/src/ports.c is: a third consumer is the trigger to
+// lift it out.
+static uint32_t abc802_sextant_codepoint(uint8_t cells) {
+    if (cells == 0x00) return 0x20;    // SPACE
+    if (cells == 0x3F) return 0x2588;  // FULL BLOCK
+    if (cells == 0x15) return 0x258C;  // LEFT HALF BLOCK  (cells 1,3,5)
+    if (cells == 0x2A) return 0x2590;  // RIGHT HALF BLOCK (cells 2,4,6)
+    int index = (int)cells - 1;
+    if (cells > 0x15) index--;
+    if (cells > 0x2A) index--;
+    return 0x1FB00u + (uint32_t)index;
+}
+
+// Minimal UTF-8 encoder, for the sextant codepoints above - everything
+// else this file emits comes out of the charset table as literal UTF-8.
+static void abc802_put_codepoint(FILE *out, uint32_t cp) {
+    if (cp < 0x80) {
+        fputc((int)cp, out);
+    } else if (cp < 0x800) {
+        fputc((int)(0xC0 | (cp >> 6)), out);
+        fputc((int)(0x80 | (cp & 0x3F)), out);
+    } else if (cp < 0x10000) {
+        fputc((int)(0xE0 | (cp >> 12)), out);
+        fputc((int)(0x80 | ((cp >> 6) & 0x3F)), out);
+        fputc((int)(0x80 | (cp & 0x3F)), out);
+    } else {
+        fputc((int)(0xF0 | (cp >> 18)), out);
+        fputc((int)(0x80 | ((cp >> 12) & 0x3F)), out);
+        fputc((int)(0x80 | ((cp >> 6) & 0x3F)), out);
+        fputc((int)(0x80 | (cp & 0x3F)), out);
+    }
+}
+
+// One resolved cell. A blanked cell (Row Flash on its dark phase, or Row
+// Clear) draws nothing at all, and a Row Graphic cell draws a mosaic
+// rather than the glyph its code would otherwise name.
+static void abc802_put_cell(FILE *out, const Abc802Cell *cell) {
+    if (cell->blanked) {
+        fputc(' ', out);
+    } else if (cell->graphic) {
+        abc802_put_codepoint(out, abc802_sextant_codepoint(
+            abc802_mosaic_cells(cell->code & 0x7F)));
+    } else {
+        abc802_put_char(out, cell->code);
+    }
+}
+
 // Emit one character cell's glyph. `code` is the raw character-RAM byte,
 // bit 7 included - the caller decides whether that bit means anything.
 static void abc802_put_char(FILE *out, uint8_t code) {
@@ -126,6 +204,25 @@ static bool abc802_geometry(Abc802Geometry *g) {
     return g->cols > 0 && g->rows > 0;
 }
 
+// The CRTC counts at most 80 cells per row in either column mode, so this
+// bounds every per-row cell buffer below.
+#define ABC802_MAX_COLS 80
+
+// Read one row out of character RAM and run the attribute walk over it.
+// The walk sees *every* column, not the stepped subset the 40-column
+// renderers draw: an attribute code occupies a real cell wherever the ROM
+// put it, and skipping half of them would lose it.
+static int abc802_decode_row_at(const Abc802Geometry *g, const uint8_t *ram,
+                                int row, bool flash_on, Abc802Cell *cells) {
+    uint8_t codes[ABC802_MAX_COLS];
+    int count = g->cols < ABC802_MAX_COLS ? g->cols : ABC802_MAX_COLS;
+    for (int x = 0; x < count; x++) {
+        codes[x] = ram[(g->start + row * g->cols + x) & 0x7FF];
+    }
+    return abc802_decode_row(abc802_char_rom(), codes, count, flash_on,
+                             cells, ABC802_MAX_COLS);
+}
+
 void abc802_render_text_screen(FILE *out) {
     const uint8_t *ram = abc802_char_ram();
     Abc802Geometry g;
@@ -140,11 +237,21 @@ void abc802_render_text_screen(FILE *out) {
     fprintf(out, "+\n");
 
     for (int y = 0; y < g.rows; y++) {
+        Abc802Cell cells[ABC802_MAX_COLS];
+        int n = abc802_decode_row_at(&g, ram, y, false, cells);
         fprintf(out, "|");
-        for (int x = 0; x < g.cols; x += g.step) {
-            // Bit 7 is the per-character inverse-video flag, not part of
-            // the character code.
-            abc802_put_char(out, ram[(g.start + y * g.cols + x) & 0x7FF]);
+        for (int x = 0, next = 0; x < g.cols; x += g.step) {
+            while (next < n && cells[next].column < x) next++;
+            if (next < n && cells[next].column == x) {
+                // Bit 7 is the per-character inverse-video flag, not part
+                // of the character code.
+                abc802_put_cell(out, &cells[next]);
+            } else {
+                // An attribute cell. It occupies its column and draws
+                // nothing, exactly as the pixel renderer treats it, so a
+                // space keeps the two dumps aligned column for column.
+                fputc(' ', out);
+            }
         }
         fprintf(out, "|\n");
     }
@@ -171,7 +278,7 @@ int abc802_cursor_address(void) {
     return ((abc802_crtc_reg(14) << 8) | abc802_crtc_reg(15)) & 0x7FF;
 }
 
-void abc802_render_frame(FILE *out) {
+void abc802_render_frame(FILE *out, bool flash_on) {
     const uint8_t *ram = abc802_char_ram();
     Abc802Geometry g;
 
@@ -186,9 +293,16 @@ void abc802_render_frame(FILE *out) {
     int cursor_addr = abc802_cursor_address();
 
     for (int y = 0; y < g.rows; y++) {
-        for (int x = 0; x < g.cols; x += g.step) {
+        Abc802Cell cells[ABC802_MAX_COLS];
+        int n = abc802_decode_row_at(&g, ram, y, flash_on, cells);
+        for (int x = 0, next = 0; x < g.cols; x += g.step) {
             int addr = (g.start + y * g.cols + x) & 0x7FF;
-            uint8_t code = ram[addr];
+            while (next < n && cells[next].column < x) next++;
+            if (!(next < n && cells[next].column == x)) {
+                fputc(' ', out);   // an attribute cell draws nothing
+                continue;
+            }
+            uint8_t code = cells[next].code;
             // Two independent reasons to draw a cell reversed: the
             // character's own inverse-video bit, and the cursor sitting
             // on it. Either one alone reverses; both together cancel,
@@ -196,7 +310,7 @@ void abc802_render_frame(FILE *out) {
             // cursor drawn on top of already-inverted text.
             int inverse = ((code & 0x80) != 0) ^ (addr == cursor_addr);
             if (inverse) fputs("\x1b[7m", out);
-            abc802_put_char(out, code);
+            abc802_put_cell(out, &cells[next]);
             if (inverse) fputs("\x1b[0m", out);
         }
         fputc('\n', out);

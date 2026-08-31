@@ -3,6 +3,7 @@
 #ifndef ABC802_RENDER_H
 #define ABC802_RENDER_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -25,7 +26,11 @@ void abc802_render_text_screen(FILE *out);
 // by tracing the real ROM's CRTC writes, not assumed. So honoring R10 is
 // all that is needed, and the blink rate is whatever the real firmware
 // does rather than a constant this emulator has to supply.
-void abc802_render_frame(FILE *out);
+// `flash_on` is the Row Flash clock's current phase, supplied by the
+// caller rather than computed here: it belongs to the passage of time,
+// which the renderer knows nothing about. (The *cursor* still needs no
+// such parameter - see above, this ROM blinks that one itself.)
+void abc802_render_frame(FILE *out, bool flash_on);
 
 // Inverse of the character decode above: given a Unicode codepoint, the
 // ABC802 character code that produces it, or -1 if the machine has no

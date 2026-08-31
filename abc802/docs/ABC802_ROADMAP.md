@@ -22,7 +22,7 @@ that machine's documentation thins out.
 
 ## Completed work
 
-Milestones 1-10 are done. Their full write-ups — including what each one
+Milestones 1-11 are done. Their full write-ups — including what each one
 found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 
 | # | Milestone | Outcome |
@@ -36,7 +36,8 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 | 7 | A second drive | `--disk` repeats for drives 0, 1, …; `MO1:`/`MF1:` work and are independent |
 | 8 | The line editor's vocabulary | swept every control code; Left arrow works, Right correctly does nothing — the machine has no cursor movement |
 | 9 | A real Z80 SIO | registers, commands and the two DIP switches that reach the ROM through channel B's modem-status inputs |
-| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 21 checks (14 media-free), part of `make test` |
+| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 23 checks (16 media-free), part of `make test` |
+| 11 | Row attributes in the terminal render | `--screen` and `--interactive` run the pixel renderer's own attribute walk and draw Row Graphic as Unicode sextants |
 
 ## Known gaps
 
@@ -59,16 +60,6 @@ Real, understood, and deliberately not solved yet — not oversights.
   vocabulary as backspace, discard-line, clear-screen and three line
   terminators. Listed here so nobody re-opens it as a missing feature: it
   is a documented property of this ROM, not a gap in the emulator.
-- **The terminal renderers do not use the pixel decode.** `--screenshot`
-  and `bin/abc802-chargen-dump` render real pixels (Milestone 3), but
-  `--screen` and `--interactive`'s live frame still print one character
-  per cell, so they do not show Row Graphic mosaics, Row Flash or Row
-  Clear — an attribute-heavy screen reads correctly as a PNG and
-  misleadingly in the terminal. `--interactive` does show inverse video
-  and the cursor. Closing this means either mapping the mosaic font onto
-  Unicode sextants the way `abc80/emu/src/render.c` does, or accepting a
-  half-block pixel render (480 columns wide, so realistically only for
-  a GTK front-end).
 - **The CRTC is a register file, not a timing model.** Rendering reads
   character RAM on demand rather than reproducing the real scanline fetch,
   and no vertical-sync interrupt is generated. The cursor *does* animate
@@ -127,8 +118,10 @@ Real, understood, and deliberately not solved yet — not oversights.
 [`tests/run_tests.sh`](../tests/run_tests.sh): boot at both column widths,
 the Swedish charset round trip, five SIO register checks driven from
 BASIC through `INP()`/`OUT`, a `--screenshot` PNG validated down to its
-IHDR dimensions, and a chargen fixture diff covering the three row
-attributes no boot screen exercises. Four floppy checks — 160K and 640K
+IHDR dimensions, a chargen fixture diff covering the three row attributes
+no boot screen exercises, the same mosaic row asserted in the *terminal*
+render, and the character-ROM invariant that lets the terminal walk read
+one scanline where the pixel walk reads them all. Four floppy checks — 160K and 640K
 media booting real applications, drive independence, and a cross-drive
 load with its negative control — need `ABC802_TEST_DISKS` pointed at a
 directory holding `disk001.img`, `mf001.img` and `mf002.img`, and skip

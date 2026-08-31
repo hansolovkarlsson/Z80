@@ -21,6 +21,63 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-31 (6) — the ABC802's terminal render learns the row attributes
+
+`--screen` and `--interactive` printed one glyph per character code and
+knew nothing about the row attributes, so a Row Graphic screen read
+correctly as a PNG and misleadingly in a terminal. Fixed by giving both
+renderers the pixel renderer's own attribute walk and drawing the mosaic
+font as Unicode sextants — the shape `abc806_decode_row()` already had.
+
+Two things were worth the care.
+
+**The font was read, not assumed.** Row Graphic ORs `0x800` into the
+character-ROM address. Dumping that font's glyphs out of the committed ROM
+shows a teletext 2x3 mosaic, and the bit assignment is the non-obvious
+part: the six cells come from bits 0, 1, 2, 3, 4 and **6**, skipping bit 5
+because teletext uses it to separate graphics codes from alphanumeric
+ones. I checked that against the ROM's glyphs (`0x21` top-left alone,
+`0x60` bottom-right alone, `0x7F` all six) rather than trusting the
+standard, and it held.
+
+**The two walks are not identical, and that needed a test.** The terminal
+walk reads scanline 0 to decide whether a code is an attribute command;
+the pixel walk re-reads whichever scanline it is drawing, including the
+substituted blank and cursor rows. My first check of the invariant said 34
+codes violated it — because I scanned all 16 rows, and the cursor row
+genuinely differs (`0x80` becomes `0xBC`). Narrowing to the ten rows
+actually scanned gives zero violations, and on the substituted rows the
+*decoded command* is unchanged even though the byte is not: ATE, ATD and
+the two select bits are identical, only ignored bits move. So the walks
+provably agree for this font, and `chargen-attribute-invariant` now says
+so rather than a comment claiming it.
+
+### A detour worth recording
+
+My first comparison used 40-column mode and POKEs into consecutive cells,
+and the two renders disagreed badly. Not a bug: in 40-column mode the ROM
+lays text out in the *even* cells and the video hardware draws each glyph
+double width, so consecutive POKEs do not correspond to what gets drawn.
+Comparing the two renders there compares different things. In 80-column
+mode they line up cell for cell. I spent a while suspecting my sextant
+mapping before noticing the test setup was the problem — the oracle was
+fine, the input was wrong.
+
+### An injection that caught nothing, correctly
+
+Removing the mosaic-font selection from `decode_row` reddened no check.
+That is not a hole: every code that is an attribute command in the
+alphanumeric font is the same command in the mosaic one, so attribute
+detection lands identically either way. The line stays and now carries a
+comment saying it is not independently observable, which is the useful
+thing to write down — otherwise the next person deletes it as dead code
+and is right by every test.
+
+Also: BASIC's own `PRINT` never puts these codes into character RAM —
+`CHR$(17)` is consumed on the way — so the row has to be POKEd. That is
+the honest scope of the feature: reachable by a program that writes
+character RAM, not by ordinary BASIC output.
+
 ## 2026-08-31 (5) — DOSGEN's bad sectors were never a bug
 
 Last of the day's roadmap items, and the third in a row whose stated

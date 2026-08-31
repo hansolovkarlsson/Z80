@@ -486,7 +486,7 @@ int main(int argc, char **argv) {
             }
 
             if (elapsed_real - last_render_sec >= ABC802_RENDER_INTERVAL_SEC) {
-                abc802_render_frame(stdout);
+                abc802_render_frame(stdout, abc802_flash_phase(cycles));
                 last_render_sec = elapsed_real;
             }
         }
@@ -495,7 +495,7 @@ int main(int argc, char **argv) {
     // Final frame before the summary, not after: abc802_render_frame()
     // clears the screen first thing, which would otherwise wipe the
     // summary a user is trying to read after pressing Ctrl-\.
-    if (interactive) abc802_render_frame(stdout);
+    if (interactive) abc802_render_frame(stdout, abc802_flash_phase(cycles));
 
     printf("Ran %lld instructions / %lld T-states; PC=%04X (%s)\n",
            instructions, cycles, cpu.pc,

@@ -160,6 +160,66 @@ tl_end
 tl_fixture "chargen-attributes" "$FIXTURES/chargen.txt" \
     "$("$CHARGEN_DUMP" 2>&1)"
 
+# --- Row attributes in the terminal render ----------------------------
+#
+# The Row Graphic attribute switches the rest of a row to a teletext 2x3
+# mosaic font. --screen used to know nothing about it and printed one
+# alphanumeric glyph per character code, so an attribute-heavy screen read
+# correctly as a PNG and misleadingly in a terminal. It now runs the same
+# attribute walk the pixel renderer does and draws the mosaics as Unicode
+# sextants.
+#
+# POKEd rather than printed, because BASIC's own PRINT never puts these
+# codes into character RAM - CHR$(17) is consumed on the way. 80-column
+# mode, because in 40-column mode the ROM lays text out in the even cells
+# and consecutive POKEs would not correspond to what the video hardware
+# draws.
+#
+# The codes: 17 turns Row Graphic on, 1 turns it off, and 33/35/127 are
+# mosaics of one cell, two cells and all six. 65 after the off-switch must
+# come back as a plain "A", which is what says the attribute is really
+# scoped rather than latched for the rest of the screen.
+out=$("$ABC802" --columns 80 --screen --cycles 500000000 \
+      --type $'10 POKE 30720,17\r20 POKE 30721,33\r30 POKE 30722,35\r40 POKE 30723,127\r50 POKE 30724,1\r60 POKE 30725,65\rRUN\r' 2>&1)
+tl_begin "chargen-row-graphic-in-terminal"
+tl_want "$out" " 🬀🬂█ A" "the mosaic row rendered as sextants, matching the pixel render cell for cell"
+# The negative half: those codes as alphanumerics are what the old
+# renderer showed, and are exactly what a regression would print.
+tl_want_not "$out" "!#" "the alphanumeric glyphs the codes would name outside Row Graphic"
+tl_end "$out"
+
+# The terminal walk reads scanline 0 of the character ROM to decide
+# whether a code is an attribute command; the pixel renderer re-reads
+# whichever scanline it is drawing. They agree only because this font
+# encodes the same command on every row - which is a property of the ROM,
+# not of the code, so it is checked rather than assumed. Over the ten
+# scanned rows an attribute byte is identical; on the two substituted rows
+# (blank 0x0E, cursor 0x0F) only bits the decode ignores may differ.
+tl_begin "chargen-attribute-invariant"
+invariant=$(python3 - "$ROOT/abc802/resources/rom/ABC802-char.6490191-01.bin" <<'PY'
+import sys
+rom = open(sys.argv[1], 'rb').read()
+scanned_vary, command_vary = 0, 0
+for code in range(0x80):
+    for alt in (0, 0x800):
+        a = ((code & 0x7F) << 4) | alt
+        lines = [rom[a + l] for l in range(10)]
+        if not any(b & 0x80 for b in lines):
+            continue
+        if len(set(lines)) != 1:
+            scanned_vary += 1
+        # ATE, ATD and the two attribute-select bits, on the substituted rows
+        want = lines[0] & 0xC3
+        for ra in (0x0E, 0x0F):
+            if (rom[a + ra] & 0xC3) != want:
+                command_vary += 1
+print("scanned_vary=%d command_vary=%d" % (scanned_vary, command_vary))
+PY
+)
+tl_want "$invariant" "scanned_vary=0" "attribute bytes identical across the ten scanned rows"
+tl_want "$invariant" "command_vary=0" "the same attribute command on the blank and cursor rows"
+tl_end "$invariant"
+
 # --- Floppy, on real media --------------------------------------------
 
 MEDIA="${ABC802_TEST_DISKS:-}"
