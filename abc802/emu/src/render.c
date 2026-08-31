@@ -156,7 +156,7 @@ static void abc802_put_codepoint(FILE *out, uint32_t cp) {
 // Clear) draws nothing at all, and a Row Graphic cell draws a mosaic
 // rather than the glyph its code would otherwise name.
 static void abc802_put_cell(FILE *out, const Abc802Cell *cell) {
-    if (cell->blanked) {
+    if (cell->attribute || cell->blanked) {
         fputc(' ', out);
     } else if (cell->graphic) {
         abc802_put_codepoint(out, abc802_sextant_codepoint(
@@ -219,7 +219,8 @@ static int abc802_decode_row_at(const Abc802Geometry *g, const uint8_t *ram,
     for (int x = 0; x < count; x++) {
         codes[x] = ram[(g->start + row * g->cols + x) & 0x7FF];
     }
-    return abc802_decode_row(abc802_char_rom(), codes, count, flash_on,
+    return abc802_decode_row(abc802_char_rom(), codes, count,
+                             abc802_80_column(), flash_on,
                              cells, ABC802_MAX_COLS);
 }
 
@@ -240,19 +241,12 @@ void abc802_render_text_screen(FILE *out) {
         Abc802Cell cells[ABC802_MAX_COLS];
         int n = abc802_decode_row_at(&g, ram, y, false, cells);
         fprintf(out, "|");
-        for (int x = 0, next = 0; x < g.cols; x += g.step) {
-            while (next < n && cells[next].column < x) next++;
-            if (next < n && cells[next].column == x) {
-                // Bit 7 is the per-character inverse-video flag, not part
-                // of the character code.
-                abc802_put_cell(out, &cells[next]);
-            } else {
-                // An attribute cell. It occupies its column and draws
-                // nothing, exactly as the pixel renderer treats it, so a
-                // space keeps the two dumps aligned column for column.
-                fputc(' ', out);
-            }
-        }
+        // One character per *drawn cell*, in order. Not indexed by column:
+        // in 40-column mode a drawn character consumes the cell after it
+        // and an attribute code does not, so column numbers and visual
+        // positions come apart the moment a row carries an attribute.
+        for (int i = 0; i < n; i++) abc802_put_cell(out, &cells[i]);
+        for (int i = n; i < g.drawn; i++) fputc(' ', out);
         fprintf(out, "|\n");
     }
 
@@ -295,14 +289,9 @@ void abc802_render_frame(FILE *out, bool flash_on) {
     for (int y = 0; y < g.rows; y++) {
         Abc802Cell cells[ABC802_MAX_COLS];
         int n = abc802_decode_row_at(&g, ram, y, flash_on, cells);
-        for (int x = 0, next = 0; x < g.cols; x += g.step) {
-            int addr = (g.start + y * g.cols + x) & 0x7FF;
-            while (next < n && cells[next].column < x) next++;
-            if (!(next < n && cells[next].column == x)) {
-                fputc(' ', out);   // an attribute cell draws nothing
-                continue;
-            }
-            uint8_t code = cells[next].code;
+        for (int i = 0; i < n; i++) {
+            int addr = (g.start + y * g.cols + cells[i].column) & 0x7FF;
+            uint8_t code = cells[i].code;
             // Two independent reasons to draw a cell reversed: the
             // character's own inverse-video bit, and the cursor sitting
             // on it. Either one alone reverses; both together cancel,
@@ -310,7 +299,7 @@ void abc802_render_frame(FILE *out, bool flash_on) {
             // cursor drawn on top of already-inverted text.
             int inverse = ((code & 0x80) != 0) ^ (addr == cursor_addr);
             if (inverse) fputs("\x1b[7m", out);
-            abc802_put_cell(out, &cells[next]);
+            abc802_put_cell(out, &cells[i]);
             if (inverse) fputs("\x1b[0m", out);
         }
         fputc('\n', out);

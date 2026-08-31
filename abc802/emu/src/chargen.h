@@ -58,10 +58,11 @@ static inline int abc802_pixel_height(const Abc802Screen *s) {
 // Row Graphic screen read correctly as a PNG and misleadingly in a
 // terminal.
 typedef struct {
-    uint8_t code;     // the character-RAM byte, inverse bit included
-    int column;       // its column in the row
-    bool graphic;     // Row Graphic in force: draw from the mosaic font
-    bool blanked;     // Row Flash (phase on) or Row Clear: draws nothing
+    uint8_t code;      // the character-RAM byte, inverse bit included
+    int column;        // its column in the row
+    bool attribute;    // an attribute command: occupies a cell, draws nothing
+    bool graphic;      // Row Graphic in force: draw from the mosaic font
+    bool blanked;      // Row Flash (phase on) or Row Clear: draws nothing
 } Abc802Cell;
 
 // Resolve one row of character codes into its drawn cells. `codes` is
@@ -77,8 +78,12 @@ typedef struct {
 // Both facts are checked by the chargen-attribute-invariant test rather
 // than assumed, because a font where they did not hold would make these
 // two renderers disagree silently.
+// In 40-column mode a drawn character is double width and consumes the
+// cell after it, exactly as the pixel loop does - an attribute cell does
+// not. So the cells returned are the visual positions in order, and a
+// caller should walk them rather than indexing by column.
 int abc802_decode_row(const uint8_t *char_rom, const uint8_t *codes, int count,
-                      bool flash_on, Abc802Cell *cells, int max);
+                      bool eighty_column, bool flash_on, Abc802Cell *cells, int max);
 
 // Render to one byte per pixel, row-major, 0 = background and 1 = lit.
 // `capacity` guards the caller's buffer; returns false if it is too small

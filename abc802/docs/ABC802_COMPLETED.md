@@ -841,13 +841,34 @@ attribute-select bits are unchanged. The cursor row genuinely does differ
 (`0x80` becomes `0xBC`), which is exactly why this is a test and not a
 sentence.
 
-### Attribute cells keep their column
+### Double width, and a bug this milestone introduced and then found
 
-An attribute code occupies a real cell and draws nothing. `decode_row`
-does not emit those cells at all, so the renderers walk columns and print
-a space where no cell was produced — which keeps a text dump aligned
-column-for-column with the pixel render instead of shifting left by one
-per attribute.
+The first cut of `decode_row` emitted a cell per column and let the
+renderers index by column, stepping by two in 40-column mode. That is
+wrong, and the reason is a single line in the pixel loop:
+
+```c
+if (!s->eighty_column) column++;   // a drawn character swallows the next cell
+```
+
+A *drawn* character in 40-column mode is double width and consumes the
+cell after it. An **attribute** cell does not — the pixel loop's
+`continue` skips its own `column++`. So one attribute code shifts the
+parity of everything after it, and column numbers stop corresponding to
+visual positions. A caller stepping by two drifts out of step with the
+picture the moment a row carries an attribute.
+
+`decode_row` now mirrors that skip exactly and reports the visual
+positions in order, attribute cells included; the renderers walk the cells
+rather than indexing by column. The consequence is worth stating because
+it is not obvious: **in 40-column mode an attribute code sitting in a
+consumed partner cell is invisible to the hardware**, and now to both
+renderers.
+
+This was found by going back to check something unrelated — whether the
+40-column pixel path overlapped, which it does not — and noticing the line
+that makes it work was one the new code had not copied. It would not have
+shown up in the 80-column check, where the skip does not exist.
 
 ### Verified against the authoritative renderer
 
@@ -874,10 +895,35 @@ codes into character RAM — `CHR$(17)` is consumed on the way. Which is
 also the honest scope of this milestone: the attributes are reachable by a
 program that writes character RAM, not by ordinary BASIC output.
 
+### The fixture covers the walk itself
+
+`bin/abc802-chargen-dump` now also prints the attribute walk, in both
+column modes, as one letter per resolved cell (`A` attribute, `G` Row
+Graphic, `B` blanked, `.` ordinary). Pixels are the wrong instrument for
+the double-width question — the 40-column parity shift is invisible in a
+bitmap — and this is deterministic, needs no CPU, and shows the case
+directly:
+
+```
+=== Attribute walk, 80-column ===
+row 2: 80 cells  AGGGGGGGG...
+row 5: 80 cells  AGGGA......
+=== Attribute walk, 40-column ===
+row 2: 41 cells  AGGGGGGGG...
+row 5: 41 cells  AGGGGGGGG...
+```
+
+Row 2 producing **41** cells in 40-column mode is the attribute not
+consuming a partner where a character would. Row 5 differing between the
+modes is the other half: its Row-Graphic-off code lands in a consumed
+partner cell at 40 columns and the hardware never sees it.
+
 ### Injections
 
 `chargen-row-graphic-in-terminal` catches the teletext bit-6 fixup being
-dropped. A second injection — removing the mosaic-font selection from
+dropped. Removing the double-width skip reds both `chargen-attributes` and
+`boot-40-columns` — the latter being the real machine's own boot screen,
+so this is not only a fixture claim. A second injection — removing the mosaic-font selection from
 `decode_row` — caught nothing, and that is a real finding rather than a
 hole: every code that is an attribute command in the alphanumeric font is
 the same command in the mosaic one, so attribute *detection* lands

@@ -188,6 +188,36 @@ int main(int argc, char **argv) {
         }
     }
 
+    // The attribute walk on its own, in both column modes.
+    //
+    // The pixel view above cannot show this: a drawn character in
+    // 40-column mode is double width and swallows the cell after it,
+    // while an attribute code does not, so column numbers and visual
+    // positions come apart the moment a row carries an attribute. That is
+    // exactly the case the terminal renderer got wrong when it indexed
+    // cells by column, and pixels are the wrong instrument for seeing it.
+    //
+    //   A = attribute command (occupies a cell, draws nothing)
+    //   G = drawn from the Row Graphic mosaic font
+    //   B = blanked by Row Flash or Row Clear
+    //   . = an ordinary character
+    for (int mode = 0; mode < 2; mode++) {
+        bool eighty_mode = (mode == 0);
+        printf("\n=== Attribute walk, %d-column ===\n", eighty_mode ? 80 : 40);
+        for (int row = 0; row < rows; row++) {
+            Abc802Cell cells[80];
+            int n = abc802_decode_row(rom, &screen.char_ram[row * cols], cols,
+                                      eighty_mode, false, cells, 80);
+            printf("row %d: %2d cells  ", row, n);
+            for (int i = 0; i < n; i++) {
+                fputc(cells[i].attribute ? 'A'
+                      : cells[i].blanked ? 'B'
+                      : cells[i].graphic ? 'G' : '.', stdout);
+            }
+            fputc('\n', stdout);
+        }
+    }
+
     if (png_path) {
         static const uint8_t amber[3] = {247, 170, 0};
         static const uint8_t black[3] = {0, 0, 0};

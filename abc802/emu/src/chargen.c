@@ -146,7 +146,7 @@ bool abc802_render_pixels(const Abc802Screen *s, uint8_t *pixels, size_t capacit
 // two are one decode rather than two. See chargen.h for why reading
 // scanline 0 is equivalent to what the pixel loop above does per scanline.
 int abc802_decode_row(const uint8_t *char_rom, const uint8_t *codes, int count,
-                      bool flash_on, Abc802Cell *cells, int max) {
+                      bool eighty_column, bool flash_on, Abc802Cell *cells, int max) {
     int rg = 0, rf = 0, rc = 0, n = 0;
 
     for (int column = 0; column < count; column++) {
@@ -170,15 +170,36 @@ int abc802_decode_row(const uint8_t *char_rom, const uint8_t *codes, int count,
                 case ABC802_ATTR_ROW_CLEAR:   rc = value; break;
                 default: break; // 0x03 is undefined
             }
-            continue;   // an attribute cell draws nothing at all
+            // An attribute cell draws nothing - but it still occupies a
+            // position, and in 40-column mode it does *not* consume the
+            // cell after it the way a drawn character does (the pixel
+            // loop's `continue` skips its own column++ for exactly this
+            // reason). It is reported so a text dump can leave a gap where
+            // the picture has one.
+            if (n >= max) break;
+            cells[n].code = code;
+            cells[n].column = column;
+            cells[n].attribute = true;
+            cells[n].graphic = false;
+            cells[n].blanked = false;
+            n++;
+            continue;
         }
 
         if (n >= max) break;
         cells[n].code = code;
         cells[n].column = column;
+        cells[n].attribute = false;
         cells[n].graphic = rg != 0;
         cells[n].blanked = (flash_on && rf) || rc;
         n++;
+
+        // The double-width skip, mirroring the pixel loop exactly. A drawn
+        // character in 40-column mode is 12 pixels wide and swallows the
+        // next cell; without this the walk would emit both halves and a
+        // caller stepping by two would drift out of step with the picture
+        // the moment an attribute code shifted the parity.
+        if (!eighty_column) column++;
     }
     return n;
 }

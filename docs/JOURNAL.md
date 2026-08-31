@@ -78,6 +78,40 @@ Also: BASIC's own `PRINT` never puts these codes into character RAM —
 the honest scope of the feature: reachable by a program that writes
 character RAM, not by ordinary BASIC output.
 
+### And then I found the bug I had just written
+
+After committing, I went back to check something unrelated that had looked
+wrong while reading `chargen.c`: in 40-column mode the pixel loop computes
+`x = column * 6 + ...` with each glyph 12 pixels wide, which should make
+consecutive cells overlap. It does not, and the reason is one line I had
+read straight past: `if (!s->eighty_column) column++;` — a drawn character
+swallows the cell after it.
+
+An **attribute** cell does not, because the loop's `continue` skips that
+`column++`. So one attribute code shifts the parity of everything after
+it, and my new `decode_row` — which emitted a cell per column and let the
+renderers index by column, stepping by two — was wrong for exactly the
+combination the feature exists for: attributes in 40-column mode. My test
+was in 80 columns, where the skip does not exist, so it passed.
+
+Fixed by mirroring the skip and having the renderers walk cells in order
+rather than index by column. The behaviour that falls out is worth
+knowing: in 40-column mode an attribute code sitting in a consumed partner
+cell is **invisible to the hardware**, and now to both renderers.
+
+Covered by extending `bin/abc802-chargen-dump` to print the attribute walk
+itself, both column modes, one letter per resolved cell. Pixels cannot
+show this — a parity shift is invisible in a bitmap — and the dump makes
+it plain: row 2 yields 80 cells at 80 columns and **41** at 40, and row
+5's Row-Graphic-off code disappears entirely at 40 columns because it
+lands in a consumed cell.
+
+The lesson is small and not new: I copied a loop's *shape* without copying
+the one line that made its arithmetic work, and the test I wrote happened
+to sit in the mode where that line does nothing. Checking an unrelated
+suspicion is what found it, which is an argument for following up "that
+looks wrong" even when it turns out not to be.
+
 ## 2026-08-31 (5) — DOSGEN's bad sectors were never a bug
 
 Last of the day's roadmap items, and the third in a row whose stated
