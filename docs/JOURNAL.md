@@ -21,6 +21,50 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-31 (11) — the other two GTK windows get headless checks
+
+`bin/abc80-gtk` gained headless coverage in August; the ABC802's and
+ABC806's windows never did, and the ABC802 roadmap carried it as "would be
+straightforward if it ever seems worth it". It was worth it, and it took
+about as long as the sentence suggested.
+
+Both apps already had a `--screenshot` that opens no window — built
+because automating a capture against a real desktop steals focus and
+switches Spaces — so the checks are the ABC80 ones with the paths changed:
+the render completes, the sign-on lights more than 300 pixels, and typing
+adds pixels. That last one is the half that cannot pass by accident.
+
+### The ABC806 gets a check nothing else here can make
+
+A pixel count is blind to colour, and colour is the entire reason that
+window exists. So `gtk-headless-colour` draws three pen lines under
+`FGCTL 2` and asserts they render as **three distinct colours in equal
+numbers** — 1448 pixels each, the CLI's 362 scaled by the window's 2x.
+
+Collapsing the palette in the GTK app to monochrome reds that check and
+nothing else: the same pixels are lit, so both counting checks stay green.
+That is the whole argument for it, and it is the same lesson as the day's
+earlier pen work, where a byte-value list had to replace a count for
+exactly this reason.
+
+### What these do and do not cover
+
+They run when the opt-in binary exists and skip loudly when it does not,
+which means a *build* break still slips through — and that is not
+hypothetical. `bin/abc80-gtk` stopped compiling for part of today because
+I changed a shared function's signature and nothing built it; I only found
+out by building it by hand. The roadmap now says so plainly rather than
+leaving "the GTK apps are not in make test" sounding like a scope decision
+when half of it is a real hole.
+
+Also: the decode underneath both windows is already fixture-verified, so
+what these add is the *app* — that it boots, drives the same
+`draw_screen()` the live window uses, and gets keystrokes through.
+
+Injections, both caught: dropping `--type`'s keystrokes in the ABC802 app
+reds `gtk-headless-type`, and collapsing the ABC806's palette reds
+`gtk-headless-colour`.
+
 ## 2026-08-31 (10) — the disk images get a durable home
 
 The loose end from the sweep: ABC80's `disk001.img` and `disk003.img` had

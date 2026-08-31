@@ -43,10 +43,15 @@ Full write-ups, including what each milestone found the hard way, are in
 
 `bin/abc806-gtk` (opt-in, `make abc806-gtk`) is a real GTK4 window on the
 same terms as the other two ABC targets' — see
-[`../gtk/README.md`](../gtk/README.md).
+[`../gtk/README.md`](../gtk/README.md). It has three headless checks of
+its own, including the colour one described under Testing below.
 
-`make test-abc806` runs 38 checks — 35 media-free, plus 3 that need a real
-disk image and otherwise skip loudly. Those look in
+`make test-abc806` runs 41 checks — 35 needing nothing, 3 that need a real
+disk image, and 3 that drive `bin/abc806-gtk` headlessly and skip loudly
+when that opt-in binary is absent. One of those three is the only check
+anywhere that would notice the GTK window losing *colour*: three pen lines
+must render as three distinct colours in equal numbers, which a pixel
+count cannot see. Those look in
 `abc802/resources/disks/` for `sys832-ufd.img` (the same UFD-DOS system
 disk serves both targets, so there is no second copy of a 640K image);
 `ABC806_TEST_DISKS` overrides the location. It is part of `make test`.

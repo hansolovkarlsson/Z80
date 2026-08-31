@@ -517,4 +517,48 @@ for spec in "mo:160K:--interleave 0:MO0:616" "mf:640K::MF0:632"; do
     tl_end "$out"
 done
 
+
+# --- bin/abc802-gtk, headlessly ------------------------------------------
+#
+# The GTK window is opt-in (`make abc802-gtk`) and is not built by
+# `make test`, so these skip loudly when it is absent rather than failing.
+#
+# `--screenshot` opens no window, which is what makes this runnable at
+# all: automating a capture against the user's real desktop steals focus
+# and switches Spaces (see abc80/gtk/README.md).
+#
+# The pixel decode underneath is already covered by the chargen fixture,
+# so what these add is the *app*: that it boots, drives the same
+# `draw_screen()` the live window uses, and gets keystrokes through. A
+# count of non-background pixels rather than an image comparison, because
+# a committed reference PNG would be hostage to the host's Cairo version.
+GTK_BIN="$ROOT/bin/abc802-gtk"
+if [ ! -x "$GTK_BIN" ]; then
+    for c in gtk-headless-boot gtk-headless-type; do
+        tl_skip "$c" "bin/abc802-gtk not built (run 'make abc802-gtk')"
+    done
+else
+    GTK_TMP="$(mktemp -d)"
+    trap 'rm -rf "$GTK_TMP"' EXIT
+
+    out=$("$GTK_BIN" --columns 80 --screenshot "$GTK_TMP/boot.png" --cycles 400000000 2>&1)
+    boot_lit=$(python3 "$ROOT/abc80/tests/litpix.py" "$GTK_TMP/boot.png" 2>/dev/null || echo 0)
+    tl_begin "gtk-headless-boot"
+    tl_want "$out" "Wrote" "the headless render completing"
+    lit_ok=$([ "$boot_lit" -gt 300 ] && echo yes || echo no)
+    tl_want_eq "$lit_ok" "yes" "the sign-on lighting more than 300 pixels (got $boot_lit)"
+    tl_end "$out"
+
+    # Typing must add pixels. This is the half that cannot pass by
+    # accident: a render that drew nothing, or a keyboard path that
+    # delivered nothing, leaves the count at the boot value.
+    out=$("$GTK_BIN" --columns 80 --screenshot "$GTK_TMP/typed.png" --cycles 400000000 --type 'PRINT 6*7' 2>&1)
+    typed_lit=$(python3 "$ROOT/abc80/tests/litpix.py" "$GTK_TMP/typed.png" 2>/dev/null || echo 0)
+    tl_begin "gtk-headless-type"
+    more_ok=$([ "$typed_lit" -gt "$boot_lit" ] && echo yes || echo no)
+    tl_want_eq "$more_ok" "yes" \
+        "typed text adding pixels (got $typed_lit against the boot screen's $boot_lit)"
+    tl_end "$out"
+ fi
+
 tl_summary "abc802"

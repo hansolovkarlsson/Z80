@@ -442,4 +442,74 @@ else
     tl_end "$out"
 fi
 
+
+# --- bin/abc806-gtk, headlessly ------------------------------------------
+#
+# The GTK window is opt-in (`make abc806-gtk`) and is not built by
+# `make test`, so these skip loudly when it is absent rather than failing.
+#
+# `--screenshot` opens no window, which is what makes this runnable at
+# all: automating a capture against the user's real desktop steals focus
+# and switches Spaces (see abc80/gtk/README.md).
+#
+# The pixel decode underneath is already covered by the chargen fixture,
+# so what these add is the *app*: that it boots, drives the same
+# `draw_screen()` the live window uses, and gets keystrokes through. A
+# count of non-background pixels rather than an image comparison, because
+# a committed reference PNG would be hostage to the host's Cairo version.
+GTK_BIN="$ROOT/bin/abc806-gtk"
+if [ ! -x "$GTK_BIN" ]; then
+    for c in gtk-headless-boot gtk-headless-type gtk-headless-colour; do
+        tl_skip "$c" "bin/abc806-gtk not built (run 'make abc806-gtk')"
+    done
+else
+    GTK_TMP="$(mktemp -d)"
+    trap 'rm -rf "$GTK_TMP"' EXIT
+
+    out=$("$GTK_BIN"  --screenshot "$GTK_TMP/boot.png" --cycles 400000000 2>&1)
+    boot_lit=$(python3 "$ROOT/abc80/tests/litpix.py" "$GTK_TMP/boot.png" 2>/dev/null || echo 0)
+    tl_begin "gtk-headless-boot"
+    tl_want "$out" "Wrote" "the headless render completing"
+    lit_ok=$([ "$boot_lit" -gt 300 ] && echo yes || echo no)
+    tl_want_eq "$lit_ok" "yes" "the sign-on lighting more than 300 pixels (got $boot_lit)"
+    tl_end "$out"
+
+    # Typing must add pixels. This is the half that cannot pass by
+    # accident: a render that drew nothing, or a keyboard path that
+    # delivered nothing, leaves the count at the boot value.
+    out=$("$GTK_BIN"  --screenshot "$GTK_TMP/typed.png" --cycles 400000000 --type 'PRINT 6*7' 2>&1)
+    typed_lit=$(python3 "$ROOT/abc80/tests/litpix.py" "$GTK_TMP/typed.png" 2>/dev/null || echo 0)
+    tl_begin "gtk-headless-type"
+    more_ok=$([ "$typed_lit" -gt "$boot_lit" ] && echo yes || echo no)
+    tl_want_eq "$more_ok" "yes" \
+        "typed text adding pixels (got $typed_lit against the boot screen's $boot_lit)"
+    tl_end "$out"
+
+    # The one thing a pixel count cannot see, and the reason this window
+    # exists at all: colour. Three pen lines under FGCTL 2 must come out
+    # as three *different* colours, in equal numbers. A framebuffer that
+    # collapsed the palette - or lost the high-resolution layer - still
+    # lights the same number of pixels.
+    draw="FGCTL 2"$'\r'"FGPOINT 20,20,1:FGLINE 200,20,1"$'\r'\
+"FGPOINT 20,30,2:FGLINE 200,30,2"$'\r'"FGPOINT 20,40,3:FGLINE 200,40,3"$'\r'
+    out=$("$GTK_BIN" --screenshot "$GTK_TMP/colour.png" --cycles 900000000 --type "$draw" 2>&1)
+    tl_begin "gtk-headless-colour"
+    colours=$(python3 - "$GTK_TMP/colour.png" <<'PY'
+import sys
+sys.path.insert(0, "scripts")
+from collections import Counter
+from pngart import load
+_w, _h, px = load(sys.argv[1])
+counts = Counter(v for row in px for v in row)
+# Drop the background and the white text; what is left must be the pens.
+pens = [n for v, n in counts.items()
+        if v not in ((0, 0, 0), (255, 255, 255))]
+print("pens=%d equal=%d" % (len(pens), int(len(set(pens)) == 1)))
+PY
+)
+    tl_want "$colours" "pens=3" "three drawing pens rendering as three distinct colours"
+    tl_want "$colours" "equal=1" "the three lines covering equal numbers of pixels"
+    tl_end "$out$colours"
+ fi
+
 tl_summary "abc806"

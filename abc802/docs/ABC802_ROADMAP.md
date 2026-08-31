@@ -36,7 +36,7 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 | 7 | A second drive | `--disk` repeats for drives 0, 1, …; `MO1:`/`MF1:` work and are independent |
 | 8 | The line editor's vocabulary | swept every control code; Left arrow works, Right correctly does nothing — the machine has no cursor movement |
 | 9 | A real Z80 SIO | registers, commands and the two DIP switches that reach the ROM through channel B's modem-status inputs |
-| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 25 checks (18 media-free), part of `make test` |
+| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 27 checks (20 media-free, 2 needing the opt-in GTK build), part of `make test` |
 | 11 | Row attributes in the terminal render | `--screen` and `--interactive` run the pixel renderer's own attribute walk and draw Row Graphic as Unicode sextants |
 | 12 | Cassette | `--cassette` gives a real `SAVE`/`LOAD` round trip on SIO channel B, with a genuine receive interrupt and bisync hunt |
 
@@ -49,12 +49,13 @@ Real, understood, and deliberately not solved yet — not oversights.
   launch and BASIC's `SAVE`/`LOAD` work against them, but there is no
   in-window way to swap a disk; the amber phosphor is fixed at the
   machine's real value. See `../gtk/README.md`.
-- **Neither GTK app is in `make test`.** They are opt-in builds requiring
-  `gtk4`, which the default build deliberately does not depend on, so the
-  suites cover only what `make abc802` produces. `bin/abc802-gtk` is at
-  least checkable without a desktop — its `--screenshot` renders through
-  the identical `draw_screen()` the live window uses — so a suite gated on
-  the binary existing would be straightforward if it ever seems worth it.
+- **The GTK app is still not *built* by `make test`.** It needs `gtk4`,
+  which the default build deliberately does not depend on. It now has two
+  headless checks (`gtk-headless-boot`, `gtk-headless-type`) that run when
+  the binary exists and skip loudly when it does not — so a broken render
+  or keyboard path is caught, but a build break is not. That gap is real:
+  `bin/abc80-gtk` stopped compiling for part of a day in August 2026
+  because nothing built it.
 - **The line editor has no cursor movement, and that is the hardware.**
   Left arrow maps to backspace and Right does nothing, because a full
   sweep of every control code (Milestone 8) established the editor's whole
@@ -114,7 +115,9 @@ BASIC through `INP()`/`OUT`, a `--screenshot` PNG validated down to its
 IHDR dimensions, a chargen fixture diff covering the three row attributes
 no boot screen exercises, the same mosaic row asserted in the *terminal*
 render, and the character-ROM invariant that lets the terminal walk read
-one scanline where the pixel walk reads them all. Four floppy checks — 160K and 640K
+one scanline where the pixel walk reads them all. Two more drive
+`bin/abc802-gtk` headlessly through its own `--screenshot`, and skip
+loudly when that opt-in binary is absent. Four floppy checks — 160K and 640K
 media booting real applications, drive independence, and a cross-drive
 load with its negative control — need `ABC802_TEST_DISKS` pointed at a
 directory holding `disk001.img`, `mf001.img` and `mf002.img`, and skip
