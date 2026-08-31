@@ -21,6 +21,47 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-30 (15) — making the BASIC reference's claims executable
+
+Wrote `ABC806_BASIC_REFERENCE.md` and then noticed it was a document full
+of specific behavioural assertions — `FGFILL` fills a rectangle from the
+cursor, `FGPAINT` floods 30,720 bytes on an empty plane — with nothing
+re-checking any of them. A reference that drifts from the machine is worse
+than none, because it is trusted.
+
+So five of its claims are now checks: `graphics-fgpoint-cursor-only`,
+`graphics-fgpoint-plots-a-dot`, `graphics-fgfill-rectangle`,
+`graphics-fgpaint-unbounded` and `graphics-fgpaint-is-bounded`. The suite
+goes from 13 media-free checks to 18, and from 6.3 to 9.4 seconds — I
+measured the minimum cycle count each needed rather than reusing the
+generous 600M I had been testing by hand, which halved the cost.
+
+### The bounded flood fill is the one that matters
+
+`FGPAINT` on an empty plane fills all 30,720 bytes, which on its own is
+indistinguishable from a screen clear. Drawing a box first and filling
+inside it cuts the count to 6,161. That is what makes it a *flood* fill,
+and it is the assertion I would keep if I could only keep one.
+
+It is also, along with the `FGFILL` and unbounded-`FGPAINT` checks,
+sensitive to something the older checks were not: **the plane's read
+path**. A flood fill has to read the plane back to find its boundaries.
+Breaking reads while leaving writes intact reds exactly those three and
+leaves the dot checks passing — verified by doing it.
+
+That was worth checking rather than assuming. My first sabotage attempt
+(narrowing the window's address range) reddened only two checks, and it
+would have been easy to conclude the new ones were redundant. They are not;
+I had simply picked a sabotage that missed the region they exercise.
+
+### A naming detail
+
+The checks were first generated from the command text, which produced
+`graphics-FGPOINT-5151` for a case that is really about `FGFILL` — the
+command line happens to start with `FGPOINT` to place the cursor. Renamed
+by hand. A test whose name misdescribes it is a small thing until it fails
+at three in the morning.
+
 ## 2026-08-30 (14) — bin/abc80-gtk verifies itself now
 
 `bin/abc80-gtk --screenshot FILE` renders one frame through the identical

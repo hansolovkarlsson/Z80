@@ -141,6 +141,40 @@ for pen_case in "0:C0 CC" "1:D0 DD" "2:E0 EE" "3:F0 FF" "4:C0 CC" "7:F0 FF"; do
     tl_end "$out"
 done
 
+# --- The graphics commands, as ABC806_BASIC_REFERENCE.md documents them --
+#
+# That document makes specific behavioural claims about FGPOINT, FGFILL and
+# FGPAINT, established by running them. These are those claims, executable.
+# Without them the reference is a set of assertions nothing re-checks.
+#
+# The exact byte counts are characterisation rather than derived constants,
+# which is fine and is why each one names what it is counting. They are
+# stable across runs; the emulator is deterministic here.
+while IFS='|' read -r name cmd want desc; do
+    [ -n "$name" ] || continue
+    out=$("$ABC806" --cycles 250000000 \
+          --type "FGCTL 2"$'\r'"$cmd"$'\r' 2>&1)
+    tl_begin "$name"
+    tl_want "$out" "High-resolution plane: $want/131072 bytes nonzero" "$desc"
+    tl_end "$out"
+done <<'GFX'
+graphics-fgpoint-cursor-only|FGPOINT 100,100|0|two-argument FGPOINT moving the cursor and plotting nothing
+graphics-fgpoint-plots-a-dot|FGPOINT 100,100,3|1|three-argument FGPOINT plotting exactly one dot
+graphics-fgfill-rectangle|FGPOINT 50,50:FGFILL 150,150,2|5151|FGFILL filling the rectangle from the cursor
+graphics-fgpaint-unbounded|FGPAINT 100,100,2|30720|FGPAINT flooding the whole plane when nothing bounds it
+GFX
+
+# The flood fill is bounded by drawn pixels, which is the claim that makes
+# FGPAINT a flood fill rather than a screen clear. Drawing a box first must
+# cut the filled area down from the whole plane to the box.
+out=$("$ABC806" --cycles 900000000 --type "FGCTL 2"$'\r'\
+"FGPOINT 40,40,3:FGLINE 160,40,3:FGLINE 160,140,3:FGLINE 40,140,3:FGLINE 40,40,3"$'\r'\
+"FGPAINT 100,90,1"$'\r' 2>&1)
+tl_begin "graphics-fgpaint-is-bounded"
+tl_want "$out" "High-resolution plane: 6161/131072 bytes nonzero" \
+        "FGPAINT filling only inside a drawn box, not the whole plane"
+tl_end "$out"
+
 # --- The real-time clock, on real media ---------------------------------
 #
 # The only end-to-end check of the E0516, and it needs a disk: nothing in

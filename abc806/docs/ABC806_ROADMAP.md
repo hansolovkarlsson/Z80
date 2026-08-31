@@ -45,8 +45,9 @@ Full write-ups, including what each milestone found the hard way, are in
 same terms as the other two ABC targets' — see
 [`../gtk/README.md`](../gtk/README.md).
 
-`make test-abc806` runs 13 checks, and 16 with `ABC806_TEST_DISKS` set;
-it is part of `make test`.
+`make test-abc806` runs 21 checks — 18 media-free, plus 3 that need a real
+disk image and otherwise skip loudly (set `ABC806_TEST_DISKS`). It is part
+of `make test`.
 
 ## What is next
 

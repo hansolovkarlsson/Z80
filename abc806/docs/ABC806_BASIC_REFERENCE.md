@@ -181,6 +181,22 @@ command fills all 30,720 bytes of the plane.
 
 ---
 
+## These claims are tested
+
+The behaviours above are not just recorded here — `make test-abc806` runs
+them. `graphics-fgpoint-cursor-only`, `graphics-fgpoint-plots-a-dot`,
+`graphics-fgfill-rectangle`, `graphics-fgpaint-unbounded` and
+`graphics-fgpaint-is-bounded` assert the exact pixel counts each command
+produces, so a change to the emulator that quietly broke one of them turns
+a check red rather than leaving this document wrong.
+
+The bounded flood-fill check is the one worth keeping: it is what
+distinguishes `FGPAINT` from a screen clear, and — along with the `FGFILL`
+and unbounded-`FGPAINT` checks — it is sensitive to the plane's *read*
+path, since a flood fill has to read the plane back to find its
+boundaries. Breaking reads while leaving writes intact reds those three and
+leaves the dot checks passing.
+
 ## How this was established, and what it is not
 
 The keyword tables were read out of the committed ROM images — the BASIC
