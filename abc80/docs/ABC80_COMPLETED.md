@@ -3099,6 +3099,10 @@ from an earlier session and never questioned. This target runs at roughly
 1.7M instructions/sec, so that was most of a minute per check spent on
 nothing.
 
+*(Those numbers are of their moment. The 1.7M was later traced to a
+syscall per emulated instruction and is now ~75M, with the suite at 2.4
+seconds — see "The keyboard poll was the emulator's speed limit" below.)*
+
 ## Milestone 14: a second floppy drive — done
 
 `--disk` now repeats, so two plain arguments become the ROM's own `DR0:`
@@ -3177,3 +3181,86 @@ is missing, so the existing five floppy checks still run with only
 The second one correctly leaves `disk-pinned-drive` green, since `N:FILE`
 does not go through the sequential counter — which is the reason that
 check exists as well as the other two.
+
+## The keyboard poll was the emulator's speed limit — solved
+
+`bin/abc80` ran at roughly **1.7M instructions/sec**, several times slower
+than `bin/abc802` on the identical shared core. This was carried as a
+performance note with a guess attached: "the per-instruction video-timing
+work is the obvious first suspect."
+
+The guess was wrong, and the measurement said so immediately. A
+20M-instruction batch run took 11.4 seconds — of which **2.8s was user
+time and 8.5s was system time**. System time dominating a batch emulation
+run means syscalls, not computation, and redirecting output to `/dev/null`
+changed nothing, so it was not printing either.
+
+`sample` settled it in one go:
+
+```
+1282  read    (in libsystem_kernel.dylib)
+1184  __select(in libsystem_kernel.dylib)
+  66  abc80_step
+```
+
+~96% of samples in two syscalls, against 66 in the actual emulator. The
+run loop called `poll_stdin_byte()` — a `select()` then possibly a
+`read()` — **once per emulated instruction**.
+
+### The reasoning was already in the file
+
+The comment on `ABC80_PACING_CHECK_INTERVAL`, four lines above, explains
+exactly why this is wrong:
+
+> `clock_gettime()` and `nanosleep()` are real syscalls, and 2,995,200 of
+> them a second would swamp actual emulation work
+
+— and then ends by noting the exception nobody followed up:
+
+> `poll_stdin_byte()` itself still runs every single loop iteration, not
+> gated by this interval
+
+So the fix is the pattern the file already established:
+`ABC80_KEYBOARD_POLL_INTERVAL`, also 500 instructions, about 2ms of
+emulated time. A key is picked up within ~2ms of the ROM becoming ready
+for it — hundreds of times a second, against a keyboard nothing drives
+faster than a few dozen.
+
+| | before | after |
+|---|---|---|
+| 20M-instruction batch run | 11.4s (2.8 user + 8.5 sys) | 0.6s (0.28 user + 0.02 sys) |
+| throughput | 1.7M inst/sec | ~75M inst/sec |
+| `make test-abc80` (with media) | 29.6s | 2.4s |
+
+### Why this is safe
+
+No byte can be lost: the poll only reads from stdin when it is about to
+press the key, so nothing is read and dropped. The only behavioural change
+is that a key arrives up to 500 instructions after the ROM became ready
+for it, which is a person typing marginally slower — and the ROM polls its
+keyboard in a loop, so it is waiting either way.
+
+Checked rather than argued: two typed BASIC sessions (a `FOR` loop with
+`RUN`, and a Swedish-character round trip) were run through the old and
+new binaries and their **rendered screens are byte-identical**. What does
+differ is the run summary's T-state count and final PC — 347,134,849
+against 347,135,849 — which is precisely the expected consequence of keys
+landing a few hundred instructions later. Plus the full suite, 22 checks
+with media.
+
+### No test guards it
+
+A timing assertion would be flaky and machine-specific. The guard is that
+the numbers are recorded and the suite's own runtime is the signal: a
+per-instruction syscall reintroduced in that loop puts `make test-abc80`
+back into the tens of seconds, which is hard to miss.
+
+### The lesson
+
+The roadmap named a suspect and nobody measured for months. The suspect
+was plausible — this target really does do per-instruction video timing
+work the ABC802 does not — and it was wrong. One `sample` run, taking
+under a minute, would have found it at any point. A recorded guess reads
+like a recorded finding after enough time passes, which is an argument for
+writing "not investigated" as loudly as this roadmap did, and for treating
+that phrase as an invitation rather than a conclusion.

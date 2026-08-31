@@ -21,6 +21,65 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-31 (4) — the ABC80's speed limit was a syscall, not the video timing
+
+The roadmap had carried this for a while: `bin/abc80` runs at ~1.7M
+instructions/sec, several times slower than `bin/abc802` on the identical
+shared core, "not investigated; the per-instruction video-timing work is
+the obvious first suspect."
+
+The first measurement killed the suspect. A 20M-instruction batch run took
+11.4 seconds, and the split was 2.8s user against **8.5s system**. System
+time dominating a batch emulation means syscalls. Output redirected to
+`/dev/null` changed nothing, and the run only prints 140 lines anyway.
+
+One `sample` run: 1282 samples in `read`, 1184 in `__select`, 66 in
+`abc80_step`. The loop called `select()` then possibly `read()` on stdin
+once per emulated instruction.
+
+The part that stings is that the reasoning was already written down, four
+lines above the bug. `ABC80_PACING_CHECK_INTERVAL`'s comment says
+`clock_gettime()` and `nanosleep()` are real syscalls and running
+2,995,200 of them a second would swamp actual emulation work — and then
+ends by observing that `poll_stdin_byte()` still runs every iteration and
+is not gated by the interval. Someone noticed the exception, wrote it
+down, and did not connect it to the performance note two files away.
+
+Gating the poll the same way — every 500 instructions, ~2ms of emulated
+time — took the batch run from 11.4s to 0.6s, throughput from 1.7M to
+~75M inst/sec, and `make test-abc80` from 29.6s to 2.4s.
+
+### Checking it rather than arguing it
+
+The change alters *when* a key arrives, so I wanted more than "the tests
+pass". Two typed BASIC sessions run through the old and new binaries give
+**byte-identical rendered screens**. What differs is the run summary's
+T-state count and final PC (347,134,849 against 347,135,849), which is
+exactly the expected consequence of a key landing a few hundred
+instructions later — the machine is at a slightly different point in its
+idle loop when the cap hits.
+
+No test guards the performance. A timing assertion would be flaky, so the
+honest guard is that the numbers are recorded and the suite's own runtime
+is the signal.
+
+Re-profiled afterwards: it is now opcode handlers and
+`abc80_bus_read_hook`, the floating-bus hook the ABC802 has no equivalent
+of. Real work, and the residual gap has a reason.
+
+### The lesson
+
+A guess sitting in a roadmap for long enough starts reading like a
+finding. This one was plausible — the target genuinely does per-instruction
+video timing the ABC802 does not — and a single profiling run at any point
+would have refuted it in under a minute. Same shape as this morning's
+ABC-DOS "scans all eight drives at boot", which had also been sitting there
+as a fact and also dissolved on first contact with a measurement. Two in
+one day is a pattern worth naming: **the roadmap's "why" lines are the
+least-tested prose in the repo.** Everything in a `*_COMPLETED.md` was
+true when written because something ran; a planned-work justification is
+written before anything runs, and nothing ever goes back to check it.
+
 ## 2026-08-31 (3) — ABC80's second drive, and a justification that was false
 
 Small milestone, and the interesting part happened before any code.

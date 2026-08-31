@@ -98,13 +98,30 @@ again as a list of things that are no longer missing.
 
 ### Performance
 
-`bin/abc80` runs at roughly **1.7M instructions/sec** (`-O2`, Apple
-silicon), several times slower than `bin/abc802` on the same shared core.
-Nothing depends on it — the machine is a 3 MHz Z80 and `--interactive`
-paces itself comfortably — but it sets the cost of the regression suite
-(about 20 seconds, against the ABC802's 3) and would matter to anything
-wanting to run long workloads. Not investigated; the per-instruction
-video-timing work is the obvious first suspect.
+`bin/abc80` runs at roughly **75M instructions/sec** (`-O2`, Apple
+silicon), in the same range as `bin/abc802` on the same shared core. It
+used to run at 1.7M, and this roadmap used to guess that the
+per-instruction video-timing work was the cause. It was not: the loop
+called `select()` and `read()` on stdin **once per emulated instruction**,
+and a profile of a 20M-instruction batch run put ~96% of samples inside
+those two syscalls against 66 in `abc80_step()` — 2.8s of user time beside
+8.5s of *system* time. Gating the keyboard poll to every 500 instructions,
+the same way the pacing check was already gated and for the reason that
+code's own comment already gave, took the run from 11.4s to 0.6s and the
+regression suite from 29.6s to 2.4s.
+
+No test guards this. A timing assertion would be flaky and machine-
+specific, so the guard is that the numbers are written down here and the
+suite's own runtime is the visible signal: a per-instruction syscall
+reintroduced anywhere in that loop puts `make test-abc80` back into the
+tens of seconds.
+
+What remains is real work. The profile is now opcode handlers and
+`abc80_bus_read_hook`, the floating-bus hook the ABC802 has no equivalent
+of, which is where most of the residual gap to `bin/abc802` lives. One
+small thing visible in it: `abc80_abcbus_rom_loaded()` shows up as a
+non-inlined call inside that hook. Marginal, and not worth touching
+working code for.
 
 ## Testing
 
@@ -136,8 +153,6 @@ None committed. Candidates, in rough order of how much they would add:
   ABC-DOS media, which it reads fine and then correctly reports has no
   startup file on it. Real UFD-DOS media would turn that from "the bus
   works" into "the DOS works".
-- **Emulator throughput**, if anything ever needs it — see Performance
-  above.
 - **Printer/IEC ROM cards** in the rest of the expansion range — no image
   committed, no milestone.
 

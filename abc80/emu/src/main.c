@@ -67,9 +67,27 @@
 // swamp actual emulation work. At ABC80_CLOCK_HZ's own ~13 T-states/
 // instruction average, this interval is roughly 2ms of emulated time
 // between pacing corrections/render checks - fine-grained enough for
-// smooth output and prompt keyboard response (poll_stdin_byte() itself
-// still runs every single loop iteration, not gated by this interval).
+// smooth output and prompt keyboard response.
 #define ABC80_PACING_CHECK_INTERVAL 500
+
+// The keyboard poll is gated the same way, and for exactly the reason the
+// comment above gives about clock_gettime()/nanosleep(): select() and
+// read() are real syscalls too, and running them once per emulated
+// instruction costs far more than emulating the instruction does. It used
+// to, and the bill was most of this program's runtime - a 20M-instruction
+// batch run spent 2.8s of user time and 8.5s of *system* time, with a
+// profile showing ~96% of samples inside read() and __select() against 66
+// in abc80_step(). That is what made this target several times slower than
+// bin/abc802 on the identical CPU core, which the roadmap had guessed was
+// the per-instruction video timing.
+//
+// 500 instructions is about 2ms of emulated time, so a key is picked up
+// within roughly 2ms of the ROM becoming ready for it - hundreds of times
+// a second, against a keyboard no human or ROM drives faster than a few
+// dozen. Nothing about correctness depends on the interval: the ROM polls
+// its keyboard in a loop, and a key arriving a few hundred instructions
+// later is a person typing marginally slower.
+#define ABC80_KEYBOARD_POLL_INTERVAL 500
 #define ABC80_RENDER_INTERVAL_SEC (1.0 / 30.0)
 
 // Real cursor-blink rate, not guessed: MAME's own abc80_v.cpp allocates
@@ -670,7 +688,10 @@ int main(int argc, char *argv[]) {
             quickload_done = true;
         }
 
-        if (abc80_keyboard_ready_for_next()) {
+        // Interval first, deliberately: it is arithmetic on a counter,
+        // where the readiness check reaches into the keyboard model.
+        if ((instructions % ABC80_KEYBOARD_POLL_INTERVAL) == 0 &&
+            abc80_keyboard_ready_for_next()) {
             int stdin_byte = poll_keyboard_byte();
             if (stdin_byte >= 0) {
                 abc80_keyboard_press((uint8_t)stdin_byte);

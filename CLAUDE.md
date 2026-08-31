@@ -430,8 +430,9 @@ read rather than this list; as of writing they cover the missing block I/O
 opcodes, `--type`'s raw-UTF-8 bug, the DART's single-receive-byte
 constraint, the "boot screen cannot validate the feature" near-miss, a
 status bit invented from one ROM, a test that matched its own input, a
-pass/fail oracle that hid its own premises, and naming a source without
-consulting it. Each machine target's *finished* work now lives in its
+pass/fail oracle that hid its own premises, naming a source without
+consulting it, and a roadmap's own "why" lines being the least-tested
+prose here - two of ABC80's were acted on in one day and both were false. Each machine target's *finished* work now lives in its
 own `*_COMPLETED.md` (`cpm/docs/COMPLETED.md`,
 `abc80/docs/ABC80_COMPLETED.md`, `abc802/docs/ABC802_COMPLETED.md`,
 `abc806/docs/ABC806_COMPLETED.md`) rather than in its roadmap, so each `ROADMAP.md` answers only "what works, what
