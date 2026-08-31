@@ -175,6 +175,147 @@ tl_want "$out" "High-resolution plane: 6161/131072 bytes nonzero" \
         "FGPAINT filling only inside a drawn box, not the whole plane"
 tl_end "$out"
 
+# --- FGCTL's palette, read off the picture ------------------------------
+#
+# Every graphics check above asserts on what was *written* - plane byte
+# counts and the nibble a pen selects. None of them reaches the palette,
+# so an emulator that dropped the hrc lookup entirely would leave all of
+# them green. These assert on `Pixels by colour:`, which is the rendered
+# picture rather than the plane.
+#
+# The mapping being checked was established by sweeping all 256 FGCTL
+# arguments and recording what the ROM programmed into hrc (see
+# ABC806_REFERENCE.md): arguments 2-71 enumerate the 70 ways of choosing
+# four of the eight colours, in lexicographic order, with the first of the
+# four going to pen 0 as transparent and the other three to pens 1-3.
+#
+# Three lines, one per drawing pen, 362 pixels each - 181 plane pixels
+# doubled, because both halves of an hrc entry are alike and that is what
+# makes the layer 240 wide rather than 480. Colour 7 is deliberately not
+# asserted: the text on screen is white too, so its count moves with the
+# length of the command that was typed.
+FGCTL_DRAW="FGPOINT 20,20,1:FGLINE 200,20,1"$'\r'\
+"FGPOINT 20,30,2:FGLINE 200,30,2"$'\r'\
+"FGPOINT 20,40,3:FGLINE 200,40,3"
+
+# Each case names the colours its three pens must produce. Both halves
+# are asserted: every named colour present with exactly 362 pixels, and
+# every *other* drawing colour absent - without the second half, a palette
+# that lit up every colour at once would pass. Colour 7 is never asserted
+# absent, since the text is white too.
+while IFS='|' read -r name arg colours desc; do
+    [ -n "$name" ] || continue
+    out=$("$ABC806" --cycles 300000000 \
+          --type "FGCTL $arg"$'\r'"$FGCTL_DRAW"$'\r' 2>&1)
+    tl_begin "$name"
+    # The drawing itself, asserted separately and identically in every
+    # case: the pens write the same 273 bytes whatever the palette says,
+    # so this is what stops a palette check from passing because nothing
+    # was drawn at all.
+    tl_want "$out" "High-resolution plane: 273/131072 bytes nonzero" \
+            "the three pen lines reaching the plane"
+    for c in $colours; do
+        [ "$c" = 7 ] || tl_want "$out" " $c=362" "$desc (colour $c)"
+    done
+    for c in 1 2 3 4 5 6; do
+        case " $colours " in *" $c "*) ;;
+            *) tl_want_not "$out" " $c=" "colour $c under FGCTL $arg" ;;
+        esac
+    done
+    tl_end "$out"
+done <<'PALETTES'
+graphics-fgctl-2-colours|2|1 2 3|FGCTL 2 giving pens 1-3 colours 1, 2 and 3
+graphics-fgctl-17-colours|17|2 3 4|FGCTL 17 giving pens 1-3 colours 2, 3 and 4
+graphics-fgctl-36-colours|36|5 6 7|FGCTL 36 giving pens 1-3 colours 5, 6 and 7
+graphics-fgctl-45-colours|45|2 5 7|FGCTL 45 giving pens 1-3 colours 2, 5 and 7
+graphics-fgctl-bit7-ignored|130|1 2 3|FGCTL 130 giving the same colours as FGCTL 2, bit 7 being ignored
+PALETTES
+
+# FGCTL 0 programs every hrc entry to zero, which clears the opaque bit on
+# every pen and makes the whole layer transparent. That is the state the
+# machine boots in, and it is why the layer needs no enable flag.
+#
+# The assertion is the pair: the pens really did write to the plane, and
+# none of their colours reached the picture. Either half alone would pass
+# with the other broken.
+out=$("$ABC806" --cycles 300000000 --type "FGCTL 0"$'\r'"$FGCTL_DRAW"$'\r' 2>&1)
+tl_begin "graphics-fgctl-0-is-transparent"
+tl_want "$out" "High-resolution plane: 273/131072 bytes nonzero" \
+        "the pen lines reaching the plane even with the layer transparent"
+# The whole census, not just the absence of colours 1-6. Transparency is
+# the thing under test, and a broken opaque bit would make these lines
+# show up *white* - which no "colour N is absent" assertion can see,
+# because the text is white as well. Pinning both counts is what makes
+# the difference between an invisible line and a visible one visible.
+tl_want "$out" "Pixels by colour: 0=116562 7=3438" \
+        "the picture unchanged by three lines drawn under a zero palette"
+tl_end "$out"
+
+# FGCTL 1 is the one that makes a working renderer look broken: it gives
+# all three drawing pens colour 7, so three lines drawn in three different
+# pens come out identically white. Checked as the absence of any other
+# colour, since white cannot be told apart from the text.
+out=$("$ABC806" --cycles 300000000 --type "FGCTL 1"$'\r'"$FGCTL_DRAW"$'\r' 2>&1)
+tl_begin "graphics-fgctl-1-is-all-white"
+tl_want "$out" "High-resolution plane: 273/131072 bytes nonzero" \
+        "the pen lines reaching the plane"
+for c in 1 2 3 4 5 6; do
+    tl_want_not "$out" " $c=" "colour $c in the picture under FGCTL 1"
+done
+# Pinned for the same reason as FGCTL 0 above, and it is the count that
+# separates the two: 4510 white against that case's 3438 is the three
+# lines actually appearing. The half-byte at each line end stays
+# transparent even here, since hrc[0] is still zero - so this also fails
+# if the two-lookups-per-byte decode collapses into one.
+tl_want "$out" "Pixels by colour: 0=115490 7=4510" \
+        "three white lines over the text, and transparent line ends"
+tl_end "$out"
+
+# --- FGPICTURE, and the HRS bank select ---------------------------------
+#
+# FGPICTURE a,b writes HRS: `a` is the 32K bank the CPU draws into and `b`
+# the bank the CRTC displays, independent on purpose. A third argument
+# raises the number of banks BASIC will allow, which is 1 on a bare
+# machine - so `FGPICTURE 1,0` is rejected until `FGPICTURE 0,0,n` has
+# raised the count.
+#
+# These are the only checks that exercise a non-zero HRS at all. Every
+# other graphics check runs with hrs = 0, where the bank shift multiplies
+# by zero and a wrong shift is invisible.
+out=$("$ABC806" --cycles 300000000 --type "FGPICTURE 1,1"$'\r' --screen 2>&1)
+tl_begin "graphics-fgpicture-bank-limit"
+tl_want "$out" "Error 201" \
+        "a bank above the default limit of one being refused"
+tl_end "$out"
+
+out=$("$ABC806" --cycles 400000000 \
+      --type "FGPICTURE 0,0,4"$'\r'"FGPICTURE 3,3"$'\r' --screen 2>&1)
+tl_begin "graphics-fgpicture-raises-the-limit"
+tl_want_not "$out" "Error" "any error once the bank count has been raised"
+tl_end "$out"
+
+# The drawing bank, asserted on where the bytes physically landed. A line
+# drawn with HRS's high nibble set to 1 must appear in the second 32K of
+# video RAM and nowhere else.
+out=$("$ABC806" --cycles 500000000 --type "FGCTL 2"$'\r'"FGPICTURE 0,0,4"$'\r'\
+"FGPICTURE 3,0"$'\r'"FGPOINT 10,10,7:FGLINE 100,100,7"$'\r' 2>&1)
+tl_begin "graphics-fgpicture-draw-bank"
+tl_want "$out" "High-resolution plane: 91/131072 bytes nonzero" \
+        "the line still being 91 pixels when drawn into another bank"
+tl_want "$out" "banks: 3" "the line landing in bank 3, not bank 0"
+tl_end "$out"
+
+# The display bank is the other nibble, and it is genuinely independent:
+# the same line drawn into bank 0 disappears from the picture when bank 1
+# is displayed, while remaining in the plane. That pair is what makes this
+# a test of two separate nibbles rather than one.
+out=$("$ABC806" --cycles 500000000 --type "FGCTL 2"$'\r'"FGPICTURE 0,0,4"$'\r'\
+"FGPOINT 20,20,1:FGLINE 200,20,1"$'\r'"FGPICTURE 0,1"$'\r' 2>&1)
+tl_begin "graphics-fgpicture-display-bank"
+tl_want "$out" "banks: 0" "the line still sitting in bank 0"
+tl_want_not "$out" " 1=" "colour 1 in the picture while another bank is displayed"
+tl_end "$out"
+
 # --- The real-time clock, on real media ---------------------------------
 #
 # The only end-to-end check of the E0516, and it needs a disk: nothing in

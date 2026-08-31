@@ -304,8 +304,59 @@ to a cursor-only path when it is absent.
 
 **A pen argument is masked to two bits and selects the plane nibble
 `0xC | (pen & 3)`** — a four-colour mode, so pen 4 wraps onto
-pen 0's nibble. `FGCTL 1` programs `hrc[D..F]` all to `FF`, which is white
-for every pen; `FGCTL 2` gives pens 1, 2 and 3.
+pen 0's nibble. Only `hrc[C..F]` are ever programmed to anything; the
+other twelve entries stay zero, which is why a plane byte the `FG`
+commands did not write shows nothing.
+
+#### What `FGCTL n` programs
+
+Established by sweeping all 256 arguments and recording the `hrc` writes
+each one made, not from a manual. **Bit 7 of the argument is ignored** —
+the 256 arguments produce exactly 128 distinct palettes, each appearing
+twice — so the map below is over `n & 0x7F`.
+
+| `n` | Palette |
+|---|---|
+| 0 | every entry zero: the layer is transparent and shows nothing |
+| 1 | pens 1-3 all colour 7; pen 0 transparent |
+| 2-71 | four-colour: the 70 ways of choosing 4 of the 8 colours, in lexicographic order |
+| 72-127 | two-colour: the 28 pairs, each in two pen mappings |
+
+For 2-71 the four chosen colours `c0 < c1 < c2 < c3` go to pens 0-3, with
+**pen 0's entry left transparent** (bit 3 clear) and the other three
+opaque — so `hrc[C] = c0 * 0x11` and `hrc[D..F] = (8 | ci) * 0x11`.
+`FGCTL 2` is the first combination, `(0,1,2,3)`, which is why it draws in
+red, green and yellow. `n = 71` is the last, `(4,5,6,7)`.
+
+For 72-127 the pair `(a, b)` appears twice: the even argument maps it by
+pen parity (pens 0 and 2 get `a` transparent, pens 1 and 3 get `b`
+opaque), the odd one splits it in half (pens 0 and 1 transparent, pens 2
+and 3 opaque).
+
+The counts are exact — 1 + 1 + C(8,4) + 2·C(8,2) = 128 — and no such
+table exists in any of the ROM images, so **the ROM generates the
+combinations rather than looking them up**.
+
+**No `FGCTL` argument selects the 480-pixel-wide mode.** Every entry it
+programs has both nibbles alike, which is the 240-wide case. Reaching 480
+means writing `hrc` directly through port `0x07`.
+
+#### `FGPICTURE a,b` writes HRS
+
+Not a drawing command at all: it is BASIC's way of reaching the two bank
+numbers in HRS. `a` becomes the high nibble (the bank the CPU draws
+through) and `b` the low nibble (the bank the CRTC displays), so
+`FGPICTURE 1,0` draws into the second 32K while still showing the first.
+The routine at `0x7E64` is literally `LD A,C / RLCA×4 / OR L / CALL 7617h
+/ OUT (06h),A`.
+
+Both arguments are bounds-checked against a byte at `0xFEF4` — the number
+of picture banks BASIC will allow, which is **1 on a bare machine**, so
+`FGPICTURE 1,0` is refused with `Error 201` ("end of memory") until the
+count is raised. The three-argument form `FGPICTURE a,b,n` sets that
+count, itself bounded by the ceiling at `0xFEF3`, which holds 16 — one
+per value of a 4-bit nibble. So `FGPICTURE 0,0,16` unlocks all sixteen
+banks and `FGPICTURE 0,0,17` is refused.
 
 ## Real-time clock
 

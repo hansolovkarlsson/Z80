@@ -91,23 +91,88 @@ the colours and `ULN`/`NULN` have been exercised here.
 | `FGLINE x,y,pen` | draw from the cursor to `x,y`, and leave the cursor there |
 | `FGFILL x,y,pen` | fill the rectangle between the cursor and `x,y` |
 | `FGPAINT x,y,pen` | flood fill outward from `x,y`, bounded by drawn pixels |
-| `FGPICTURE` | present in the ROM's keyword table; **not exercised here** |
+| `FGPICTURE a,b` | draw into bank `a`, display bank `b` — see below |
+| `FGPICTURE a,b,n` | the same, and raise the number of banks allowed to `n` |
 
 `FGLINE` leaves the cursor at its endpoint, so lines chain:
 `FGPOINT a,b,p : FGLINE c,d,p : FGLINE e,f,p` draws a connected path.
 
 ### Palettes
 
-`FGCTL`'s argument selects which colours the four pens get. Two that were
-measured:
+`FGCTL`'s argument selects which colours the four pens get. All 256 were
+swept, and the whole map is below. **Bit 7 is ignored**, so `FGCTL 130` is
+`FGCTL 2`; only `n & 0x7F` matters.
 
-- **`FGCTL 1`** — every pen white. Useful, and a common cause of confusion:
-  drawing in pens 1, 2 and 3 all comes out white, which looks like colour
-  being broken.
-- **`FGCTL 2`** — pen 1 red, pen 2 green, pen 3 yellow. This is the one the
-  examples below use.
+| `n` | What the pens get |
+|---|---|
+| 0 | nothing — every pen transparent. The layer is off, and this is how the machine boots |
+| 1 | pens 1-3 all white |
+| 2-71 | **four-colour**: three visible pens, all 70 ways of choosing 4 of the 8 colours |
+| 72-127 | **two-colour**: one colour on two pens and one on the other two |
 
-Other arguments program the lookup differently and have not been mapped.
+For the four-colour range the arguments are in lexicographic order over
+the colour combinations, pen 0 always taking the first (transparent) one:
+
+| `n` | pen 1 | pen 2 | pen 3 |
+|---|---|---|---|
+| 2 | red | green | yellow |
+| 3 | red | green | blue |
+| 6 | red | green | white |
+| 17 | green | yellow | blue |
+| 36 | magenta | cyan | white |
+| 45 | green | magenta | white |
+| 71 | magenta | cyan | white |
+
+36 and 71 really are the same three colours: they differ only in the
+colour given to pen 0, which is transparent either way and so never
+appears. The colour order is black, red, green, yellow, blue, magenta,
+cyan, white — ANSI's own. `FGCTL 1` is the common cause of confusion: drawing in pens
+1, 2 and 3 all comes out white, which looks like colour being broken.
+
+**No `FGCTL` argument gives the 480-pixel-wide mode.** Every one programs
+both halves of a palette entry alike, which is the 240-wide case; 480
+needs `OUT 7,…` written by hand.
+
+### `FGPICTURE` — two pictures at once
+
+`FGPICTURE` draws nothing. It picks **which 32K bank of video memory the
+`FG` commands draw into, and which one the screen shows**, and those are
+two separate arguments precisely so they can differ:
+
+```basic
+FGPICTURE a,b
+```
+
+`a` is the bank drawn into, `b` the bank displayed. Drawing into the bank
+you are not showing, then swapping, is how you build a picture without the
+viewer watching it being drawn.
+
+There is a catch that makes the command look broken. **On a bare machine
+BASIC allows exactly one bank**, so every argument except `0,0` is refused
+with `Error 201` — which reads as "end of memory" and looks like the
+machine is out of RAM. It is not; it is a limit the third argument raises:
+
+```basic
+FGPICTURE 0,0,4
+```
+
+sets the number of allowed banks to 4, after which `FGPICTURE 3,0` is
+accepted. The ceiling is 16, so `FGPICTURE 0,0,17` is refused. Once
+raised, the limit stays.
+
+A worked example — draw a line where nobody can see it, then show it:
+
+```basic
+FGCTL 2
+FGPICTURE 0,0,4
+FGPICTURE 1,0
+FGPOINT 20,20,1:FGLINE 200,20,1
+FGPICTURE 1,1
+```
+
+The line is drawn into bank 1 while bank 0 is on screen, so nothing
+appears until the last line switches the display over. Reversing the last
+two arguments hides it again.
 
 ---
 
@@ -197,6 +262,23 @@ path, since a flood fill has to read the plane back to find its
 boundaries. Breaking reads while leaving writes intact reds those three and
 leaves the dot checks passing.
 
+The palette claims are tested differently, and the difference matters.
+Every check named above asserts on plane *bytes* — what the pen wrote —
+and none of them reaches the colour lookup at all, so an emulator that
+ignored `hrc` entirely would leave all of them green. The five
+`graphics-fgctl-*-colours` checks assert on the rendered picture instead,
+counting pixels of each colour, and they name both the colours that must
+appear and the ones that must not. `graphics-fgctl-0-is-transparent` and
+`graphics-fgctl-1-is-all-white` pin the whole census, because the thing
+separating those two is whether three lines are visible at all — and
+"visible, in white" cannot be told from the white text by colour alone.
+
+`graphics-fgpicture-draw-bank` and `graphics-fgpicture-display-bank` are
+the only checks anywhere that run with a non-zero HRS. They assert on
+which 32K bank the bytes landed in and on the line vanishing from the
+picture when the other bank is displayed — one for each nibble, which is
+what makes them a test of two independent numbers rather than one.
+
 ## How this was established, and what it is not
 
 The keyword tables were read out of the committed ROM images — the BASIC
@@ -208,8 +290,8 @@ what the machine drew, including reading the rendered PNG's pixels rather
 than judging colour by eye, after doing exactly that and getting it wrong
 (see [`../../docs/JOURNAL.md`](../../docs/JOURNAL.md)).
 
-**Not covered**: `FGPICTURE`, most `FGCTL` arguments, and the teletext-style
-attribute keywords beyond the colours and underline. They are listed above
+**Not covered**: the teletext-style attribute keywords beyond the colours
+and underline. They are listed above
 because they are in the ROM's own table; that is evidence they exist, not
 evidence of what they do.
 

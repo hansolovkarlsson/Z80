@@ -45,7 +45,7 @@ Full write-ups, including what each milestone found the hard way, are in
 same terms as the other two ABC targets' — see
 [`../gtk/README.md`](../gtk/README.md).
 
-`make test-abc806` runs 21 checks — 18 media-free, plus 3 that need a real
+`make test-abc806` runs 32 checks — 29 media-free, plus 3 that need a real
 disk image and otherwise skip loudly (set `ABC806_TEST_DISKS`). It is part
 of `make test`.
 
@@ -55,18 +55,20 @@ No milestone is outstanding, and the PAL investigation reached its own
 conclusion (see [`ABC806_COMPLETED.md`](ABC806_COMPLETED.md)). What is left
 is small:
 
-1. **The remaining graphics modes.** Only the four-colour palette
-   (`FGCTL 2`) is mapped; `FGCTL`'s other arguments program the lookup
-   differently, and `FGPICTURE` has never been exercised. See
-   [`ABC806_BASIC_REFERENCE.md`](ABC806_BASIC_REFERENCE.md).
-2. **`I3` (pin 1) on the memory-mapper PAL**, untraced beyond sheet 5 of
+1. **`I3` (pin 1) on the memory-mapper PAL**, untraced beyond sheet 5 of
    the schematics, and the polarity of its `ROMDIS`/`RAMDIS` outputs.
    Nothing depends on either today.
-3. **The 544K RAM option**, and the protection device on the 74ALS259.
+2. **The 544K RAM option**, and the protection device on the 74ALS259.
+3. **The 480-pixel-wide graphics mode.** The palette carries the
+   horizontal resolution, and no `FGCTL` argument programs an entry whose
+   two halves differ — so BASIC cannot reach 480 without writing `hrc`
+   through `OUT 7,…` by hand. The renderer already handles it; nothing has
+   ever driven it.
 
 ## Known gaps
 
-Everything below is expected at this point: two milestones in, of five.
+Every milestone is complete; what follows is what the machine still does
+not do, and why each one is deliberate rather than an oversight.
 
 - **Right arrow is dropped, on inference rather than evidence.** The
   ABC802's line editor was swept byte by byte and turned out to have no
@@ -76,16 +78,18 @@ Everything below is expected at this point: two milestones in, of five.
   consulted gives the ABC806's own divider, and the ROM does not blink its
   cursor in software the way the ABC802's does, so nothing in the machine
   supplies the phase.
-- **Only one graphics mode is exercised.** The four-colour mode works and
-  is tested; `FGCTL`'s other arguments program the palette differently and
-  are not covered.
-- **The HRS bank select is untested.** Every check runs with `hrs = 0`, so
-  a wrong shift in the plane's physical-address calculation would pass
-  silently. Needs a case that actually banks.
-- **The PAL fuse map is not evaluated.** `ABC-P4-1.bin` is a well-formed
-  JEDEC dump and the memory decode currently follows MAME's behavioural
-  approximation instead — inheriting its `abc806 30K banking` gap. See
-  `ABC806_SCOPING.md`.
+- **The 480-pixel-wide graphics mode has never been driven.** The decode
+  handles it — a palette entry whose two halves differ is two distinct
+  pixels — but no `FGCTL` argument programs one, so nothing here has ever
+  produced a 480-wide picture. See Planned next steps.
+- **The memory map still follows MAME's behavioural decode**, and so
+  inherits its `abc806 30K banking` gap. The PAL itself is no longer the
+  missing piece: `scripts/palanalyse.py` decodes `ABC-P4-1.bin` into
+  equations, and that investigation is closed rather than deferred — it
+  confirmed the fetch-window latch in the silicon, but its `ROMD`/`RAMD`
+  outputs are inter-board *disable* lines rather than local chip selects,
+  so the array was never going to yield the map on its own. See
+  [`ABC806_COMPLETED.md`](ABC806_COMPLETED.md).
 - **`emu/src/ports.c` is a near-copy of the ABC802's.** The CTC, SIO, DART
   and CRTC are the same chips, so it was seeded from that file rather than
   rewritten. That is a deliberate duplication, not an oversight: extracting

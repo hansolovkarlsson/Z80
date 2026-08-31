@@ -464,9 +464,17 @@ int main(int argc, char **argv) {
         // another - which is exactly the confusion that made a working
         // renderer look broken.
         bool seen[256] = {false};
+        // And which 32K bank each byte landed in. HRS carries two
+        // independent 4-bit bank numbers - bits 4-7 pick the area the CPU
+        // draws into - and every count and every value above is identical
+        // whichever bank a write reached, so nothing else printed here can
+        // tell a correct bank shift from a wrong one. BASIC reaches this
+        // through FGPICTURE; without this line that command's whole effect
+        // is invisible.
+        bool bank_used[ABC806_VIDEO_RAM_SIZE / 0x8000] = {false};
         for (int i = 0; i < ABC806_VIDEO_RAM_SIZE; i++) {
             uint8_t v = abc806_videoram_read((uint32_t)i);
-            if (v) seen[v] = true;
+            if (v) { seen[v] = true; bank_used[i / 0x8000] = true; }
         }
         printf("High-resolution plane: %d/%d bytes nonzero, values:",
                hr_nonzero, ABC806_VIDEO_RAM_SIZE);
@@ -474,6 +482,11 @@ int main(int argc, char **argv) {
         for (int v = 1; v < 256 && shown < 8; v++)
             if (seen[v]) { printf(" %02X", v); shown++; }
         if (!shown) printf(" none");
+        printf(", banks:");
+        int banks_shown = 0;
+        for (int b = 0; b < (int)(sizeof bank_used / sizeof bank_used[0]); b++)
+            if (bank_used[b]) { printf(" %d", b); banks_shown++; }
+        if (!banks_shown) printf(" none");
         printf("\n");
     }
 
@@ -485,18 +498,40 @@ int main(int argc, char **argv) {
 
     if (show_screen) abc806_render_text_screen(stdout);
 
+    // Rendered once here, so the colour census below and any --screenshot
+    // describe the identical picture rather than two renders that could
+    // disagree.
+    static uint8_t pixels[ABC806_MAX_PIXELS];
+    int pix_w = abc806_pixel_width(&screen);
+    int pix_h = abc806_pixel_height(&screen);
+    bool rendered = abc806_render_pixels(&screen, pixels, sizeof pixels);
+
+    // How many pixels of each colour the machine is actually showing.
+    //
+    // Everything else this program prints about graphics describes what
+    // was *written* - the plane's byte values, and the bank they landed
+    // in. None of it reaches the palette. A FGCTL argument's whole effect
+    // is to decide which colour each pen comes out as, and an emulator
+    // that dropped the lookup entirely would leave every line above
+    // unchanged. This is the only output that reads the picture.
+    if (rendered) {
+        long counts[8] = {0};
+        for (int i = 0; i < pix_w * pix_h; i++) counts[pixels[i] & 7]++;
+        printf("Pixels by colour:");
+        for (int c = 0; c < 8; c++)
+            if (counts[c]) printf(" %d=%ld", c, counts[c]);
+        printf("\n");
+    }
+
     if (screenshot_path) {
-        static uint8_t pixels[ABC806_MAX_PIXELS];
-        int w = abc806_pixel_width(&screen);
-        int h = abc806_pixel_height(&screen);
         static uint32_t pal[8];
         for (int i = 0; i < 8; i++) pal[i] = abc806_palette(i);
-        if (!abc806_render_pixels(&screen, pixels, sizeof pixels)) {
+        if (!rendered) {
             fprintf(stderr, "Screenshot failed: CRTC not programmed, or screen too large\n");
-        } else if (!abc806_write_png(screenshot_path, pixels, w, h, pal, 8)) {
+        } else if (!abc806_write_png(screenshot_path, pixels, pix_w, pix_h, pal, 8)) {
             fprintf(stderr, "Screenshot failed: could not write '%s'\n", screenshot_path);
         } else {
-            printf("Screenshot: %s (%dx%d)\n", screenshot_path, w, h);
+            printf("Screenshot: %s (%dx%d)\n", screenshot_path, pix_w, pix_h);
         }
     }
 

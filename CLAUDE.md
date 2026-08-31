@@ -348,8 +348,10 @@ describes diverting because the opcode *was* fetched from that window. The
 comment matches the hardware. Two cautions from implementing it: **bound
 the fetch PC on both sides** (testing only `>= 0x7800` admits all of high
 RAM, which diverted two DOS reads at `0xC178`/`0xC32A` and corrupted its
-sign-on), and note that **the HRS bank shift is covered by no test**, since
-everything here runs with `hrs = 0`.
+sign-on), and note that **only two checks anywhere run with a non-zero
+HRS** (`graphics-fgpicture-draw-bank`/`-display-bank`); everything else
+runs with `hrs = 0`, where a wrong bank shift multiplies by zero and
+disappears.
 
 `--screenshot` renders the plane over the text, and three parts of that
 decode are not guessable either. **The displayed bank is HRS's low nibble
@@ -367,11 +369,25 @@ which is the state the machine boots in, and why `FGCTL` (which programs
 encoding is a **four-colour mode**: a `FG*` command's pen argument is
 masked to two bits and selects the plane nibble `0xC | (pen & 3)`, so pen 4
 wraps onto pen 0's nibble and `FGCTL` supplies the palette for exactly
-those four entries. `FGCTL 1` colours all of them white, which is why
-lines drawn under it look monochrome; under `FGCTL 2` they render red,
-green and yellow. `bin/abc806`'s summary prints the plane's distinct byte
-values rather than only a count, because a count cannot tell one pen from
-another.
+those four entries. **All 256 `FGCTL` arguments are now mapped**, by
+sweeping them and recording what each programmed: bit 7 is ignored, `0` is
+the transparent boot state, `1` is all-white (which is why lines drawn
+under it look monochrome), `2`-`71` enumerate the 70 ways of choosing four
+of the eight colours in lexicographic order (`2` being `(0,1,2,3)`, hence
+red/green/yellow), and `72`-`127` the 28 pairs in two pen mappings. No such
+table exists in any ROM image, so the ROM generates them; and **no `FGCTL`
+argument reaches the 480-wide mode**, since every entry it programs has
+both halves alike. **`FGPICTURE a,b` is not a drawing command at all** - it
+writes HRS (`a` the bank drawn through, `b` the bank displayed), which
+makes it the machine's double-buffering command and the only BASIC-level
+way to exercise the bank shift. Its `Error 201` on any non-zero argument
+reads as "end of memory" but is a bounds check against a byte at `0xFEF4`
+holding the allowed bank count, which is 1 until `FGPICTURE a,b,n` raises
+it (ceiling 16, at `0xFEF3`). `bin/abc806`'s summary prints the plane's
+distinct byte values and the 32K banks they landed in rather than only a
+count, because a count cannot tell one pen or one bank from another - and
+`Pixels by colour:` counts the *rendered* picture, which is the only line
+that reaches the palette at all.
 
 Three further ABC806 facts worth knowing before touching that target, none
 guessable. **Its memory map is decided by a PAL16L8** (`ABC-P4-1.bin`,

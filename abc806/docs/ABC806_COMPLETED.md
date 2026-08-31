@@ -649,3 +649,119 @@ Both lessons outgrew this target and have their own write-ups:
 which discarded the correct column layout twice, and
 [naming a source without consulting it](../../docs/postmortems/2026-08-30-naming-a-source-is-not-consulting-it.md),
 which cost roughly two sessions across MAME's driver and the schematics.
+
+## The rest of the graphics modes, and what FGPICTURE is — done
+
+Two items stood open after milestone 5: `FGCTL`'s arguments beyond the one
+that was mapped, and `FGPICTURE`, which had never been run. They turned
+out to be one piece of work, and it closed a third gap — the HRS bank
+select, which no check had ever exercised.
+
+### FGCTL, by exhaustive sweep
+
+The emulator already had `ABC806_TRACE_HRC`, which logs every write to the
+palette. Running `FGCTL n` for all 256 values of `n` and keeping the final
+state of the 16 entries gives the whole map in about fifteen seconds, and
+it is not a map anybody would have guessed:
+
+- **Bit 7 of the argument is ignored.** 256 arguments produce exactly 128
+  distinct palettes, each appearing twice. The previous note that 128 was
+  a special value was a misreading of the fact that 0 and 128 both program
+  nothing.
+- **`n = 0`** programs every entry to zero — the transparent, layer-off
+  state the machine boots in.
+- **`n = 1`** gives all three drawing pens colour 7.
+- **`n = 2..71`** is a four-colour mode enumerating, in lexicographic
+  order, the **70 ways of choosing four of the eight colours**. The lowest
+  goes to pen 0 and is left transparent; the other three are opaque on
+  pens 1-3. `FGCTL 2` is simply the first combination, `(0,1,2,3)`, which
+  is why it happens to draw red, green and yellow.
+- **`n = 72..127`** is a two-colour mode over the **28 pairs**, each
+  appearing twice: once mapped by pen parity, once split in half.
+
+1 + 1 + C(8,4) + 2·C(8,2) = 128, exactly. The counts being combinatorial
+is itself the evidence for the last finding: **no such table exists in any
+of the ROM images.** Packed three ways and searched for, it is not there,
+so the ROM generates the combinations rather than storing them — which is
+also why the sequence is in strict lexicographic order with no gaps.
+
+One negative result worth recording: **no `FGCTL` argument reaches the
+480-pixel-wide mode.** Every entry it programs has both nibbles alike, and
+the palette is what carries the horizontal resolution. 480 needs `hrc`
+written by hand through port `0x07`.
+
+### FGPICTURE is HRS, and the error message is a red herring
+
+`FGPICTURE` looked, at first, like a command that did nothing: every
+argument pair except `0,0` failed, and `0,0` drew nothing and changed
+nothing measurable. The error was `Error 201`, which the BASIC II error
+table gives as "end of memory" — on a machine reporting 29,001 bytes free.
+
+A differential profile (`ABC806_PROFILE_ALL=1`, once with the command and
+once without, then diff the executed address sets) put the routine at
+`0x7E39`, and hand-decoding forty bytes settled it. The last five
+instructions are:
+
+```
+7E64  79           LD A,C          ; the first argument
+7E65  07 07 07 07  RLCA ×4         ; into the high nibble
+7E69  B5           OR L            ; the second argument in the low one
+7E6A  CD 17 76     CALL 7617h
+7E6D  D3 06        OUT (06h),A     ; port 6 on write is HRS
+```
+
+So **`FGPICTURE a,b` sets HRS**: `a` is the bank the CPU draws through and
+`b` the bank the CRTC displays — the two independent nibbles the hardware
+reference already described, exposed to BASIC. It is the machine's
+double-buffering command.
+
+The "end of memory" is a bounds check, not an allocation. Both arguments
+are compared against a byte at `0xFEF4`, the number of picture banks BASIC
+will allow, and `PEEK` says that byte is **1** on a bare machine — so only
+bank 0 is legal and every other argument is refused. The three-argument
+form `FGPICTURE a,b,n` writes that byte, bounded by a ceiling at `0xFEF3`
+which holds 16, one per nibble value. `FGPICTURE 0,0,4` then
+`FGPICTURE 3,0` is accepted; `FGPICTURE 0,0,17` is not.
+
+That is the whole reason the command appeared inert: the limit is one, and
+one bank is the only thing the default state can express.
+
+### Two new instruments, because counts could not see colour
+
+Everything `bin/abc806` printed about graphics described what was
+*written* — plane byte counts and the nibble a pen selects. None of it
+touched the palette, and none of it could tell one 32K bank from another.
+Both gaps were invisible in exactly the same way: an emulator that dropped
+the `hrc` lookup, or multiplied the bank number by zero, would leave every
+existing line unchanged.
+
+So the summary gained two things. `banks:` reports which 32K banks hold
+nonzero plane bytes, and `Pixels by colour:` counts the rendered pixels of
+each of the eight colours — the one output that reads the picture rather
+than the plane. The screenshot path now renders through the same buffer,
+so the census and any PNG cannot describe different pictures.
+
+### What is now tested
+
+Eleven new checks, and every one was validated by breaking it on purpose:
+
+| Injected regression | Caught by |
+|---|---|
+| the `hrc` lookup replaced by "any nonzero byte is white" | all five `fgctl-*-colours`, plus both the FGCTL 0 and 1 census checks |
+| the CPU's bank shift dropped | `graphics-fgpicture-draw-bank` |
+| the CPU's bank read from the display nibble | `graphics-fgpicture-draw-bank` |
+| the display bank read from the CPU's nibble | `graphics-fgpicture-display-bank` |
+
+The third of those is the one worth having. It is the failure the
+reference warns about — the two nibbles are easy to confuse and identical
+whenever both are zero — and every other graphics check in the suite runs
+with `hrs = 0`, where a wrong shift multiplies by zero and disappears.
+
+The palette checks assert both directions, the colours that must appear
+and the colours that must not; without the second half a renderer that lit
+every colour at once would pass. And `graphics-fgctl-0-is-transparent`
+pins the entire census rather than asserting absences, because what
+separates it from `FGCTL 1` is whether three lines are visible **in
+white** — which no "colour N is absent" assertion can see, the text being
+white too. That was a real weakness in the first draft of the check: it
+survived the `hrc` injection, and only pinning the counts caught it.

@@ -21,6 +21,92 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-31 — the rest of FGCTL, and FGPICTURE turns out to be HRS
+
+Two items had stood open on the ABC806 roadmap since milestone 5: the
+`FGCTL` arguments beyond the single one that had been mapped, and
+`FGPICTURE`, which was in the ROM's keyword table and had never been run.
+They turned out to be one job, and finishing it closed a third gap nobody
+had set out to touch.
+
+### The sweep was the easy half
+
+`ABC806_TRACE_HRC` already existed, so mapping `FGCTL` was a matter of
+running all 256 arguments and keeping the final state of the palette —
+fifteen seconds with `xargs -P 8`. What came back was a clean
+combinatorial enumeration: bit 7 ignored, `n=0` transparent, `n=1` all
+white, `n=2..71` the 70 ways of choosing four of the eight colours in
+lexicographic order, `n=72..127` the 28 pairs in two pen mappings.
+1 + 1 + C(8,4) + 2·C(8,2) = 128 exactly.
+
+The counts being combinatorial suggested the ROM computes them rather than
+storing a table, so I packed the expected table three ways and searched
+every committed ROM image for it. Not there — which is a real finding and
+not just a failed search, because the *shape* of the data predicted it.
+
+A negative result too: no `FGCTL` argument reaches the 480-wide mode. The
+palette carries the horizontal resolution, and every entry `FGCTL`
+programs has both halves alike. That went on the roadmap as the one
+graphics thing still undriven.
+
+### FGPICTURE, and an error message that lied
+
+`FGPICTURE` looked inert. Every argument pair but `0,0` gave `Error 201`,
+which the BASIC II table calls "end of memory" — on a machine with 29,001
+bytes free. I spent a while on the wrong hypotheses (a viewport, a
+clipping window, a picture buffer) before doing the thing that settles it:
+a differential profile with `ABC806_PROFILE_ALL=1`, once with the command
+and once without, diffing the executed address sets. That put the routine
+at `0x7E39`, and forty bytes of hand-decoding ended the guessing —
+`LD A,C / RLCA×4 / OR L / OUT (06h),A`. Port 6 is HRS.
+
+So `FGPICTURE a,b` is the machine's double-buffering command: `a` is the
+bank the CPU draws through, `b` the bank the CRTC shows. The "end of
+memory" is a bounds check against a byte at `0xFEF4` holding the number of
+allowed banks, which is **1** on a bare machine — hence every non-zero
+argument being refused. `FGPICTURE a,b,n` raises it, up to a ceiling of 16
+kept at `0xFEF3`. Both were readable with `PEEK` from BASIC, which stayed
+the fastest instrument throughout: this machine is its own test harness.
+
+The lesson I'd keep: I took `Error 201` at face value for longer than I
+should have, and it sent me looking for an allocation that does not exist.
+An error code is the ROM's summary of a failed test, not a description of
+what the test was.
+
+### The instruments were the actual gap
+
+Both of these were invisible to everything the emulator printed. The
+summary reported plane byte counts and pen nibbles — all of it the *write*
+side, none of it touching the palette or able to tell one 32K bank from
+another. An emulator that ignored `hrc` entirely, or multiplied the bank
+number by zero, would have left every existing line unchanged.
+
+So `bin/abc806` gained `banks:` (which 32K banks hold plane bytes) and
+`Pixels by colour:` (the rendered census, the only output that reads the
+picture). The screenshot path now renders through the same buffer, so the
+census and a PNG cannot disagree.
+
+That instrument is what let `FGPICTURE` close the **HRS bank select** gap,
+which had been on the roadmap separately with the note "needs a case that
+actually banks". FGPICTURE *is* that case, and it was sitting in the ROM
+the whole time.
+
+### Breaking them on purpose, and one that survived
+
+Eleven new checks, four injected regressions, all caught. The one worth
+recording is the one that nearly wasn't: my first
+`graphics-fgctl-0-is-transparent` asserted that colours 1-6 were absent,
+which sounds right and is worthless — replacing the palette lookup with
+"any nonzero byte is white" makes the lines *visible in white*, and white
+cannot be distinguished from the text by colour. It passed the injection.
+Pinning the whole census instead catches it. The same trap the suite's own
+history already has an example of, arrived at from a different direction.
+
+Also corrected two stale lines in the roadmap found while answering a
+status question: a gaps preamble still saying "two milestones in, of five"
+three sections below a table showing all five met, and a gap claiming the
+PAL fuse map was unevaluated, two commits after it was decoded.
+
 ## 2026-08-30 (16) — a documentation pass, and two lessons promoted to postmortems
 
 A deliberate sweep to get everything from this session's working memory into
