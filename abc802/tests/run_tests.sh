@@ -160,6 +160,58 @@ tl_end
 tl_fixture "chargen-attributes" "$FIXTURES/chargen.txt" \
     "$("$CHARGEN_DUMP" 2>&1)"
 
+# --- Cassette on SIO channel B ----------------------------------------
+#
+# SAVE "CAS:name" records the byte stream the ROM transmits on SIO channel
+# B. The modulation everybody means by "cassette interface" is hardware
+# past the SIO, so the byte stream is the protocol boundary - see
+# emu/src/cassette.h.
+#
+# The structure is asserted rather than just the length, because a length
+# alone would pass on 590 bytes of anything: a 32-byte zero leader, the
+# 16-bit sync pattern 16 02 the ROM programs into WR6/WR7, and then the
+# header record naming the file.
+CASSETTE_TAPE="$WORKDIR/tape.bin"
+rm -f "$CASSETTE_TAPE"
+out=$("$ABC802" --columns 80 --cassette "$CASSETTE_TAPE" --cycles 250000000 \
+      --type $'10 PRINT "HEJ"\rSAVE "CAS:T"\r' 2>&1)
+tl_begin "cassette-save-records-stream"
+tl_want "$out" "Cassette: 590 bytes written" "the ROM transmitting a whole recording"
+structure=$(python3 - "$CASSETTE_TAPE" <<'PY'
+import sys
+d = open(sys.argv[1], 'rb').read()
+lead = all(b == 0 for b in d[:32])
+sync = d[32:34] == b'\x16\x02'
+# FF FF FF, then the 8-character name and 3-character type
+name = d[34:37] == b'\xff\xff\xff' and d[37:48] == b'T          '[:8] + b'BAC'
+print("leader=%d sync=%d header=%d" % (lead, sync, name))
+PY
+)
+tl_want "$structure" "leader=1" "a 32-byte zero leader for the receiver to lock onto"
+tl_want "$structure" "sync=1" "the 16-bit sync pattern the ROM programs into WR6/WR7"
+tl_want "$structure" "header=1" "the header record naming T.BAC"
+tl_end "$out$structure"
+
+# The receive side: hunt-phase sync detection and a real SIO receive
+# interrupt, which was the one slot in the IM 2 daisy chain that had
+# nothing in it.
+#
+# This asserts an *incomplete* state on purpose, and should be replaced by
+# a real SAVE/LOAD round trip when it stops being true. The ROM reads the
+# recording back byte-exactly - 586 of the 590 bytes, the rest being the
+# leader its hunt phase correctly skips - and then rejects it with Error
+# 35, "CRC or address-mark error". That is honest: the ROM drives the
+# SIO's *hardware* CRC generator (WR0 CRC commands) and this emulator does
+# not implement it, so nothing ever wrote the CRC bytes the loader checks.
+# What this check defends is everything up to that point: without the
+# interrupt or the 16-bit hunt the ROM reads nothing at all and hangs.
+out=$("$ABC802" --columns 80 --cassette "$CASSETTE_TAPE" --cycles 400000000 \
+      --type $'LOAD "CAS:T"\r' --screen 2>&1)
+tl_begin "cassette-load-reads-the-recording"
+tl_want "$out" "586 read" "the ROM consuming the whole recording through the SIO"
+tl_want "$out" "Error 35" "the ROM reaching its CRC check - see cassette.h for what is missing"
+tl_end "$out"
+
 # --- Row attributes in the terminal render ----------------------------
 #
 # The Row Graphic attribute switches the rest of a row to a teletext 2x3

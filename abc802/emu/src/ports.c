@@ -32,6 +32,7 @@
 
 #include "../../../abcbus/disk.h"
 #include "ports.h"
+#include "cassette.h"
 #include "memory.h"
 
 static int trace_io = 0;   // ABC802_TRACE_IO=1
@@ -289,6 +290,7 @@ typedef struct {
     bool rx_ready;
     bool dcd;   // modem-status input, wired per channel above
     bool cts;
+    bool hunt;  // sync mode: discarding until the WR6 sync character
 } SioChannel;
 
 static SioChannel sio[2];
@@ -304,6 +306,7 @@ static void sio_channel_reset(int channel) {
     SioChannel *ch = &sio[channel];
     ch->wr_pointer = 0;
     ch->rx_ready = false;
+    ch->hunt = false;
     ch->rx_data = 0;
     memset(ch->wr, 0, sizeof(ch->wr));
 }
@@ -317,10 +320,18 @@ static uint8_t sio_read_control(int channel) {
 
     switch (reg) {
         case 0:
-            // Transmit is always reported empty: with nothing attached, a
-            // byte written to the data port has by definition already
-            // gone as far as it is ever going to. A ROM polling loop that
-            // waits for this bit must see it or it never exits.
+            // Note that nothing refills the cassette here. Reading a
+            // byte on a status poll was the first thing tried and it is
+            // wrong twice over: it skips the hunt phase, so the ROM gets
+            // the leader as data, and it raises no interrupt - which is
+            // the only way the ROM actually collects a byte. It also
+            // silently starved the real path, because leaving rx_ready set
+            // stops the tick feed from ever running.
+            //
+            // Transmit is always reported empty: a byte written to the
+            // data port has by definition already gone as far as it is
+            // ever going to. A ROM polling loop that waits for this bit
+            // must see it or it never exits.
             return (uint8_t)((ch->rx_ready ? SIO_RR0_RX_AVAILABLE : 0) |
                              SIO_RR0_TX_EMPTY |
                              (ch->dcd ? SIO_RR0_DCD : 0) |
@@ -359,6 +370,14 @@ static void sio_write_control(int channel, uint8_t value) {
 
     ch->wr[reg] = value;
     ch->wr_pointer = 0;
+
+    // WR3 bit 4 is "enter hunt phase": in synchronous mode the receiver
+    // discards everything until it matches the WR6 sync character, which
+    // is how it finds the start of a record in a stream that begins with
+    // a leader. The ROM sets WR6 = 0x16 for the cassette and the recorded
+    // stream opens with 32 zero bytes before that SYN, so without this the
+    // ROM would be handed the leader as data.
+    if (reg == 3 && (value & 0x10)) ch->hunt = true;
 
     // WR2 holds the interrupt vector, and only channel B's copy is the
     // one the chip actually presents - the same arrangement the DART uses.
@@ -454,12 +473,17 @@ static int io_out(Z80 *cpu, uint8_t port, uint8_t value) {
             int channel = (index & 0x02) ? 1 : 0;
             if (index & 0x01) {
                 sio_write_control(channel, value);
+            } else if (channel == 1 && abc802_cassette_present()) {
+                // Channel B's transmit side is the cassette. The ROM has
+                // put the SIO in synchronous mode and is handing it whole
+                // bytes; the FSK modulation is hardware past this point,
+                // so the byte stream is the protocol (see cassette.h).
+                abc802_cassette_write(value);
             }
-            // A data write is a transmitted byte. Channel A's would go to
-            // the RS-232 port and channel B's to the cassette; neither
-            // exists, so it is discarded - but the transmit-empty status
-            // above still reports it as sent, which is what keeps the
-            // ROM's own polling loops from hanging.
+            // Channel A's transmitted bytes would go to the RS-232 port,
+            // which has nothing on the other end, so they are discarded -
+            // but the transmit-empty status above still reports them sent,
+            // which is what keeps the ROM's own polling loops from hanging.
             break;
         }
         case DEV_CTC:
@@ -498,6 +522,48 @@ void abc802_ports_tick(Z80 *cpu, int cycles) {
         }
     }
 
+    // The cassette's receive side. Fed here rather than on a status poll,
+    // because the ROM does not poll: LOAD "CAS:..." programs channel B for
+    // "interrupt on all receive characters" (WR1 = 0x14) and then waits.
+    // One byte per tick is far slower than the real 
+    // interface and entirely sufficient - the ROM consumes each one in its
+    // handler before the next arrives, which is the only ordering that
+    // matters with no analogue timing to reproduce.
+    {
+        SioChannel *b = &sio[1];
+        if (abc802_cassette_present() && (b->wr[3] & 0x01) && !b->rx_ready) {
+            // Hunt phase: discard until the sync pattern matches. WR4 bits
+            // 5:4 choose how wide that pattern is, and getting it wrong is
+            // not a hang but a *checksum* failure - the ROM programs 16-bit
+            // sync here (WR4 = 0x10, WR6/WR7 = 16 02, matching the 0x16 0x02
+            // the recorded stream carries after its 32-byte leader), so
+            // matching only WR6 leaves the stream one byte out of step and
+            // every record fails its CRC with Error 35.
+            if (b->hunt) {
+                bool bisync = ((b->wr[4] >> 4) & 0x03) == 0x01;
+                int c = abc802_cassette_read();
+                while (c >= 0) {
+                    if ((uint8_t)c == b->wr[6]) {
+                        if (!bisync) { b->hunt = false; break; }
+                        int n = abc802_cassette_read();
+                        if (n < 0) break;
+                        if ((uint8_t)n == b->wr[7]) { b->hunt = false; break; }
+                        c = n;   // re-examine: it may start the pattern itself
+                        continue;
+                    }
+                    c = abc802_cassette_read();
+                }
+            }
+            if (!b->hunt) {
+                int byte = abc802_cassette_read();
+                if (byte >= 0) {
+                    b->rx_data = (uint8_t)byte;
+                    b->rx_ready = true;
+                }
+            }
+        }
+    }
+
     // Deliver the highest-priority pending interrupt. The daisy chain runs
     // CTC -> SIO -> DART, so a CTC channel always wins, and within the CTC
     // the lowest channel number does.
@@ -515,6 +581,31 @@ void abc802_ports_tick(Z80 *cpu, int cycles) {
                 z80_request_int(cpu, vec);
                 return;
             }
+        }
+
+        // Then the SIO, whose channel B is the cassette. Its vector is
+        // WR2 with the interrupt condition substituted into bits 3:1 when
+        // WR1 bit 2 ("status affects vector") is set - which the ROM does
+        // set, writing WR1 = 0x14. Channel B receive-available is code 2,
+        // so bits 3:1 become 010.
+        // A *level*, not an edge: the chip interrupts whenever a character
+        // is available and WR1's receive-interrupt mode (bits 4:3) is
+        // anything but "disabled", and holds it until the byte is read.
+        // Latching it when the byte arrived was the first attempt and it
+        // never fired once - the ROM enables the receiver (WR3) before it
+        // programs the interrupt mode (WR1), so the first byte lands while
+        // interrupts are still off and nothing ever raises one again.
+        if (sio[1].rx_ready && (sio[1].wr[1] & 0x18)) {
+            uint8_t vec = sio_vector;
+            if (sio[1].wr[1] & 0x04) vec = (uint8_t)((vec & 0xF1) | (2 << 1));
+            if (trace_io) {
+                uint16_t tbl = (uint16_t)((cpu->i << 8) | vec);
+                fprintf(stderr, "[int] SIO chB rx vector %02X -> table %04X -> handler %04X\n",
+                        vec, tbl,
+                        (uint16_t)(cpu->memory[tbl] | (cpu->memory[(uint16_t)(tbl + 1)] << 8)));
+            }
+            z80_request_int(cpu, vec);
+            return;
         }
 
         // Then the DART, last in the daisy chain. Channel B is the

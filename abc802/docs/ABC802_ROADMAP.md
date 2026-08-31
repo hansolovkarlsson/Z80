@@ -36,8 +36,9 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 | 7 | A second drive | `--disk` repeats for drives 0, 1, …; `MO1:`/`MF1:` work and are independent |
 | 8 | The line editor's vocabulary | swept every control code; Left arrow works, Right correctly does nothing — the machine has no cursor movement |
 | 9 | A real Z80 SIO | registers, commands and the two DIP switches that reach the ROM through channel B's modem-status inputs |
-| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 23 checks (16 media-free), part of `make test` |
+| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 25 checks (18 media-free), part of `make test` |
 | 11 | Row attributes in the terminal render | `--screen` and `--interactive` run the pixel renderer's own attribute walk and draw Row Graphic as Unicode sextants |
+| — | Cassette (partial) | `--cassette` records a real byte stream and reads it back byte-exactly; the load fails its CRC check, which is unmodeled |
 
 ## Known gaps
 
@@ -67,16 +68,27 @@ Real, understood, and deliberately not solved yet — not oversights.
   scanline model (Milestone 2) — but anything genuinely tied to field
   timing, including the hardware cursor-blink modes (R10 bits 6:5 = 10/11)
   and the character generator's Row Flash attribute, still is not.
-- **The SIO has no devices attached.** The chip itself is real as of
-  Milestone 9 — registers, commands, and the S1/S2 DIP switches that reach
-  the ROM through channel B's modem-status inputs — but channel A's RS-232
-  port and channel B's cassette have nothing on the other end, so nothing
-  is ever received and transmitted bytes are discarded. The SIO therefore
-  never raises an interrupt either, leaving its slot in the daisy chain
-  inert. Cassette in particular is a larger job than it looks: the real
-  interface is bit-level, with the signal modulated through the SIO's
-  synchronous clocks and demodulated by frequency detection, which is why
-  it was not bundled into this milestone.
+- **Cassette records but does not load back**, and the reason is exact:
+  the ROM drives the SIO's **hardware CRC generator** (the WR0 CRC
+  commands), which is not modeled, so nothing ever writes the CRC bytes a
+  loader checks. `--cassette FILE` and `SAVE "CAS:name"` produce a real,
+  deterministic 590-byte recording, and `LOAD` reads all of it back
+  byte-exactly through a genuine receive path — 16-bit hunt-phase sync
+  detection and a real SIO receive interrupt — before rejecting it with
+  `Error 35`, "CRC or address-mark error". Finishing it means implementing
+  the SIO's CRC-16 for both directions, which has a good oracle (this
+  ROM's own loader) and a small search space (polynomial, preset, byte
+  order, and where the transmitter inserts the bytes). See
+  [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md) for what was measured.
+
+  Note that the roadmap used to describe this as bit-level work — "the
+  signal modulated through the SIO's synchronous clocks and demodulated by
+  frequency detection". Tracing a real `SAVE` shows the ROM handing the
+  SIO whole *bytes*; the modulation is hardware past the SIO, so the byte
+  stream is the protocol boundary, exactly as the four-byte command header
+  is for `abcbus/disk.c`.
+- **Channel A's RS-232 port has nothing attached.** Transmitted bytes are
+  discarded and nothing is ever received.
 - **Two drive types, one card.** `MO` (ABC830, 160KB) and `MF`
   (ABC832/834, 640KB) both work, on as many as eight drives; the ROM also
   scans for `SF` (8-inch) and `HD` (hard disk), which `abcbus/disk.c`'s

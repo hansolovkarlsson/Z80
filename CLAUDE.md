@@ -213,6 +213,21 @@ the ABC80's editor, which has a non-destructive cursor-right at `0x09`.
 Left arrow therefore maps to `0x08` and Right is deliberately dropped;
 that is hardware, not a missing feature.
 
+A partial cassette exists: `--cassette FILE` records what `SAVE "CAS:name"`
+transmits on SIO channel B, and `LOAD` reads it all back byte-exactly, but
+the load fails its integrity check. The roadmap had called this bit-level
+work; a trace shows the ROM handing the SIO **whole bytes** (the FSK
+modulation is hardware past the SIO), so the data port is the protocol
+boundary the way the four-byte header is for `abcbus/`. Two things the
+receive side needed, neither guessable: **the SIO's receive interrupt is a
+level, not an edge** (the ROM enables the receiver via WR3 *before* setting
+the interrupt mode in WR1, so latching on arrival never fires), and **the
+hunt phase matches a 16-bit sync pattern** (`WR4 = 0x10` is bisync, so
+`WR6,WR7` = `16 02`) - matching only WR6 shifts the stream one byte and
+produces a checksum failure rather than a hang. What is missing is the
+SIO's **hardware CRC generator**, which the ROM drives through the WR0 CRC
+commands; nothing writes the CRC bytes, so `LOAD` ends in `Error 35`.
+
 Milestone 9 replaced the SIO stub with a real register model. The reason
 it mattered is not the RS-232 port: **two configuration DIP switches reach
 the ROM through SIO channel B's modem-status inputs** (S1 on DCD, S2 on

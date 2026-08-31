@@ -21,6 +21,72 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-31 (7) — cassette: byte-level after all, and stopped one step short
+
+The last real capability on the ABC802 roadmap, described there as
+bit-level work: "the signal modulated through the SIO's synchronous clocks
+and demodulated by frequency detection". That is the fourth planned-work
+justification this month to dissolve on first measurement.
+
+Tracing a real `SAVE "CAS:T"` shows the ROM handing the SIO **whole
+bytes** — 590 of them to channel B's data port. The FSK modulation is
+hardware *after* the SIO, so the data port is the protocol boundary,
+exactly as the four-byte command header is for `abcbus/disk.c`. That makes
+it a much smaller job than the roadmap implied, and `--cassette FILE` now
+records a real, deterministic recording: a 32-byte leader, the `16 02`
+sync pattern, then a header record naming the file and a second record
+carrying the program.
+
+### Two mistakes on the receive side, both worth keeping
+
+`LOAD` never polls. It programs channel B for "interrupt on all received
+characters" and waits — and the SIO's slot in the IM 2 daisy chain had
+been inert since milestone 9.
+
+My first attempt refilled the receive buffer when the ROM read RR0. Wrong
+twice: it skips the hunt phase, and it raises no interrupt. Worse, because
+it left `rx_ready` set it silently *starved* the correct path once that
+existed — I spent a while looking at a tick feed that could never run
+because something else had already taken the byte.
+
+The second attempt latched "interrupt pending" when a byte arrived, and
+never fired once. The ROM enables the receiver (WR3) *before* it programs
+the interrupt mode (WR1), so the first byte lands while interrupts are
+still off and nothing raises one again. A real SIO's receive interrupt is
+a **level**, not an edge, and modeling it that way works. Instrumenting
+the guard is what found this — I was counting how often the interrupt was
+blocked, and the answer was that it was never even pending.
+
+### The bug that looked like the real bug
+
+`WR4 = 0x10` selects bisync, so the sync pattern is `WR6,WR7` = `16 02`,
+not just `0x16`. Matching one byte leaves the stream permanently one byte
+out of step — and the symptom is not a hang but `Error 35`, "CRC or
+address-mark error", which is *also* the symptom of the real remaining
+gap. Byte counts distinguished them: 291 of 590 consumed with 8-bit
+matching, 586 with 16-bit.
+
+### Where I stopped, and why
+
+The ROM drives the SIO's hardware CRC generator — WR0 CRC commands issued
+right after the 295th transmitted byte, at the record boundary, where a
+real SIO appends two CRC bytes. This emulator computes no CRC, so the
+recording has none in it, and the loader's check fails.
+
+I stopped there rather than implementing it. The polynomial, preset, byte
+order and the exact command that triggers insertion are all unknown to me,
+and the day's own postmortem is about not building on unverified premises.
+It is a bounded job with a genuinely good oracle — this ROM's loader
+either accepts a recording or does not — and a small enough search space
+to settle by experiment. That is a better next session than a CRC I
+guessed at and that happened to pass on one file.
+
+So this lands as an explicitly partial feature: `cassette-save-records-
+stream` asserts the recording's structure, and
+`cassette-load-reads-the-recording` asserts an incomplete state *and says
+so in its own comment*, defending the interrupt and the hunt phase without
+pretending the round trip works.
+
 ## 2026-08-31 (6) — the ABC802's terminal render learns the row attributes
 
 `--screen` and `--interactive` printed one glyph per character code and

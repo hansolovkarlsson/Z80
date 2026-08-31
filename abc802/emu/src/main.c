@@ -19,6 +19,7 @@
 #include "../../../z80core/z80.h"
 #include "chargen.h"
 #include "../../../abcbus/disk.h"
+#include "cassette.h"
 #include "memory.h"
 #include "png.h"
 #include "ports.h"
@@ -238,6 +239,14 @@ static void usage(const char *argv0) {
     printf("                   continuously redrawn screen; Ctrl-C reaches BASIC,\n");
     printf("                   Ctrl-\\ exits. Runs at real ABC802 speed, uncapped\n");
     printf("                   unless --cycles is given explicitly.\n");
+    printf("  --cassette FILE  attach FILE as the tape on SIO channel B.\n");
+    printf("                   SAVE \"CAS:name\" records the byte stream the\n");
+    printf("                   ROM transmits and LOAD \"CAS:name\" replays it.\n");
+    printf("                   Created if absent; one file serves both\n");
+    printf("                   directions, so a SAVE in one run loads in the\n");
+    printf("                   next. Modeled at the SIO's byte boundary - no\n");
+    printf("                   signal is modulated, so real .wav tape audio\n");
+    printf("                   cannot be read (see emu/src/cassette.h).\n");
     printf("  --disk FILE      attach FILE as a floppy image on the ABC-bus.\n");
     printf("                   160K selects an ABC830, 640K an ABC832/834.\n");
     printf("                   Repeat for more drives: images take drives 0,\n");
@@ -266,6 +275,7 @@ int main(int argc, char **argv) {
     int show_profile = 0;
     const char *type_text = NULL;
     const char *screenshot_path = NULL;
+    const char *cassette_path = NULL;
     const char *disk_paths[8];
     int disk_count = 0;
     long long type_at = 0;
@@ -289,6 +299,8 @@ int main(int argc, char **argv) {
             show_screen = 1;
         } else if (!strcmp(argv[i], "--screenshot") && i + 1 < argc) {
             screenshot_path = argv[++i];
+        } else if (!strcmp(argv[i], "--cassette") && i + 1 < argc) {
+            cassette_path = argv[++i];
         } else if (!strcmp(argv[i], "--disk") && i + 1 < argc) {
             if (disk_count < 8) disk_paths[disk_count++] = argv[++i];
             else { fprintf(stderr, "Too many --disk arguments\n"); return 1; }
@@ -342,6 +354,11 @@ int main(int argc, char **argv) {
     abc802_memory_attach(&cpu);
     abc802_ports_attach(&cpu);
     abc802_set_config(columns == 80, true);
+
+    if (cassette_path) {
+        if (!abc802_cassette_attach(cassette_path)) return 1;
+        printf("Cassette: '%s' on SIO channel B\n", cassette_path);
+    }
 
     if (interleave >= 0) abcbus_disk_set_interleave((unsigned)interleave);
     for (int d = 0; d < disk_count; d++) {
@@ -504,6 +521,14 @@ int main(int argc, char **argv) {
                ? (abc802_quit_signal == SIGQUIT ? "user requested exit (Ctrl-\\)"
                                                 : "user requested exit (SIGINT)")
                : "reached T-state cap");
+
+    // The only visible sign a cassette operation happened: the ROM reports
+    // a successful SAVE the same way whether or not anything recorded it.
+    if (abc802_cassette_present()) {
+        printf("Cassette: %ld bytes written, %ld read\n",
+               abc802_cassette_bytes_written(), abc802_cassette_bytes_read());
+        abc802_cassette_close();
+    }
     printf("CRTC programmed: %s (R1=%d cols, R6=%d rows)\n",
            abc802_crtc_programmed() ? "yes" : "no",
            abc802_crtc_reg(1), abc802_crtc_reg(6));

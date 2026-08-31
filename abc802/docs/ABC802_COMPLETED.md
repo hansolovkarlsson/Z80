@@ -929,3 +929,103 @@ hole: every code that is an attribute command in the alphanumeric font is
 the same command in the mosaic one, so attribute *detection* lands
 identically either way. The line stays, with a comment saying it is not
 independently observable, so nobody deletes it as dead.
+
+## Cassette — recorded, read back, and stopped one step short
+
+`--cassette FILE` attaches a tape on SIO channel B. `SAVE "CAS:name"`
+records a real, deterministic 590-byte stream and `LOAD "CAS:name"` reads
+every byte of it back correctly. It then rejects the recording with
+`Error 35` — and the reason is exact rather than mysterious, which is why
+this is written up as an unfinished thing rather than left as a guess.
+
+### The premise in the roadmap was wrong
+
+It said the cassette was "bit-level, with the signal modulated through the
+SIO's synchronous clocks and demodulated by frequency detection". Tracing
+a real `SAVE "CAS:T"` shows the ROM handing the SIO **whole bytes** — 590
+of them to channel B's data port. The FSK modulation everybody means by
+"cassette interface" is hardware *after* the SIO.
+
+So the SIO's data port is the protocol boundary, exactly as the four-byte
+command header is for `abcbus/disk.c`: store the byte stream, and the
+ROM's own framing and file format go through unmodified. That makes this a
+far smaller job than the roadmap implied — the fourth planned-work
+justification this month to dissolve on first measurement.
+
+### What a recording looks like
+
+```
+00 × 32          leader
+16 02            the 16-bit sync pattern (WR6/WR7)
+FF FF FF         record mark
+54 20 …          "T       " — the filename, 8 characters
+42 41 43         "BAC" — the type
+…                260 bytes of record 0, then a second record at offset 327
+```
+
+Two records, each with its own leader and sync: a header naming the file,
+and the program itself.
+
+### The receive side needed two things that did not exist
+
+**A real SIO receive interrupt.** `LOAD` programs channel B with
+`WR1 = 0x14` — interrupt on all received characters — and then waits. It
+never polls. The SIO's slot in the IM 2 daisy chain had been inert since
+milestone 9, so the first attempt read nothing and hung.
+
+Two mistakes on the way, both instructive. Refilling the receive buffer
+when the ROM reads RR0 seemed reasonable and is wrong twice over: it skips
+the hunt phase, and it raises no interrupt — and because it left
+`rx_ready` set it silently *starved* the correct path once that existed.
+Then latching "interrupt pending" at the moment a byte arrived never fired
+once, because the ROM enables the receiver (WR3) *before* it programs the
+interrupt mode (WR1): the first byte lands while interrupts are still off
+and nothing raises one again. A real SIO's receive interrupt is a **level**
+— a character is available and the mode is enabled — and modeling it that
+way works.
+
+**16-bit hunt-phase sync detection.** `WR4 = 0x10` selects bisync, so the
+pattern is `WR6,WR7` = `16 02`, not just `0x16`. Matching one byte leaves
+the stream permanently one byte out of step, and the symptom is not a hang
+but a checksum failure — the same `Error 35` the real remaining gap
+produces, which made this briefly confusing. The distinguishing evidence
+was byte counts: 291 of 590 consumed with 8-bit matching against 586 with
+16-bit.
+
+With both in place the ROM reads 586 of the 590 bytes — the four it skips
+being leader its hunt phase is supposed to skip — and every delivered byte
+matches the recording exactly, checked by diffing the trace of the data
+port against the file.
+
+### Where it stops, and what would finish it
+
+The ROM drives the SIO's **hardware CRC generator**: the save trace
+carries WR0 CRC commands (`C7`, `E6`, `EC`, all with bits 7:6 = 11) issued
+right after the 295th transmitted byte, at the boundary between the two
+records. On real hardware the SIO appends two CRC bytes there. This
+emulator computes no CRC, so **the recording has no CRC bytes in it** —
+record 0's trailer is a single `FF` and then the next leader — and the
+loader's integrity check fails.
+
+Finishing it means implementing the SIO's CRC-16 for both directions. That
+is a bounded job with a genuinely good oracle: this ROM's own loader
+either accepts a recording or does not. The unknowns are the polynomial
+and preset, the byte order, and exactly which WR0 command makes the
+transmitter insert the bytes — a small enough space to settle by
+experiment rather than by guessing, which is why it was left rather than
+attempted here.
+
+### Tests
+
+`cassette-save-records-stream` asserts the recording's *structure* — the
+32-byte leader, the `16 02` sync, and the header naming `T` / `BAC` — not
+just its length, which 590 bytes of anything would satisfy.
+
+`cassette-load-reads-the-recording` deliberately asserts an incomplete
+state, and says so: 586 bytes consumed and `Error 35` reached. It defends
+everything up to the CRC, because without the interrupt or the 16-bit hunt
+the ROM reads nothing and hangs. It should be replaced by a real
+`SAVE`/`LOAD` round trip when the CRC lands.
+
+Three injections, all caught: the receive interrupt removed, the sync
+width forced to 8 bits, and recorded bytes never reaching the file.
