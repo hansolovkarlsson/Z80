@@ -277,7 +277,9 @@ tl_end "$invariant"
 
 # --- Floppy, on real media --------------------------------------------
 
-MEDIA="${ABC802_TEST_DISKS:-}"
+# $ABC802_TEST_DISKS if set, otherwise this target's own resources/disks,
+# which is where these dumps live (gitignored - see its README for why).
+MEDIA="${ABC802_TEST_DISKS:-$ROOT/abc802/resources/disks}"
 MO_IMAGE="$MEDIA/disk001.img"     # 160K ABC830, autoboots ORD 800
 MF_IMAGE="$MEDIA/mf001.img"       # 640K ABC832, autoboots ADMINISTRATION 800
 # The two-drive checks need media that reaches a BASIC prompt: the other
@@ -285,13 +287,11 @@ MF_IMAGE="$MEDIA/mf001.img"       # 640K ABC832, autoboots ADMINISTRATION 800
 MF_BASIC_IMAGE="$MEDIA/mf002.img"
 
 disk_skip_reason=""
-if [ -z "$MEDIA" ]; then
-    disk_skip_reason="set ABC802_TEST_DISKS to a directory holding disk001.img (abc80.net's ABC800 160K archive, boots ORD 800), mf001.img (its 640K archive, boots ADMINISTRATION 800) and mf002.img (640K, reaches a BASIC prompt)"
-else
-    for image in "$MO_IMAGE" "$MF_IMAGE" "$MF_BASIC_IMAGE"; do
-        [ -f "$image" ] || disk_skip_reason="$image not found"
-    done
-fi
+for image in "$MO_IMAGE" "$MF_IMAGE" "$MF_BASIC_IMAGE"; do
+    if [ ! -f "$image" ] && [ -z "$disk_skip_reason" ]; then
+        disk_skip_reason="$image not found - put abc80.net's ABC800 dumps there, or set ABC802_TEST_DISKS"
+    fi
+done
 
 if [ -n "$disk_skip_reason" ]; then
     for name in disk-mo-160k disk-mf-640k disk-drive-independence \
@@ -379,10 +379,8 @@ fi
 # against the 2 it actually needs.
 UFD_IMAGE="$MEDIA/sys832-ufd.img"
 dosgen_skip_reason=""
-if [ -z "$MEDIA" ]; then
-    dosgen_skip_reason="set ABC802_TEST_DISKS to a directory holding sys832-ufd.img (a 640K ABC832 UFD-DOS system disk)"
-elif [ ! -f "$UFD_IMAGE" ]; then
-    dosgen_skip_reason="$UFD_IMAGE not found"
+if [ ! -f "$UFD_IMAGE" ]; then
+    dosgen_skip_reason="$UFD_IMAGE not found - a 640K ABC832 UFD-DOS system disk, or set ABC802_TEST_DISKS"
 fi
 
 if [ -n "$dosgen_skip_reason" ]; then

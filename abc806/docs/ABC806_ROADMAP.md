@@ -46,8 +46,10 @@ same terms as the other two ABC targets' — see
 [`../gtk/README.md`](../gtk/README.md).
 
 `make test-abc806` runs 38 checks — 35 media-free, plus 3 that need a real
-disk image and otherwise skip loudly (set `ABC806_TEST_DISKS`). It is part
-of `make test`.
+disk image and otherwise skip loudly. Those look in
+`abc802/resources/disks/` for `sys832-ufd.img` (the same UFD-DOS system
+disk serves both targets, so there is no second copy of a 640K image);
+`ABC806_TEST_DISKS` overrides the location. It is part of `make test`.
 
 ## What is next
 

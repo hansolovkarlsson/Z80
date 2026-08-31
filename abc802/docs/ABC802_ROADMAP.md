@@ -125,7 +125,8 @@ completes with the correct usable-sector count, the free-list bitmap it
 writes marks every cluster past the end of the media, and a program saved
 to the filesystem it built is read back **in a second process**. They need
 `sys832-ufd.img` in the same directory, which the four above do not, so
-they gate separately. The two-process form is not fussiness — done in one
+they gate separately. `ABC802_TEST_DISKS` is an override: unset, the suite
+looks in [`../resources/disks/`](../resources/disks/). The two-process form is not fussiness — done in one
 process the check matches the program text still echoed on screen from
 when it was typed, and passes with the card's writes injected away. That
 happened, and is why the split exists.

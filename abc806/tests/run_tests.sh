@@ -389,17 +389,17 @@ tl_end "$out"
 # Point ABC806_TEST_DISKS at a directory holding sys832-ufd.img (an ABC832
 # UFD-DOS system disk - see abc802/resources/disks/README.md for where to
 # get one). Skips loudly without it; a skip is never counted as a pass.
-RTC_IMAGE="${ABC806_TEST_DISKS:-}/sys832-ufd.img"
+# $ABC806_TEST_DISKS if set, otherwise the ABC802's resources/disks - the
+# same UFD-DOS system disk serves both targets, and there is no reason for
+# a second copy of a 640K image.
+ABC806_MEDIA="${ABC806_TEST_DISKS:-$ROOT/abc802/resources/disks}"
+RTC_IMAGE="$ABC806_MEDIA/sys832-ufd.img"
 # Every check below needs the media, so each skips in its own right -
 # reporting one skip for a block of three would undercount what is not
 # being run.
 DISK_CHECKS="disk-boot-and-rtc dos-shell dos-runs-lib"
-if [ -z "${ABC806_TEST_DISKS:-}" ]; then
-    for c in $DISK_CHECKS; do
-        tl_skip "$c" "set ABC806_TEST_DISKS to a directory holding sys832-ufd.img (a 640K ABC832 UFD-DOS system disk)"
-    done
-elif [ ! -f "$RTC_IMAGE" ]; then
-    for c in $DISK_CHECKS; do tl_skip "$c" "$RTC_IMAGE not found"; done
+if [ ! -f "$RTC_IMAGE" ]; then
+    for c in $DISK_CHECKS; do tl_skip "$c" "$RTC_IMAGE not found - a 640K ABC832 UFD-DOS system disk, or set ABC806_TEST_DISKS"; done
 else
     # Copy first: the DOS writes to media, and a test must never mutate
     # the user's archive.

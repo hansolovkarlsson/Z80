@@ -142,6 +142,11 @@ directory: the archive's only other distinct ABC80 disk, and it is the
 *difference* between the two volume labels that proves two drives rather
 than one image mounted twice.
 
+`ABC80_TEST_DISKS` is an override, not a requirement — with it unset the
+suite looks in [`../resources/disks/`](../resources/disks/), which is
+where these dumps have a durable home. They stay gitignored, and that
+directory's README says why and lists what each one is.
+
 22 checks with both images present, 14 without.
 
 ## Planned next steps

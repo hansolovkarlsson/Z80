@@ -236,28 +236,26 @@ tl_end
 
 # --- Floppy, on real media --------------------------------------------
 
-DISK003="${ABC80_TEST_DISKS:-}/disk003.img"
+# Where the media lives: $ABC80_TEST_DISKS if set, otherwise the target's
+# own resources/disks, which is where these dumps now have a durable home
+# (they are gitignored - see that directory's README for why).
+ABC80_MEDIA="${ABC80_TEST_DISKS:-$ROOT/abc80/resources/disks}"
+DISK003="$ABC80_MEDIA/disk003.img"
 # The two-drive checks need a *second*, genuinely different image. The
 # archive yields only two distinct ABC80 disks - disk001.img and
 # disk003.img - since disk002.img is byte-identical to disk001.img.
 # Different volume labels are the whole point: they are what proves the
 # two drives are not the same file read twice.
-DISK001="${ABC80_TEST_DISKS:-}/disk001.img"
+DISK001="$ABC80_MEDIA/disk001.img"
 
 disk_skip_reason=""
-if [ -z "${ABC80_TEST_DISKS:-}" ]; then
-    disk_skip_reason="set ABC80_TEST_DISKS to a directory holding disk003.img (the abc80.net 160K archive's 'System.diskett ABC80 Ver. 2.1')"
-elif [ ! -f "$DISK003" ]; then
-    disk_skip_reason="$DISK003 not found"
+if [ ! -f "$DISK003" ]; then
+    disk_skip_reason="$DISK003 not found - put the abc80.net 160K archive's 'System.diskett ABC80 Ver. 2.1' there, or set ABC80_TEST_DISKS"
 fi
 
-two_drive_skip_reason=""
-if [ -z "${ABC80_TEST_DISKS:-}" ]; then
-    two_drive_skip_reason="set ABC80_TEST_DISKS to a directory holding both disk003.img and disk001.img (the abc80.net 160K archive's two distinct ABC80 disks)"
-elif [ ! -f "$DISK003" ]; then
-    two_drive_skip_reason="$DISK003 not found"
-elif [ ! -f "$DISK001" ]; then
-    two_drive_skip_reason="$DISK001 not found (the two-drive checks need a second, different image)"
+two_drive_skip_reason="$disk_skip_reason"
+if [ -z "$two_drive_skip_reason" ] && [ ! -f "$DISK001" ]; then
+    two_drive_skip_reason="$DISK001 not found - the two-drive checks need a second, different image"
 fi
 
 # Each check gets its own copy: the DOS writes to the media, and a test

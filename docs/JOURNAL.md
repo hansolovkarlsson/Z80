@@ -21,6 +21,53 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-31 (10) — the disk images get a durable home
+
+The loose end from the sweep: ABC80's `disk001.img` and `disk003.img` had
+no permanent location, and the copies driving eight checks were sitting in
+a background job's `tmp/`. Checking that this morning showed the original
+job directory had *already* been cleaned up — the images survived only
+because I had staged my own copies earlier in the day. Both verified
+against the checksums recorded when the checks were written, then moved to
+`abc80/resources/disks/`.
+
+`.gitignore` already had `abc80/resources/disks/*` with the README
+un-ignored, from when the ABC802's equivalent was set up. The slot had
+been waiting; nothing had ever been put in it.
+
+### The env vars are overrides now, not requirements
+
+While writing that directory's README I claimed the suite falls back to
+it, then had to go and make that true. All three suites now do:
+
+| Suite | Falls back to |
+|---|---|
+| ABC80 | `abc80/resources/disks/` |
+| ABC802 | `abc802/resources/disks/` |
+| ABC806 | `abc802/resources/disks/` — one UFD-DOS image serves both |
+
+`make test` with no environment at all went from 67 checks to **81**. The
+media checks had been effectively opt-in for anyone who did not know the
+variable existed, which included every future session that had not read
+the right paragraph.
+
+The skips stay loud and now name the exact missing file *and* both
+remedies. ABC802's four ABC800 checks still skip: `disk001.img`,
+`mf001.img` and `mf002.img` are genuinely absent, and the message says so
+by name rather than reporting whichever file the loop happened to check
+last — a one-line fix, but the difference between an actionable message
+and a confusing one.
+
+### Worth noting
+
+The README for the new directory is the substantive part: what each image
+is, why `disk002.img` is useless (byte-identical to `disk001.img`), that
+the two-drive checks depend on the volume *labels* differing, the
+interleave convention for `.img` versus `.dsk`, and the `DR0:`-`DR6:`
+naming with the reminder that this DOS does not scan drives at boot. All
+of it was learned today and none of it was anywhere a person looking at
+that directory would find it.
+
 ## 2026-08-31 (9) — a documentation sweep, so the day survives the session
 
 Nine pieces of work in a day, and most of what made them worth doing was
