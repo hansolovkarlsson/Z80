@@ -843,3 +843,32 @@ check at all** beyond the fixture. That is precisely the gap these close:
 every other check in the suite runs through a `FGCTL` palette, and every
 `FGCTL` palette has equal halves, so half the decode was invisible to all
 of them.
+
+## Headless checks for `bin/abc806-gtk` — done
+
+Two of the three mirror the other targets': the headless render completes
+and lights more than 300 pixels, and typing adds pixels. The third is one
+only this machine can make.
+
+### The colour check, and why a count could not make it
+
+`gtk-headless-colour` draws three pen lines under `FGCTL 2` and asserts
+they render as **three distinct colours in equal numbers** — 1448 pixels
+each, which is the CLI `--screenshot`'s 362 scaled by the window's 2x.
+
+The argument for it is what happens when the app's palette is collapsed to
+monochrome: every counting check stays green, because exactly the same
+pixels are lit. Only this one reds. That was verified by doing it, and it
+is the same lesson the pen work reached from the other direction, where a
+list of plane byte values had to replace a pixel count because a count
+cannot tell one pen from another.
+
+It matters here more than on the other two targets because this is the
+colour machine, and its GTK framebuffer is palette-indexed where the
+ABC802's is monochrome — a difference `../gtk/README.md` calls out as one
+of the two things separating the two windows.
+
+### What they still do not cover
+
+A build break: they skip when the opt-in binary is absent. See the same
+note in [`../../abc802/docs/ABC802_COMPLETED.md`](../../abc802/docs/ABC802_COMPLETED.md).

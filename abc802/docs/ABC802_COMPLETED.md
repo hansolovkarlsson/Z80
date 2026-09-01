@@ -1062,3 +1062,32 @@ never types the program text, so anything it lists came off the tape.
 Four injections, all caught: the receive interrupt removed, the sync width
 forced to 8 bits, the tape delivered one byte per instruction, and
 recorded bytes never reaching the file.
+
+## Headless checks for `bin/abc802-gtk` — done
+
+The GTK window had no automated coverage, and this roadmap carried that as
+"would be straightforward if it ever seems worth it". It was.
+
+`--screenshot` opens no window — it exists because automating a capture
+against a real desktop steals focus and switches Spaces — so the checks
+are the ABC80's with the paths changed: `gtk-headless-boot` asserts the
+render completes and the sign-on lights more than 300 pixels, and
+`gtk-headless-type` asserts that typing *adds* pixels. The second is the
+half that cannot pass by accident: a render that drew nothing, or a
+keyboard path that delivered nothing, leaves the count at the boot value.
+Dropping `--type`'s keystrokes in the app reds it, which is how that was
+confirmed rather than assumed.
+
+The pixel decode underneath is already fixture-verified
+(`chargen-attributes`), so what these add is the **app** — that it boots,
+drives the same `draw_screen()` the live window uses, and gets keystrokes
+through.
+
+### What they still do not cover
+
+A build break. They skip when the opt-in binary is absent, so nothing
+notices if it stops compiling — which is not hypothetical:
+`bin/abc80-gtk` stopped compiling for part of a day in August 2026 because
+a shared function's signature changed and nothing built it. It was found
+by building it by hand. Closing that means having `make test` attempt the
+opt-in builds when `gtk4` is present, which is not done.

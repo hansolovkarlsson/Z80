@@ -21,6 +21,40 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-31 (12) — second sweep: the write-ups the last two commits owed
+
+A shorter audit than (9), covering the two commits since it. Mostly
+currency, with three things worth naming.
+
+**The check counts were ambiguous rather than wrong.** ABC802's read "27
+checks (20 media-free, 2 needing the opt-in GTK build)", which can be read
+as 22 categories or 20 including the 2. Re-derived by running each suite
+with media pointed at a nonexistent directory and counting skips: ABC80
+22/14, ABC802 27/20, ABC806 41/38, with 2, 2 and 3 of the media-free ones
+needing the GTK build. All three lines now say it the same way. Counts are
+the cheapest thing in these documents to re-derive and apparently the
+easiest to leave imprecise.
+
+**The GTK checks needed `*_COMPLETED.md` entries, not just roadmap lines.**
+The ABC806's in particular: the argument for `gtk-headless-colour` is not
+"it tests colour", it is that collapsing the app's palette to monochrome
+leaves *every other check green* because the same pixels stay lit. That
+reasoning was in a commit message and a journal entry and nowhere a person
+reading the target's own completed file would find it.
+
+**The build-break gap is now stated in three places** — both roadmaps,
+both completed files, and CLAUDE.md — because it is the one thing here
+that is a real hole rather than a scope decision, and it already bit once
+today. The checks skip when the opt-in binary is absent, so nothing
+notices if it stops compiling.
+
+Memory updated with the shape of the request itself: "make sure everything
+in memory is stored in a document so it's safe to clear" is an *audit*,
+not a formatting pass, and what it has actually turned up is an
+unextracted postmortem, an instrument written three times in scratch and
+never kept, planned-work items the day's findings had refuted, and drifted
+counts.
+
 ## 2026-08-31 (11) — the other two GTK windows get headless checks
 
 `bin/abc80-gtk` gained headless coverage in August; the ABC802's and

@@ -46,9 +46,9 @@ same terms as the other two ABC targets' — see
 [`../gtk/README.md`](../gtk/README.md). It has three headless checks of
 its own, including the colour one described under Testing below.
 
-`make test-abc806` runs 41 checks — 35 needing nothing, 3 that need a real
-disk image, and 3 that drive `bin/abc806-gtk` headlessly and skip loudly
-when that opt-in binary is absent. One of those three is the only check
+**`make test-abc806` runs 41 checks**: 38 need no disk images (3 of those
+need the opt-in GTK build and skip loudly without it), and 3 need a real
+disk image. One of those three is the only check
 anywhere that would notice the GTK window losing *colour*: three pen lines
 must render as three distinct colours in equal numbers, which a pixel
 count cannot see. Those look in

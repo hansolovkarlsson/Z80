@@ -147,7 +147,11 @@ suite looks in [`../resources/disks/`](../resources/disks/), which is
 where these dumps have a durable home. They stay gitignored, and that
 directory's README says why and lists what each one is.
 
-22 checks with both images present, 14 without.
+Two more drive `bin/abc80-gtk` headlessly through its own `--screenshot`
+and skip loudly when that opt-in binary is absent.
+
+**22 checks in total**: 14 need no disk images (2 of those need the GTK
+build), and 8 need media.
 
 ## Planned next steps
 

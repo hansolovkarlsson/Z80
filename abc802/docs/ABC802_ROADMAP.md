@@ -36,7 +36,7 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 | 7 | A second drive | `--disk` repeats for drives 0, 1, …; `MO1:`/`MF1:` work and are independent |
 | 8 | The line editor's vocabulary | swept every control code; Left arrow works, Right correctly does nothing — the machine has no cursor movement |
 | 9 | A real Z80 SIO | registers, commands and the two DIP switches that reach the ROM through channel B's modem-status inputs |
-| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 27 checks (20 media-free, 2 needing the opt-in GTK build), part of `make test` |
+| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 27 checks — 20 need no disk images (2 of those need the opt-in GTK build), 7 need media — part of `make test` |
 | 11 | Row attributes in the terminal render | `--screen` and `--interactive` run the pixel renderer's own attribute walk and draw Row Graphic as Unicode sextants |
 | 12 | Cassette | `--cassette` gives a real `SAVE`/`LOAD` round trip on SIO channel B, with a genuine receive interrupt and bisync hunt |
 

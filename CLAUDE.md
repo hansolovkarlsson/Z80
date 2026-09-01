@@ -1117,7 +1117,14 @@ window and claims no audio device, which is what gives it two automated
 checks in `abc80/tests/run_tests.sh` - they skip loudly when the opt-in
 binary is absent, and they assert on a *count* of lit pixels, the
 typed-vs-boot comparison being the half that catches a decode drawing from
-the wrong address — see
+the wrong address. **All three GTK windows now have such checks** - two
+each for `abc80`/`abc802`, three for `abc806`, whose extra one asserts
+that three pen lines render as three *distinct colours* in equal numbers,
+which no pixel count can see and for which a collapsed palette is the
+injection. What none of them cover is a *build* break, since each skips
+when its opt-in binary is absent; `bin/abc80-gtk` stopped compiling for
+part of a day for exactly that reason, found only by building it by hand.
+See
 `abc80/gtk/README.md` and `abc80/docs/ABC80_ROADMAP.md`'s Milestone 11
 for the full write-up (that milestone now has no open items).
 
