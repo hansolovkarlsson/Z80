@@ -72,6 +72,10 @@ is small:
 Every milestone is complete; what follows is what the machine still does
 not do, and why each one is deliberate rather than an oversight.
 
+- **`make test` does not *build* `bin/abc806-gtk`.** Its three checks skip
+  when the opt-in binary is absent, so a build break goes unnoticed.
+  Repo-wide, and tracked as a planned next step in
+  [`../../abc802/docs/ABC802_ROADMAP.md`](../../abc802/docs/ABC802_ROADMAP.md).
 - **Right arrow is dropped, on inference rather than evidence.** The
   ABC802's line editor was swept byte by byte and turned out to have no
   cursor movement at all; this ROM is from the same family and the same

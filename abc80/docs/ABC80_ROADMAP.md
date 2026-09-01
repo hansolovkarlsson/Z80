@@ -83,6 +83,12 @@ again as a list of things that are no longer missing.
   repo's flat-memory-model precedent for the CP/M target rather than
   introducing an abstraction early. Revisit only if something concrete
   needs it.
+- **`make test` does not *build* the GTK app.** Its two checks skip when
+  the opt-in binary is absent, so a build break goes unnoticed — this one
+  stopped compiling for part of 2026-08-31 when a shared function's
+  signature changed, and was found by building it by hand. Repo-wide, and
+  tracked as a planned next step in
+  [`../../abc802/docs/ABC802_ROADMAP.md`](../../abc802/docs/ABC802_ROADMAP.md).
 - **The GTK app's pixel decode is only checked coarsely.**
   `bin/abc80-gtk --screenshot` now gives it two automated checks
   (`gtk-headless-boot`, `gtk-headless-type`), but they count lit pixels

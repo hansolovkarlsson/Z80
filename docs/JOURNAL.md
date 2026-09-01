@@ -21,6 +21,41 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-08-31 (13) — a third audit, and what an audit is actually for
+
+Asked for the sweep again with nothing committed since the last one. The
+honest thing was to run the audit rather than either decline it or
+reformat something, and it found two real omissions — both of the same
+kind, and both invisible to a "have the docs been updated?" reading.
+
+**Things I had been saying were not things the repo knew.** For two turns
+I had been telling the user that the best next task is making `make test`
+build the opt-in GTK apps, because their checks all *skip* when the binary
+is absent and so miss a build break. That existed in the repo only as a
+known *gap* in one target's roadmap — never as actionable work, and never
+anywhere the other three affected targets would show it. It is now a
+planned next step in `ABC802_ROADMAP.md` with pointers from ABC80's,
+ABC806's and the CP/M roadmap's Phase 4, whose own GTK app has no headless
+checks at all and is therefore the most exposed of the four.
+
+**A current, visible condition of this machine was undocumented.** Four
+ABC802 checks skip here for want of `disk001.img`, `mf001.img` and
+`mf002.img`. The Testing section named those files as what the suite
+wants; nothing said they are absent and that four checks are consequently
+not running. A reader would have had to run the suite to find out.
+
+### The pattern
+
+Both omissions are the same shape: a fact that was *true in the session*
+and had never made it into a file, because the milestone write-ups had all
+been done and the counts were all correct. A documentation sweep that only
+asks "is the finished work written up?" cannot find them. The question
+that does is **"what do I know right now that a reader of these files
+would not?"** — which is the question the third ask forced.
+
+Recorded in the ritual memory, since the request keeps recurring and the
+useful reading of it is not obvious.
+
 ## 2026-08-31 (12) — second sweep: the write-ups the last two commits owed
 
 A shorter audit than (9), covering the two commits since it. Mostly

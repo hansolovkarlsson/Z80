@@ -49,6 +49,13 @@ Real, understood, and deliberately not solved yet — not oversights.
   launch and BASIC's `SAVE`/`LOAD` work against them, but there is no
   in-window way to swap a disk; the amber phosphor is fixed at the
   machine's real value. See `../gtk/README.md`.
+- **Three ABC800 disk images are missing here**, so four checks
+  (`disk-mo-160k`, `disk-mf-640k`, `disk-drive-independence`,
+  `disk-cross-drive-load`) skip on this machine. They want `disk001.img`,
+  `mf001.img` and `mf002.img` in [`../resources/disks/`](../resources/disks/)
+  — abc80.net's ABC800 160K and 640K archives. The suite names the first
+  missing one in its skip message. Nothing is wrong; the files simply are
+  not here.
 - **The GTK app is still not *built* by `make test`.** It needs `gtk4`,
   which the default build deliberately does not depend on. It now has two
   headless checks (`gtk-headless-boot`, `gtk-headless-type`) that run when
@@ -174,9 +181,17 @@ of how much they would add:
    table is shaped to take. Blocked on verified geometry and test media —
    and note that interleave cannot be inferred from the working drives,
    which need opposite settings.
-3. **A GTK disk dialog and colour picker**, which `bin/abc80-gtk` has an
+3. **Have `make test` build the opt-in GTK apps when `gtk4` is present.**
+   This is the one item on any of these roadmaps that closes a real hole
+   rather than adding a feature: all three windows now have headless
+   checks, but every one of them *skips* when its binary is absent, so
+   nothing notices a build break. `bin/abc80-gtk` stopped compiling for
+   part of 2026-08-31 for exactly that reason and was found by building it
+   by hand. Repo-wide rather than this target's alone — `cpm/gtk/` has the
+   same exposure.
+4. **A GTK disk dialog and colour picker**, which `bin/abc80-gtk` has an
    equivalent of and this window does not. Purely front-end work.
-4. **Real tape audio.** The cassette (Milestone 12) models the SIO's byte
+5. **Real tape audio.** The cassette (Milestone 12) models the SIO's byte
    stream, which is the protocol boundary and enough for this machine's
    own `SAVE`/`LOAD`. Loading a `.wav` recorded from real hardware would
    need the analogue layer underneath it — FSK modulation and frequency

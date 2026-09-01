@@ -20,6 +20,13 @@ investigations that drove most of the BDOS/BIOS work — live in
 
 Aspirational, not yet scoped:
 
+- **`make test` builds none of the GTK apps**, this one included, so a
+  build break in any of them goes unnoticed until someone compiles by
+  hand — which is how `bin/abc80-gtk` was found broken on 2026-08-31.
+  The three ABC windows at least have headless checks that run when their
+  binary exists; this one has none at all. Tracked as a planned next step
+  in [`../../abc802/docs/ABC802_ROADMAP.md`](../../abc802/docs/ABC802_ROADMAP.md).
+
 - **A GTK-based UI, in progress but currently blocked** (`gtk/`) — a real
   standalone app, not depending on the host terminal, useful for handing
   someone a double-clickable program rather than a CLI incantation. No
