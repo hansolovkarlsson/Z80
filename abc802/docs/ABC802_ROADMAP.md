@@ -189,6 +189,14 @@ of how much they would add:
    part of 2026-08-31 for exactly that reason and was found by building it
    by hand. Repo-wide rather than this target's alone — `cpm/gtk/` has the
    same exposure.
+
+   A second data point, 2026-09-04: a `make clean && make test` run
+   skipped **all seven** headless GTK checks without comment, which is the
+   normal outcome rather than the exceptional one — `make clean` removes
+   those binaries and nothing rebuilds them. All four apps did compile
+   without warnings when built by hand that day, so the exposure is the
+   only thing standing between a break and nobody noticing; it is not that
+   anything is broken now.
 4. **A GTK disk dialog and colour picker**, which `bin/abc80-gtk` has an
    equivalent of and this window does not. Purely front-end work.
 5. **Real tape audio.** The cassette (Milestone 12) models the SIO's byte
