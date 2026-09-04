@@ -32,13 +32,14 @@ ABC80="$ROOT/bin/abc80"
 TIMING_DUMP="$ROOT/bin/abc80-video-timing-dump"
 CHARGEN_DUMP="$ROOT/bin/abc80-chargen-dump"
 SOUND_DEMO="$ROOT/bin/abc80-sound-demo"
+ABCDISK="$ROOT/bin/abcdisk"
 ROMS="resources/rom"
 FIXTURES="$ROOT/abc80/tests/fixtures"
 
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
-for binary in "$ABC80" "$TIMING_DUMP" "$CHARGEN_DUMP" "$SOUND_DEMO"; do
+for binary in "$ABC80" "$TIMING_DUMP" "$CHARGEN_DUMP" "$SOUND_DEMO" "$ABCDISK"; do
     if [ ! -x "$binary" ]; then
         echo "abc80/tests/run_tests.sh: $binary is missing (run 'make test')" >&2
         exit 1
@@ -376,10 +377,10 @@ else
     tl_begin "disk-drive1-roundtrip"
     tl_want "$out" '10 PRINT "TVA"' "the program read back off drive 1"
     tl_want_not "$out" "ERR " "a DOS error during the round trip"
-    if ! "$ROOT/bin/abcdisk" list "$d1" 2>&1 | grep -q "XDRIVE"; then
+    if ! "$ABCDISK" list "$d1" 2>&1 | grep -q "XDRIVE"; then
         tl_note "XDRIVE is not in drive 1's directory - the write did not land there"
     fi
-    if "$ROOT/bin/abcdisk" list "$d0" 2>&1 | grep -q "XDRIVE"; then
+    if "$ABCDISK" list "$d0" 2>&1 | grep -q "XDRIVE"; then
         tl_note "XDRIVE appears in drive 0's directory - the write went to the wrong drive"
     fi
     if ! cmp -s "$d0" "$DISK003"; then

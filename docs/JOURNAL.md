@@ -21,6 +21,76 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-04 — a check that blamed its subject for a missing tool
+
+Asked for a project status, and ran the suites rather than reading the
+roadmaps at them. On a clean tree `make test` failed, and the way it
+failed was the interesting part:
+
+```
+FAIL: disk-drive1-roundtrip
+    XDRIVE is not in drive 1's directory - the write did not land there
+```
+
+That reads as an ABC-bus regression: a write addressed to `DR1:` going to
+the wrong drive, or nowhere. It is not. `bin/abcdisk` did not exist yet,
+so the `grep` it feeds matched nothing, and "no match" is
+indistinguishable from "the file is absent" to a check written this way.
+The emulator was correct throughout; re-running with the binary present
+passes.
+
+**Root cause is one missing word in the Makefile.** `test-abc80` and
+`test-abc802` both shell out to `bin/abcdisk` and neither declared
+`abcdisk` as a prerequisite. Only `all` builds it, so any path that
+reaches the suites without going through `all` — `make clean && make
+test`, or `make test-abc80` on its own — runs them against a binary that
+is not there.
+
+### Why it survived
+
+The guard already existed and was already correct. `abc802/tests/`
+verifies every binary it drives up front and aborts with a real message;
+`abc80/tests/` has the identical loop, three lines long, and simply never
+listed `abcdisk` in it — the two call sites reach for `$ROOT/bin/abcdisk`
+inline rather than through a checked variable, which is exactly how a
+binary escapes a list of binaries. The ABC802 suite therefore failed
+*loudly and correctly* on the same clean tree ("`bin/abcdisk` is missing
+(run `make test`)") while the ABC80 suite invented a hardware fault.
+
+The lesson is not "add a guard" — the guard was there. It is that a
+pattern applied to one sibling and not the other is a pattern the repo
+believes it has. Both suites were written the same day to the same shape,
+and the shape held everywhere except the one site that bypassed the
+variable.
+
+Not a postmortem: `postmortems/README.md` sets the bar at a *reusable*
+class of mistake, and the nearest neighbour — "a binary oracle hides its
+premises" — already covers the general shape. What is new here is narrow
+enough to live in a commit message and this entry.
+
+### What changed
+
+`abcdisk` is now a prerequisite of both test targets, and the ABC80 suite
+guards it alongside the four binaries it already checked, through a
+declared `ABCDISK` variable that both call sites use. Verified in both
+directions: `make clean && make test` now exits 0, and with `bin/abcdisk`
+moved away, both suites abort with exit 1 and name the missing binary
+instead of failing a disk check.
+
+### Status of the tree, for the record
+
+Everything green: 16 CP/M checks (ZEXALL and ZEXDOC clean), 22 ABC80, 23
+ABC802 (4 skip for the ABC800 media that is not here), 41 ABC806 — 102
+passing, 0 failing. All four opt-in GTK apps build without warnings, and
+with them built all seven headless GTK checks pass. That last fact is
+hand-verified, which is the hole itself: `make test` still builds none of
+them, so it is the *only* thing standing between a GTK build break and
+nobody noticing. It remains the top planned next step in
+`ABC802_ROADMAP.md`, and today is a second data point for it — the same
+clean-tree run that exposed the `abcdisk` gap silently skipped all seven.
+
+---
+
 ## 2026-08-31 (13) — a third audit, and what an audit is actually for
 
 Asked for the sweep again with nothing committed since the last one. The
