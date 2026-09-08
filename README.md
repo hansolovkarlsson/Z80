@@ -55,7 +55,7 @@ make assembler     # just the assembler
 make disassembler  # just the disassembler
 make abcdisk       # just the ABC floppy-image tool
 make run           # build the emulator, then run it against zexall.com
-make test          # build, then run the regression check (cpm/tests/run_tests.sh)
+make test          # build, then run all four suites (cpm, abc80, abc802, abc806)
 make clean         # remove build output
 ```
 
@@ -106,18 +106,28 @@ CP/M-specific code lives under `cpm/`; `z80core/`, `abcbus/`, `asm/`,
 CP/M-specific — see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
 
 - `z80core/` — the shared Z80 CPU core (`z80.c`/`z80.h` opcode dispatch,
-  `alu.c`/`alu.h` flag/arithmetic logic) — machine-agnostic, used by both
-  `bin/z80` (CP/M), `bin/abc80`, and `bin/abc802`.
+  `alu.c`/`alu.h` flag/arithmetic logic) — machine-agnostic, used by all
+  four of `bin/z80` (CP/M), `bin/abc80`, `bin/abc802` and `bin/abc806`.
 - `scripts/testlib.sh` — shared PASS/FAIL reporting for the machine
-  targets' regression suites, which live in `abc80/tests/` and
-  `abc802/tests/` and run as part of `make test`. Their floppy checks need
+  targets' regression suites, which live in `abc80/tests/`,
+  `abc802/tests/` and `abc806/tests/` and run as part of `make test`. Their floppy checks need
   real disk images this repo does not commit and skip loudly without them;
   see each script's header for the environment variable to set.
 - `abcbus/` — the synthetic ABC-bus floppy controller (`disk.c`/`disk.h`),
-  shared by `bin/abc80` and `bin/abc802`. At the repo root for the same
-  reason `z80core/` is: the ABC bus is a bus, not a machine, and both
-  targets drive the same card with the same command header and status
-  bits. Each machine keeps its own port decode and DOS ROM loading.
+  shared by `bin/abc80`, `bin/abc802` and `bin/abc806`, plus `bin/abcdisk`,
+  which creates formatted, empty disk images and lists what is on one. At
+  the repo root for the same reason `z80core/` is: the ABC bus is a bus,
+  not a machine, and all three targets drive the same card with the same
+  command header and status bits. Each machine keeps its own port decode
+  and DOS ROM loading. A zero-filled file of the right size is not a blank
+  disk — it is recognized and then refuses every `SAVE`. The machine's own
+  formatter, `DOSGEN`, is a program on a Luxor system disk rather than
+  anything in ROM, so on real hardware you need a working disk to make a
+  disk; this breaks that circularity with no machine involved. Both the
+  160K ABC830 and 640K ABC832/834 formats are verified by a `SAVE`/`LOAD`
+  round trip through the ABC802's real ROM, and the ABC80's own writes to
+  a second drive are read back with `bin/abcdisk` in its two-drive
+  checks.
 - `cpm/emu/src/` — the emulator itself (`z80.c`/`z80.h` opcode dispatch,
   `alu.c`/`alu.h` flag/arithmetic logic, `cpm.c`/`cpm.h` minimal CP/M BDOS
   emulation, `main.c` the CP/M-style program loader/run loop).
@@ -202,26 +212,18 @@ CP/M-specific — see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
   [`ABC802_BASIC_REFERENCE.md`](abc802/docs/ABC802_BASIC_REFERENCE.md)
   for the BASIC II language itself, including the disk drives and how a
   disk is stored.
-- `abcbus/` — the synthetic ABC-bus floppy controller shared by both ABC
-  targets, plus `bin/abcdisk`, which creates formatted, empty disk images
-  and lists what is on one. A zero-filled file of the right size is not a
-  blank disk — it is recognized and then refuses every `SAVE`. The
-  machine's own formatter, `DOSGEN`, is a program on a Luxor system disk
-  rather than anything in ROM, so on real hardware you need a working disk
-  to make a disk; this breaks that circularity with no machine involved. Both the 160K ABC830
-  and 640K ABC832/834 formats are verified by a `SAVE`/`LOAD` round trip
-  through the ABC802's real ROM; the ABC80 mounts the same media and its
-  own DOS keeps its directory in the same place, but that path has not
-  been tested.
-- `abc806/` — the Luxor ABC806 machine target (`make abc806`), at
-  milestone 2: it boots the real 1983 firmware, programs the CRTC for
-  80×25 and clears the screen, then waits for a key, and renders that
-  screen as text (`--screen`) or as a real PNG in the machine's eight
-  colours (`--screenshot`), where the ROM's own `ABC806` sign-on now
-  appears. The character and attribute decode is additionally verified
-  against a synthetic screen by `bin/abc806-chargen-dump`, since a boot
-  screen exercises almost none of it. No live session or high-resolution
-  graphics. See
+- `abc806/` — the Luxor ABC806 machine target (`make abc806`), with no
+  milestone outstanding: it boots the real 1983 firmware, programs the
+  CRTC for 80×25, runs a genuine live session (`--interactive`, real
+  3 MHz pacing and a colour screen redrawn at 30fps), renders that screen
+  as text (`--screen`) or as a real PNG in the machine's eight colours
+  (`--screenshot`), boots real UFD-DOS off `--disk` media, and draws into
+  its high-resolution plane, where `FGCTL 2` followed by `FGLINE` gives
+  real coloured lines. `make abc806-gtk` builds a Cairo framebuffer
+  window, on the terms `bin/abc80-gtk` established. The character and
+  attribute decode is additionally verified against a synthetic screen by
+  `bin/abc806-chargen-dump`, since a boot screen exercises almost none of
+  it. See
   [`ABC806_ROADMAP.md`](abc806/docs/ABC806_ROADMAP.md) for status and
   [`ABC806_SCOPING.md`](abc806/docs/ABC806_SCOPING.md) for the feasibility
   review written before any of it, now carrying an outcome section
