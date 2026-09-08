@@ -293,9 +293,18 @@ for image in "$MO_IMAGE" "$MF_IMAGE" "$MF_BASIC_IMAGE"; do
     fi
 done
 
+# Every check the media gate guards, named once. The list and the block
+# below have to agree, and a hand-written skip list is exactly how they
+# stop agreeing: abcdisk-list-real-media was absent from this loop while
+# running inside the else branch, so on a bare checkout it neither ran
+# nor skipped - it vanished, and the suite reported 27 checks where the
+# script defines 28. A check that is not run and not counted is worse
+# than one that fails.
+DISK_CHECKS="disk-mo-160k disk-mf-640k disk-drive-independence \
+             disk-cross-drive-load abcdisk-list-real-media"
+
 if [ -n "$disk_skip_reason" ]; then
-    for name in disk-mo-160k disk-mf-640k disk-drive-independence \
-                disk-cross-drive-load; do
+    for name in $DISK_CHECKS; do
         tl_skip "$name" "$disk_skip_reason"
     done
 else
