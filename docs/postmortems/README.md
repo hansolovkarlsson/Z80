@@ -23,6 +23,7 @@ Each one answers the same four questions:
 
 | Date | Postmortem | One-line lesson |
 |---|---|---|
+| 2026-09-08 | [A list beside the thing it lists](2026-09-08-a-list-beside-the-thing-it-lists.md) | A hand-written copy of a set the tree already defines will drift, and a count does not read like a claim |
 | 2026-08-31 | [Too fast is a correctness bug](2026-08-31-too-fast-is-a-correctness-bug.md) | For a device the guest services by interrupt, the gap between events is part of the contract |
 | 2026-08-31 | [A roadmap's "why" is the least-tested prose in the repo](2026-08-31-roadmap-why-lines-are-untested.md) | Measure a stated reason before building on it — five were false in one day, including one of my own |
 | 2026-08-30 | [A binary oracle hides its premises](2026-08-30-binary-oracle-hides-its-premises.md) | When the subject is unknown, prefer an instrument that renders over one that judges |

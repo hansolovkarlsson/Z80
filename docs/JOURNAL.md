@@ -21,6 +21,118 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-08 — the day the counting found what the reading had not
+
+No emulator work at all. A project-setup pass, then an audit, and between
+them five instances of one mistake that had been sitting in plain sight for
+ten days.
+
+The setup pass was nearly a no-op, which is the right outcome for a
+repository this well kept. Every record role is filled: roadmap and
+completed per machine target, `postmortems/` as a directory with its own
+index, `JOURNAL.md` for the *when*, and a changelog deliberately refused,
+with the refusal written into this file's own opening note rather than left
+as an absence somebody would later try to fix. The one thing genuinely
+missing was a `## The records` section in `CLAUDE.md`, which is a file that
+predates the convention by a thousand lines. It now has one, and it carries
+the sentence that matters: each record opens with a note stating its own
+job, and that note outranks any general instruction, including the new
+paragraph itself.
+
+There is an irony in that paragraph which today's postmortem makes explicit,
+and it is worth stating here rather than letting a future session discover
+it. The new section is a summary of documents that live elsewhere. It is
+therefore exactly the kind of copy that goes stale, which is why it says so
+in its own last sentence and points at the originals.
+
+### What the audit found, and why reading had missed it
+
+The segment audited was 2026-08-28 to 2026-09-04, a nine-day silence on one
+side of it and the last standup on the other: 63 commits, 29 entries added
+to the completed ledgers, the whole ABC802 arc from Milestone 2 to the
+cassette plus the entire ABC806 target. All of it landed, all of it
+documented, nothing half-wired, and a `TODO` sweep of the tracked source
+turning up five markers of which all five describe *MAME's* open questions
+rather than this project's.
+
+Then two findings, which looked unrelated for most of an hour.
+
+The first: `abc802/tests/run_tests.sh` names four checks in the loop that
+skips its media-gated block, and the block runs five. On any tree without
+`disk001.img`, which is every fresh clone, `abcdisk-list-real-media`
+neither ran nor skipped. It vanished. The suite reported 27 checks where the
+script defines 28, and nothing compared those numbers.
+
+The second: `CLAUDE.md`'s Build & Run block described three suites, three
+binaries, two GTK apps, two chargen fixtures and two `*_TEST_DISKS`
+variables, against a tree with four, four, four, three and three, and had no
+`make test-abc806` line at all. `README.md` still called the ABC806 "at
+milestone 2 ... No live session or high-resolution graphics" and carried two
+separate `abcbus/` bullets, one asserting that the ABC80's disk path "has
+not been tested" while eight ABC80 disk checks pass on every run. Even the
+`Makefile`'s own comment introducing the target still said "memory map and
+boot only".
+
+Every one of those is a hand-written copy of a set the tree already defines,
+and the full argument is in
+[`postmortems/2026-09-08-a-list-beside-the-thing-it-lists.md`](postmortems/2026-09-08-a-list-beside-the-thing-it-lists.md).
+The short version is that a count does not read like a claim. Each of these
+pages reads perfectly and every command in them works; what is wrong is only
+visible by holding the page against the tree, which is arithmetic rather
+than comprehension. The suite printed its own evidence on every run for ten
+days and nobody had a reason to find `21 passed, 6 skipped` suspicious.
+
+### The judgement from 2026-09-04 was wrong
+
+That day's entry recorded a binary escaping a list of binaries, and decided
+it was too narrow for a postmortem because
+[a binary oracle hides its premises](postmortems/2026-08-30-binary-oracle-hides-its-premises.md)
+already covered the shape. Reading it again today, the entry had classified
+its own finding under *guards* when the finding was about *duplicated
+lists*, and under that reading the two days are one class with five
+instances rather than two unlucky details. The lesson keeps: seen once, a
+recurring shape looks like a detail, and the only way to tell is to keep
+looking after the fix.
+
+### A wrong turn worth recording
+
+The audit's own rule is to report open work and let the user decide, so the
+vanishing check was written up as a new numbered item under the ABC802
+roadmap's planned next steps. Then it was fixed, twenty minutes later, on
+request. That left a roadmap item describing a defect that no longer
+existed, in a document whose convention is open items only, which had to be
+removed again. The file ended byte-identical to where it started.
+
+Nothing was lost, but the sequencing was backwards, and the reason is worth
+naming: an audit that finds something small enough to fix in one edit should
+offer the fix before it offers the record, because the roadmap is for what
+is *left*, and a finding that closes within the session was never left.
+
+### Where the fix went, and where it deliberately did not
+
+The skip list is now a `DISK_CHECKS` variable used both by the loop and as
+the block's own membership, which is the ABC806 suite's shape and the reason
+that suite was never exposed. The suite now reports 28 abc802 checks, 21
+passing and 7 skipping, and the recovered check announces its missing media
+alongside its four siblings.
+
+No entry went into any `*_COMPLETED.md`. That follows the precedent set on
+2026-09-04, when the `abcdisk` prerequisite fix was recorded here and in a
+roadmap note rather than in a ledger: those files hold milestones and closed
+investigations, and a defect in a test script is neither. If that convention
+is ever revisited, both days should move together.
+
+### Status of the tree, for the record
+
+`make test` exits 0. 98 passed, 0 failed, 9 skipped: 16 CP/M checks with
+ZEXALL and ZEXDOC clean, 20 ABC80 with 2 skipping for the unbuilt
+`bin/abc80-gtk`, 21 ABC802 with 7 skipping (4 ABC800 media, 2 unbuilt GTK,
+and the newly visible `abcdisk-list-real-media`), and 41 ABC806, whose GTK
+binary happens to be built on this machine. That is one more skip than
+yesterday and the same 98 passes, which is the whole of what the fix
+changed: a check that was missing from the report is now in it, saying it
+did not run.
+
 ## 2026-09-04 — a check that blamed its subject for a missing tool
 
 Asked for a project status, and ran the suites rather than reading the
