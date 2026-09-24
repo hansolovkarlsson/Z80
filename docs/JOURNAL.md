@@ -21,6 +21,34 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-24 (12): the debugger reaches diverted memory
+
+The first debugger item on the roadmap: a view of the memory the ABC802
+and ABC806 divert out of the flat array. The constraint was already
+settled and written down: the debugger never reads through a bus hook,
+because the ABC806's read hook latches attribute bytes. So the answer had
+to be a per-machine peek rather than a relaxed rule. Each machine now
+registers named spaces with its own peek and poke (`chr`, plus `lowram` on
+the ABC802 and `attr` and `plane` on the ABC806), and `m`, `e` and `w`
+take `name:offset`. `lowram` was not in the item as written. It turned up
+while reading `abc802/emu/src/memory.c`: LRS swaps the low 32K of RAM out
+of the flat array while ROM is resident, so it was hidden in exactly the
+same way.
+
+The test that mattered was the one about side effects, and its first
+version could not fail. Making the peek latch on purpose left it passing.
+The watch covered all of character RAM and the script allowed 400 stops,
+and a count of the writes showed why: the boot clears the screen with
+about 2,030 of them before the coloured answer appears at `chr:00A2`, so
+every peek landed during the clear. Narrowing the watch to the answer's
+cells made the injection turn the red and green text white, in under a
+second, where the whole-RAM watch would have needed about 20 to get that
+far. The lesson is the one the postmortems already hold:
+a check has not been shown to work until it has been seen to fail, and
+this one would have gone in green.
+
+---
+
 ## 2026-09-24 (11): ABC802 table claims, settled
 
 These were the two fixes yesterday's standup carried forward, both left

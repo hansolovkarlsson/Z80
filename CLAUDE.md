@@ -1131,7 +1131,10 @@ plain number, which is why `Symbol` in `asm/src/symtab.h` carries
 Three facts to know before changing it. **Memory is read from the flat
 array (`cpu->memory`), never through `z80_read_byte()`**: the ABC806's
 `bus_read` latches an attribute byte on every character-RAM read, so going
-through the hook would change the machine being inspected. **`n` stops on
+through the hook would change the machine being inspected; the memory the
+ABC802/806 hooks divert (character RAM, the ABC806 plane) is reached
+instead through named spaces each machine registers with its own
+side-effect-free peek and poke (`m chr:0`, `w plane:0`). **`n` stops on
 stack depth, not on the return address**, because CP/M's `z80_step()` runs
 an intercepted BDOS call and the instruction after it in one step, so PC is
 never seen at the return address. And **commands come from `/dev/tty`**,

@@ -67,11 +67,9 @@ Aspirational, not yet scoped:
   `--debug`/`--break`/`--debug-script` (see
   [`../../docs/DEBUGGER.md`](../../docs/DEBUGGER.md) and the write-up in
   [`COMPLETED.md`](COMPLETED.md)). What it does not do yet, roughly in order
-  of use: work under `--interactive`, which owns the terminal today; a
-  data view of memory the machines divert (ABC802/806 character RAM, the
-  ABC806 plane), which needs a side-effect-free peek per machine because
-  the ABC806's read hook latches attribute bytes; and the GTK apps.
-  Symbols (`z80asm -s`, `--symbols`) and memory writes (`e`) are done,
+  of use: work under `--interactive`, which owns the terminal today, and
+  the GTK apps. Symbols (`z80asm -s`, `--symbols`), memory writes (`e`)
+  and the ABC802/806 memory spaces (`m chr:0`, `w plane:0`) are done,
   and each ABC machine has a hand-written ROM symbol file in its
   `resources/rom/`, which grows as investigations pin down more addresses.
 - **More machine targets, such as the ZX Spectrum.** It is Z80-based, so it

@@ -319,6 +319,11 @@ uint8_t abc806_get_map(int page) { return page_map[page & 0x0F]; }
 const uint8_t *abc806_char_ram(void) { return char_ram; }
 const uint8_t *abc806_attr_ram(void) { return attr_ram; }
 const uint8_t *abc806_char_rom(void) { return char_rom; }
+
+uint8_t abc806_char_ram_peek(uint32_t offset) { return char_ram[offset & 0x7FF]; }
+void abc806_char_ram_poke(uint32_t offset, uint8_t value) { char_ram[offset & 0x7FF] = value; }
+uint8_t abc806_attr_ram_peek(uint32_t offset) { return attr_ram[offset & 0x7FF]; }
+void abc806_attr_ram_poke(uint32_t offset, uint8_t value) { attr_ram[offset & 0x7FF] = value; }
 const uint8_t *abc806_rad_prom(void) { return rad_prom; }
 const uint8_t *abc806_hru2_prom(void) { return hru2_prom; }
 

@@ -60,7 +60,11 @@ with its count, or `n`.
 | `e addr byte...` | write bytes (hex) starting at addr, then show them |
 | `u [addr] [n]` | disassemble n instructions (default: from PC, 8) |
 | `q` | end the run |
-| `h` | help |
+| `h` | help, including the machine's memory spaces |
+
+On the ABC802 and ABC806, `m`, `e` and `w` also take `space:offset`
+(`m chr:0 80`, `w plane:7209`) for memory the machine keeps outside the
+64K the CPU addresses; see [Memory spaces](#memory-spaces).
 
 A stop names its reason and the instruction about to run:
 
@@ -128,21 +132,62 @@ breakpoint 0129 fail
 
 ## What it sees
 
-**Memory is the flat 64K array**, the bytes instruction fetch reads, never
-the machine's bus hooks. Reading through the hooks would change the machine
-being inspected: on the ABC806, reading character RAM latches that cell's
-attribute byte. The consequence is that `m` and `w` cannot see memory a
-machine diverts elsewhere: the ABC802's and ABC806's character RAM, and the
-ABC806's high-resolution plane. Disassembly is unaffected, since fetch
-reads the same array.
+**A plain address is the flat 64K array**, the bytes instruction fetch
+reads, never the machine's bus hooks. Reading through the hooks would
+change the machine being inspected: on the ABC806, reading character RAM
+latches that cell's attribute byte. So `m 7800` on an ABC802 shows the ROM
+code fetched there, not the character RAM a data read at that address
+gets. Disassembly is faithful, since fetch reads the same array. What a
+machine diverts elsewhere is reached through its memory spaces, below.
 
 `e` writes to the same array. That makes it a way to **patch code**,
 including a ROM image, since the array is what the CPU fetches from, and
 it bypasses the machines' write hooks, so a ROM that is read-only to the
-program is writable from the prompt. It has the same blind spot as `m`:
-memory a machine diverts elsewhere is out of reach. Every byte on the line
-is checked before any is written, so a typo writes nothing, and a write to
-a watched byte does not trigger the watch.
+program is writable from the prompt. Every byte on the line is checked
+before any is written, so a typo writes nothing, and a write to a watched
+byte does not trigger the watch.
+
+### Memory spaces
+
+A machine whose bus diverts accesses out of the flat array registers that
+memory as a named space, and `m`, `e` and `w` take `name:offset` for it.
+The offset is hex and counts from the start of that memory, not from a
+CPU address; symbols do not apply, since a symbol file describes the 64K.
+A dump or watch stops at the end of a space rather than wrapping, and an
+`e` that would run past it writes nothing. `h` lists the spaces a machine
+has.
+
+| Machine | Space | Size | What it is |
+|---|---|---|---|
+| ABC802 | `chr` | 2K | character RAM: what a data read at `7800`-`7FFF` gets |
+| ABC802 | `lowram` | 32K | the RAM at `0000`-`7FFF`, which LRS swaps out while ROM is resident |
+| ABC806 | `chr` | 2K | character RAM, as on the ABC802 |
+| ABC806 | `attr` | 2K | attribute RAM, one byte per character cell |
+| ABC806 | `plane` | 128K | the high-resolution video RAM, 32K per bank |
+
+**A space is read without the side effects of a CPU access.** Each
+machine supplies its own peek and poke, which touch the storage directly
+and never go through its bus hooks, so looking at `chr` on the ABC806 does
+not move the attribute latch. `debugger-spaces` in the ABC806 suite pins
+this: printing coloured text while peeking at character RAM after every
+write renders the same colours as a run without the debugger, and a peek
+made to latch turns that text white. `lowram` finds the RAM wherever LRS
+currently has it, in the flat array or set aside, so `e lowram:0 AA` while
+ROM is resident leaves `m 0` showing ROM.
+
+A plane watch is how to find what draws a pixel: `w plane:0 30720`
+covers bank 0's visible area, and the `[watch]` line names the plane
+offset and the instruction that wrote it:
+
+```
+(z80dbg) w plane:0 30720
+watching plane:00000, 30720 bytes
+(z80dbg) c
+[watch] plane:07209: 00 -> 0F, written by the instruction at 7E31
+```
+
+A watch that large checks every byte after every instruction, so it slows
+the run while it is set.
 
 **`n` watches the stack, not the return address.** It stops at the first
 instruction where SP is back to its value before the call. On a plain

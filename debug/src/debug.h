@@ -12,6 +12,7 @@
 #define Z80_DEBUG_H
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 
 #include "../../z80core/z80.h"
@@ -29,6 +30,23 @@ bool z80dbg_parse_option(Z80Debugger **dbg, int argc, char **argv, int *i);
 
 // The option lines for a CLI's own usage text.
 void z80dbg_print_usage(FILE *out);
+
+// A memory the machine keeps outside the flat 64K array, where the bus
+// hooks divert accesses to it (character RAM, a video plane). peek and poke
+// must reach the storage directly, with none of the side effects a CPU
+// access through the hook would have. `m`, `e` and `w` then take
+// NAME:OFFSET, with the offset counted from the start of this memory.
+typedef struct {
+    const char *name;   // what is typed before the colon, e.g. "chr"
+    const char *what;   // one line for the help text
+    uint32_t size;
+    uint8_t (*peek)(uint32_t offset);
+    void (*poke)(uint32_t offset, uint8_t value);
+} Z80DbgSpace;
+
+// Registers a space. May be called with dbg NULL (no debugger option was
+// given), which does nothing, so a CLI can register unconditionally.
+void z80dbg_add_space(Z80Debugger *dbg, const Z80DbgSpace *space);
 
 // Call once, after the machine is set up and before the first step. Opens
 // the command source (the script, or /dev/tty) and installs the Ctrl-C

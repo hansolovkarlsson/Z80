@@ -40,4 +40,13 @@ void abc802_note_instruction_fetch(uint16_t pc);
 const uint8_t *abc802_char_ram(void);
 const uint8_t *abc802_char_rom(void);
 
+// For the debugger's named spaces: direct access with no bus semantics.
+// Character RAM is 2K; low RAM is the 32K of RAM at 0x0000-0x7FFF, which
+// is in the CPU's flat array only while LRS selects it and otherwise kept
+// aside while ROM is resident, so these find it wherever it currently is.
+uint8_t abc802_char_ram_peek(uint32_t offset);
+void abc802_char_ram_poke(uint32_t offset, uint8_t value);
+uint8_t abc802_low_ram_peek(uint32_t offset);
+void abc802_low_ram_poke(uint32_t offset, uint8_t value);
+
 #endif // ABC802_MEMORY_H

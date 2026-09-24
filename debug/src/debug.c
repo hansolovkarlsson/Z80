@@ -8,7 +8,10 @@
 // flat array is also exactly what instruction fetch sees - the core's
 // fetch_byte() bypasses the hook too - so disassembly is faithful. What it
 // cannot show is data the hooks divert elsewhere (the ABC802/806 character
-// RAM, the ABC806's high-resolution plane).
+// RAM, the ABC806's high-resolution plane). Those a machine registers as
+// named spaces (z80dbg_add_space()), read and written through its own
+// peek and poke, which reach the storage without going through the hook
+// either.
 
 #include "debug.h"
 
@@ -26,6 +29,7 @@
 #define MAX_WATCHES 16
 #define MAX_SYMBOL_FILES 8
 #define MAX_BREAK_NAMES 32
+#define MAX_SPACES 8
 
 // One line of a symbol file (z80asm -s). Only labels name addresses in the
 // output: an EQU may be a plain number that happens to equal an address.
@@ -36,8 +40,15 @@ typedef struct {
     bool is_label;
 } DbgSymbol;
 
+// A place `m`, `e` and `w` can name: the CPU's 64K (space -1), or an
+// offset into one of the machine's registered spaces.
 typedef struct {
-    uint16_t addr;
+    int space;
+    uint32_t addr;
+} Location;
+
+typedef struct {
+    Location at;
     uint16_t len;
     uint8_t *snapshot;
 } Watch;
@@ -66,6 +77,8 @@ struct Z80Debugger {
     int symbol_path_count;
     const char *break_names[MAX_BREAK_NAMES];   // --break, resolved at start
     int break_name_count;
+    Z80DbgSpace spaces[MAX_SPACES];
+    int space_count;
 };
 
 static volatile sig_atomic_t interrupted;
@@ -191,6 +204,63 @@ static bool load_symbols(Z80Debugger *dbg, const char *path) {
 static const char *label_for(const Z80Debugger *dbg, uint16_t addr) {
     if (!dbg->label_at || dbg->label_at[addr] < 0) return NULL;
     return dbg->symbols[dbg->label_at[addr]].name;
+}
+
+void z80dbg_add_space(Z80Debugger *dbg, const Z80DbgSpace *space) {
+    if (!dbg || dbg->space_count == MAX_SPACES) return;
+    dbg->spaces[dbg->space_count++] = *space;
+}
+
+// NAME:OFFSET names a registered space, with the offset in hex; anything
+// else is a CPU address as resolve_addr() reads it. Only the CPU's
+// addresses take symbols, since a symbol file describes that 64K.
+static bool resolve_location(const Z80Debugger *dbg, const char *text, Location *out) {
+    const char *colon = strchr(text, ':');
+    if (!colon) {
+        unsigned long a;
+        if (!resolve_addr(dbg, text, 0xFFFF, &a)) return false;
+        out->space = -1;
+        out->addr = (uint32_t)a;
+        return true;
+    }
+    for (int k = 0; k < dbg->space_count; k++) {
+        const Z80DbgSpace *sp = &dbg->spaces[k];
+        if (strlen(sp->name) != (size_t)(colon - text) || strncasecmp(sp->name, text, (size_t)(colon - text)))
+            continue;
+        unsigned long off;
+        if (!parse_hex(colon + 1, sp->size - 1, &off)) return false;
+        out->space = k;
+        out->addr = (uint32_t)off;
+        return true;
+    }
+    return false;
+}
+
+// Bytes from here to the end of the location's memory: a dump or watch in a
+// space stops at its end rather than wrapping, since offset 0 does not
+// follow the last byte the way 0000 follows FFFF.
+static long location_room(const Z80Debugger *dbg, Location at) {
+    return at.space < 0 ? 0x10000 : (long)(dbg->spaces[at.space].size - at.addr);
+}
+
+static uint8_t location_peek(const Z80Debugger *dbg, const Z80 *cpu, Location at, long off) {
+    if (at.space < 0) return cpu->memory[(uint16_t)(at.addr + (unsigned long)off)];
+    return dbg->spaces[at.space].peek(at.addr + (uint32_t)off);
+}
+
+static void location_poke(const Z80Debugger *dbg, Z80 *cpu, Location at, long off, uint8_t v) {
+    if (at.space < 0) cpu->memory[(uint16_t)(at.addr + (unsigned long)off)] = v;
+    else dbg->spaces[at.space].poke(at.addr + (uint32_t)off, v);
+}
+
+// "7800" for the CPU, "chr:0000" for a space, wide enough for its size.
+static void location_text(const Z80Debugger *dbg, Location at, long off, char *buf, size_t n) {
+    if (at.space < 0) {
+        snprintf(buf, n, "%04X", (uint16_t)(at.addr + (unsigned long)off));
+        return;
+    }
+    const Z80DbgSpace *sp = &dbg->spaces[at.space];
+    snprintf(buf, n, "%s:%0*X", sp->name, sp->size > 0x10000 ? 5 : 4, at.addr + (uint32_t)off);
 }
 
 bool z80dbg_parse_option(Z80Debugger **dbg, int argc, char **argv, int *i) {
@@ -338,15 +408,17 @@ static void print_regs(FILE *out, const Z80 *cpu, bool with_alternates) {
     }
 }
 
-static void dump_memory(FILE *out, const Z80 *cpu, uint16_t addr, long len) {
+static void dump_memory(FILE *out, const Z80Debugger *dbg, const Z80 *cpu, Location at, long len) {
+    if (len > location_room(dbg, at)) len = location_room(dbg, at);
     for (long off = 0; off < len; off += 16) {
-        uint16_t line = (uint16_t)(addr + off);
-        fprintf(out, "%04X ", line);
+        char where[32];
+        location_text(dbg, at, off, where, sizeof where);
+        fprintf(out, "%s ", where);
         char ascii[17];
         int n = (int)((len - off) < 16 ? (len - off) : 16);
         for (int k = 0; k < 16; k++) {
             if (k < n) {
-                uint8_t b = cpu->memory[(uint16_t)(line + k)];
+                uint8_t b = location_peek(dbg, cpu, at, off + k);
                 fprintf(out, " %02X", b);
                 ascii[k] = (b >= 0x20 && b < 0x7F) ? (char)b : '.';
             } else {
@@ -374,6 +446,15 @@ static void print_help(FILE *out) {
         "  q                end the run\n"
         "Addresses and values are hex; counts are decimal. An empty line\n"
         "repeats s or n.\n");
+}
+
+static void print_spaces(FILE *out, const Z80Debugger *dbg) {
+    if (!dbg->space_count) return;
+    fprintf(out, "m, e and w also take space:offset, reading this machine's memory\n"
+                 "where its bus diverts it, without the side effects of a CPU access:\n");
+    for (int k = 0; k < dbg->space_count; k++)
+        fprintf(out, "  %-8s %s, offsets 0-%X\n", dbg->spaces[k].name, dbg->spaces[k].what,
+                dbg->spaces[k].size - 1);
 }
 
 // ---------------------------------------------------------------- terminal
@@ -434,20 +515,27 @@ static bool set_register(Z80 *cpu, const char *name, unsigned long v) {
     return false;
 }
 
-static void add_watch(Z80Debugger *dbg, const Z80 *cpu, uint16_t addr, long len, FILE *out) {
+static void print_watch(FILE *out, const Z80Debugger *dbg, const Watch *w) {
+    char where[32];
+    location_text(dbg, w->at, 0, where, sizeof where);
+    fprintf(out, "watching %s, %u byte%s\n", where, w->len, w->len == 1 ? "" : "s");
+}
+
+static void add_watch(Z80Debugger *dbg, const Z80 *cpu, Location at, long len, FILE *out) {
     if (dbg->watch_count == MAX_WATCHES) {
         fprintf(out, "at most %d watches\n", MAX_WATCHES);
         return;
     }
     if (len > 0xFFFF) len = 0xFFFF;
+    if (len > location_room(dbg, at)) len = location_room(dbg, at);
     Watch *w = &dbg->watches[dbg->watch_count];
     w->snapshot = malloc((size_t)len);
     if (!w->snapshot) return;
-    w->addr = addr;
+    w->at = at;
     w->len = (uint16_t)len;
-    for (long k = 0; k < len; k++) w->snapshot[k] = cpu->memory[(uint16_t)(addr + k)];
+    for (long k = 0; k < len; k++) w->snapshot[k] = location_peek(dbg, cpu, at, k);
     dbg->watch_count++;
-    fprintf(out, "watching %04X, %ld byte%s\n", addr, len, len == 1 ? "" : "s");
+    print_watch(out, dbg, w);
 }
 
 // Reads and runs commands until one resumes execution. Returns
@@ -543,18 +631,16 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
         } else if (!strcmp(cmd, "w") || !strcmp(cmd, "watch")) {
             if (argc == 1) {
                 if (!dbg->watch_count) fprintf(out, "no watches\n");
-                for (int k = 0; k < dbg->watch_count; k++)
-                    fprintf(out, "watching %04X, %u byte%s\n", dbg->watches[k].addr,
-                            dbg->watches[k].len, dbg->watches[k].len == 1 ? "" : "s");
+                for (int k = 0; k < dbg->watch_count; k++) print_watch(out, dbg, &dbg->watches[k]);
                 continue;
             }
-            unsigned long a;
+            Location at;
             long len = 1;
-            if (!resolve_addr(dbg, argv[1], 0xFFFF, &a) || (argc > 2 && !parse_count(argv[2], &len))) {
+            if (!resolve_location(dbg, argv[1], &at) || (argc > 2 && !parse_count(argv[2], &len))) {
                 fprintf(out, "w: usage is w addr [len]\n");
                 continue;
             }
-            add_watch(dbg, cpu, (uint16_t)a, len, out);
+            add_watch(dbg, cpu, at, len, out);
         } else if (!strcmp(cmd, "r") || !strcmp(cmd, "regs")) {
             if (argc == 1) {
                 print_regs(out, cpu, true);
@@ -568,42 +654,45 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
             }
             print_regs(out, cpu, false);
         } else if (!strcmp(cmd, "m") || !strcmp(cmd, "mem")) {
-            unsigned long a;
+            Location at;
             long len = 64;
-            if (argc < 2 || !resolve_addr(dbg, argv[1], 0xFFFF, &a) || (argc > 2 && !parse_count(argv[2], &len))) {
+            if (argc < 2 || !resolve_location(dbg, argv[1], &at) || (argc > 2 && !parse_count(argv[2], &len))) {
                 fprintf(out, "m: usage is m addr [len]\n");
                 continue;
             }
-            dump_memory(out, cpu, (uint16_t)a, len);
+            dump_memory(out, dbg, cpu, at, len);
         } else if (!strcmp(cmd, "e") || !strcmp(cmd, "enter")) {
-            // Into the flat array, like every other access here: it can
-            // patch code in a ROM image, and cannot reach memory a machine
-            // diverts elsewhere. Every byte is checked before any is
-            // written, so a typo writes nothing.
-            unsigned long a, v;
+            // A CPU address writes the flat array, like every other access
+            // here: it can patch code in a ROM image. A space:offset writes
+            // through the machine's poke instead. Every byte is checked
+            // before any is written, so a typo writes nothing, and a write
+            // that would run off the end of a space is refused whole.
+            Location at;
+            unsigned long v;
             uint8_t bytes[64];
             int n = 0;
-            bool ok = argc >= 3 && resolve_addr(dbg, argv[1], 0xFFFF, &a);
+            bool ok = argc >= 3 && resolve_location(dbg, argv[1], &at);
             for (int k = 2; ok && k < argc; k++) {
                 ok = parse_hex(argv[k], 0xFF, &v);
                 bytes[n++] = (uint8_t)v;
             }
-            if (!ok) {
+            if (!ok || n > location_room(dbg, at)) {
                 fprintf(out, "e: usage is e addr byte..., bytes in hex (00-FF)\n");
                 continue;
             }
             for (int k = 0; k < n; k++) {
-                uint16_t at = (uint16_t)(a + (unsigned long)k);
-                cpu->memory[at] = bytes[k];
+                location_poke(dbg, cpu, at, k, bytes[k]);
                 // A watch must not report the debugger's own write as a
                 // change the program made.
                 for (int w = 0; w < dbg->watch_count; w++) {
                     Watch *wt = &dbg->watches[w];
-                    uint16_t off = (uint16_t)(at - wt->addr);
+                    if (wt->at.space != at.space) continue;
+                    uint32_t off = at.space < 0 ? (uint16_t)(at.addr + (uint32_t)k - wt->at.addr)
+                                                : at.addr + (uint32_t)k - wt->at.addr;
                     if (off < wt->len) wt->snapshot[off] = bytes[k];
                 }
             }
-            dump_memory(out, cpu, (uint16_t)a, n);
+            dump_memory(out, dbg, cpu, at, n);
         } else if (!strcmp(cmd, "u") || !strcmp(cmd, "dis")) {
             unsigned long a = cpu->pc;
             long n = 8;
@@ -621,6 +710,7 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
             break;
         } else if (!strcmp(cmd, "h") || !strcmp(cmd, "help") || !strcmp(cmd, "?")) {
             print_help(out);
+            print_spaces(out, dbg);
         } else {
             fprintf(out, "unknown command '%s'; h for help\n", cmd);
         }
@@ -678,11 +768,12 @@ void z80dbg_after_step(Z80Debugger *dbg, Z80 *cpu) {
     for (int k = 0; k < dbg->watch_count; k++) {
         Watch *w = &dbg->watches[k];
         for (unsigned off = 0; off < w->len; off++) {
-            uint16_t a = (uint16_t)(w->addr + off);
-            uint8_t now = cpu->memory[a];
+            uint8_t now = location_peek(dbg, cpu, w->at, off);
             if (now == w->snapshot[off]) continue;
-            fprintf(stderr, "[watch] %04X: %02X -> %02X, written by the instruction at %04X\n",
-                    a, w->snapshot[off], now, dbg->last_pc);
+            char where[32];
+            location_text(dbg, w->at, off, where, sizeof where);
+            fprintf(stderr, "[watch] %s: %02X -> %02X, written by the instruction at %04X\n",
+                    where, w->snapshot[off], now, dbg->last_pc);
             w->snapshot[off] = now;
             dbg->stop_next = true;
             dbg->step_left = 0;

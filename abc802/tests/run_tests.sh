@@ -593,4 +593,23 @@ tl_want "$out" "wait_first_key:" "the first-key loop's label"
 tl_want "$out" "LD A,(kbd_ready_flag)" "the polled flag named in the operand"
 tl_end "$out"
 
+# The named spaces: memory the bus hooks divert out of the flat array. At
+# the first-key loop, 7800 in the CPU's view is ROM code while chr:0 holds
+# the sign-on banner, which is the whole reason the spaces exist (as
+# "A B C 8 0 2": this 40-column screen shows every other byte). A poke
+# into chr reaching the rendered screen proves it lands where the video
+# reads; a poke into lowram leaving 0000 as ROM proves it went to the RAM
+# LRS has set aside rather than into the resident ROM image.
+DBG_SPACE_SCRIPT="$WORKDIR/debug-spaces.txt"
+printf 'b wait_first_key\nc\nm 7800 4\nm chr:0 12\ne chr:0 5A\ne lowram:0 AA\nm 0 2\nd all\nc\n' > "$DBG_SPACE_SCRIPT"
+out=$("$ABC802" --screen --symbols "$ROOT/abc802/resources/rom/abc802.sym" \
+      --debug-script "$DBG_SPACE_SCRIPT" --debug 2>&1)
+tl_begin "debugger-spaces"
+tl_want "$out" "7800  D6 02 38 11" "the CPU's view of 7800 being ROM code"
+tl_want "$out" "chr:0000  41 20 42 20 43 20 38 20 30 20 32 20" "chr:0 holding the sign-on banner"
+tl_want "$out" "lowram:0000  AA" "the poke into lowram read back"
+tl_want "$out" "0000  18 72" "0000 still ROM after the lowram poke"
+tl_want_eq "$(printf '%s\n' "$out" | grep -cE '^\|ZBC802 ')" "1" "the poke into chr on the rendered screen"
+tl_end "$out"
+
 tl_summary "abc802"

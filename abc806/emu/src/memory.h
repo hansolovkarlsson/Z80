@@ -62,6 +62,13 @@ uint8_t abc806_get_map(int page);
 // owns that latch.
 const uint8_t *abc806_char_ram(void);
 const uint8_t *abc806_attr_ram(void);
+// For the debugger's named spaces: character and attribute RAM (2K each)
+// with no bus semantics, so a peek at character RAM does not latch the
+// attribute byte the way a CPU read does.
+uint8_t abc806_char_ram_peek(uint32_t offset);
+void abc806_char_ram_poke(uint32_t offset, uint8_t value);
+uint8_t abc806_attr_ram_peek(uint32_t offset);
+void abc806_attr_ram_poke(uint32_t offset, uint8_t value);
 
 void abc806_set_attr_latch(uint8_t value);
 uint8_t abc806_get_attr_latch(void);

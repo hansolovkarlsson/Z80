@@ -1268,7 +1268,9 @@ table is at `6E37`, not `6E40`; its DOS command table at `6F87`, not
 claims), and turned up one plain error: the ABC802 reference's "select
 table at `61DA`" is code in both DOS images, now corrected there. Claims
 the bytes did not bear out (`0819`, `7677`) and tables whose start could
-not be pinned (`0676`, `0810`) were left out.
+not be pinned (`0676`, `0810`) were left out. Those two were pinned later
+the same day from the ROM's own pointers, at `0675` and `0814`, and went
+in then; see `abc802/docs/ABC802_BASIC_REFERENCE.md`.
 
 The loader's label/equ test changed on the way: it had looked for `equ`
 anywhere in a line's comment, which a hand-written comment mentioning
@@ -1278,6 +1280,39 @@ anywhere in a line's comment, which a hand-written comment mentioning
 from the file itself and checks a name inside an operand
 (`LD A,(kbd_ready_flag)`), which needs both the loader and the display.
 It failed on a malformed line and on a wrong address.
+
+### Memory spaces
+
+`m`, `e` and `w` take `name:offset` for memory a machine keeps outside the
+flat array: `chr` and `lowram` on the ABC802, `chr`, `attr` and `plane` on
+the ABC806. A machine registers each with `z80dbg_add_space()`, giving a
+peek and a poke of its own that reach the storage directly. That is how
+the milestone 1 rule survives: the debugger still never reads through a
+bus hook, and the ABC806's attribute latch cannot be moved by looking at
+character RAM. `lowram` is there because the ABC802's LRS swaps the low
+32K of RAM out of the array while ROM is resident, which made it
+invisible for the same reason as character RAM. Offsets are hex from the
+start of the space, symbols apply only to CPU addresses, and nothing wraps
+past a space's end.
+
+`debugger-spaces` in each ABC suite. On the ABC802, at the first-key loop,
+`m 7800` shows ROM code while `m chr:0` shows the sign-on banner, a poke
+into `chr` reaches the rendered screen, and a poke into `lowram` leaves
+`0000` reading ROM. On the ABC806, a watch on the plane catches
+`FGPOINT`'s dot at `plane:07209`, written by `7E31`, and coloured text
+printed while `chr` is peeked after every write renders the same colours
+as a run without the debugger.
+
+**Found the hard way:** the colour check passed the first time with the
+peek deliberately made to latch. Its watch covered all of character RAM,
+and its 400 stops were used up by the boot's own screen clear (about 2,030
+writes) before the coloured answer was printed, so no peek ever landed
+between a colour being set and a character being written. Keeping the
+whole-RAM watch and allowing enough stops to reach the answer takes about
+20 seconds; watching only the 64 cells the answer lands in reaches it in
+under one. With that, the latching peek turns the text white and the check
+fails. The ABC802 check failed with the `chr` poke made a
+no-op.
 
 ## Phase 4, VS Code support for z80asm: done
 

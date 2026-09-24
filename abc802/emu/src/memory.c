@@ -176,6 +176,20 @@ static int abc802_write_hook(Z80 *cpu, uint16_t address, uint8_t value) {
     return 1;
 }
 
+uint8_t abc802_char_ram_peek(uint32_t offset) {
+    return char_ram[offset & (ABC802_CHAR_RAM_SIZE - 1)];
+}
+void abc802_char_ram_poke(uint32_t offset, uint8_t value) {
+    char_ram[offset & (ABC802_CHAR_RAM_SIZE - 1)] = value;
+}
+uint8_t abc802_low_ram_peek(uint32_t offset) {
+    return lrs_ram_selected ? cpu_ram[offset & 0x7FFF] : low_ram[offset & 0x7FFF];
+}
+void abc802_low_ram_poke(uint32_t offset, uint8_t value) {
+    if (lrs_ram_selected) cpu_ram[offset & 0x7FFF] = value;
+    else low_ram[offset & 0x7FFF] = value;
+}
+
 void abc802_memory_attach(Z80 *cpu) {
     cpu->bus_read_hook = abc802_read_hook;
     cpu->bus_write_hook = abc802_write_hook;

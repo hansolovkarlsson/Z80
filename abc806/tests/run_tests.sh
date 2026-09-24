@@ -547,4 +547,32 @@ tl_want "$out" "clear_hires_plane_ldir:" "the plane clear's LDIR labelled"
 tl_want "$out" "LD A,(fg_bank_count)" "the bank count named in the operand"
 tl_end "$out"
 
+# The named spaces. A watch on the whole plane (a space, since no CPU
+# address reaches it outside the plotter) stops on FGPOINT's dot. Then the
+# property the spaces must not break: a CPU read of character RAM latches
+# that cell's attribute, so a peek done that way would recolour the next
+# character the ROM writes. Printing coloured text while peeking after
+# every write to the cells its answer lands in (chr:00A2 onward; the boot's
+# own screen clear is the first ~2000 writes, which is why the watch is not
+# on all of character RAM) must render exactly the colours a run without
+# the debugger does. A peek made to latch turns this text all white, which
+# is how this check was proved able to fail.
+DBG_PLANE_SCRIPT="$(mktemp)"
+printf 'b 7E31\nc\nd all\nw plane:0 30720\nc\nq\n' > "$DBG_PLANE_SCRIPT"
+out=$("$ABC806" --cycles 300000000 --type $'FGPOINT 10,10,7:FGLINE 100,100,7\r' \
+      --debug --debug-script "$DBG_PLANE_SCRIPT" 2>&1)
+rm -f "$DBG_PLANE_SCRIPT"
+DBG_PEEK_SCRIPT="$(mktemp)"
+{ echo "w chr:80 64"; for i in $(seq 200); do echo c; echo "m chr:7CF 1"; done; } > "$DBG_PEEK_SCRIPT"
+COLOUR_TEXT=$'PRINT RED;"HELLO";GRN;"WORLD"\r'
+plain=$("$ABC806" --cycles 60000000 --type "$COLOUR_TEXT" 2>&1 | grep '^Pixels by colour')
+peeked=$("$ABC806" --cycles 60000000 --type "$COLOUR_TEXT" --debug --debug-script "$DBG_PEEK_SCRIPT" 2>&1 | grep '^Pixels by colour')
+rm -f "$DBG_PEEK_SCRIPT"
+tl_begin "debugger-spaces"
+tl_want "$out" "[watch] plane:07209: 00 -> 0F, written by the instruction at 7E31" "the plane watch catching FGPOINT's dot"
+tl_want "$plain" " 1=" "red text in the run without the debugger (the premise)"
+tl_want "$plain" " 2=" "green text in the run without the debugger (the premise)"
+tl_want_eq "$peeked" "$plain" "the same colours with chr peeked at every write"
+tl_end "$out$plain$peeked"
+
 tl_summary "abc806"

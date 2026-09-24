@@ -354,6 +354,14 @@ int main(int argc, char **argv) {
             fprintf(stderr, "The debugger does not work with --interactive yet\n");
             return EXIT_FAILURE;
         }
+        // What the bus hooks divert out of the flat array, which the
+        // debugger reads nowhere else (docs/DEBUGGER.md).
+        z80dbg_add_space(dbg, &(Z80DbgSpace){"chr", "character RAM, 7800-7FFF to data reads",
+                                             ABC806_CHAR_RAM_SIZE, abc806_char_ram_peek, abc806_char_ram_poke});
+        z80dbg_add_space(dbg, &(Z80DbgSpace){"attr", "attribute RAM, one byte per character cell",
+                                             ABC806_ATTR_RAM_SIZE, abc806_attr_ram_peek, abc806_attr_ram_poke});
+        z80dbg_add_space(dbg, &(Z80DbgSpace){"plane", "high-resolution video RAM, 32K per bank",
+                                             ABC806_VIDEO_RAM_SIZE, abc806_videoram_read, abc806_videoram_write});
         if (!z80dbg_start(dbg)) return EXIT_FAILURE;
     }
     while (!quit_requested && (max_cycles == 0 || cycles < max_cycles)) {
