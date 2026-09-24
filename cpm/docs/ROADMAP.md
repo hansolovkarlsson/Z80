@@ -65,6 +65,27 @@ Aspirational, not yet scoped:
   projects would never actually share code. See that project's own
   `docs/GAMEBOY_ROADMAP.md` (in its new repo) for the full phase plan
   and status if relevant here.
+- **A Z80 debugger.** None exists today: no target has a trace,
+  breakpoint or register-dump option, and every hardware investigation so
+  far has been done with ad hoc instrumentation or by sweeping inputs from
+  BASIC. The natural home is `z80core/`, since all four targets call
+  `z80_execute()` and a debugger built there would serve each of them
+  rather than one. Scope still open: at minimum breakpoints, single-step,
+  register and memory inspection, and disassembly at PC through
+  `disasm/`'s `decode_instruction()`; watchpoints could come from the
+  existing `bus_read_hook`/`bus_write_hook`.
+- **More machine targets, such as the ZX Spectrum.** It is Z80-based, so it
+  would link `z80core/` the way the three ABC targets do rather than
+  bringing a core of its own, which is what keeps it in this repo, unlike
+  the Game Boy above. Not yet scoped. `abc806/docs/ABC806_SCOPING.md` is
+  the model for the feasibility review a new target gets before any code.
+- **Linux and Windows ports.** Everything has been built and run on macOS
+  only. The emulators use POSIX terminal and I/O calls (`termios`,
+  `select()`, `unistd.h`, in `cpm/emu/src/cpm.c` and each ABC target's
+  `main.c`/`ports.c`, plus `abcbus/disk.c`), so Linux should mostly be a
+  matter of building and fixing what breaks. Windows needs a real console
+  layer in their place, or a POSIX environment such as MSYS2. The GTK apps
+  come from `pkg-config` and should follow wherever `gtk4` is available.
 - A custom ROM/OS on top of it — open design questions include a stack VM
   and whether Logo-style prefix notation could combine with a stack machine
   model.
