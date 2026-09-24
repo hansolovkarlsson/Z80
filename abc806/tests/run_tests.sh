@@ -461,7 +461,7 @@ fi
 GTK_BIN="$ROOT/bin/abc806-gtk"
 gtk_skip_reason=""
 [ -x "$GTK_BIN" ] || gtk_skip_reason="bin/abc806-gtk not built ('make test' builds it when pkg-config finds gtk4)"
-if tl_gate "$gtk_skip_reason" gtk-headless-boot gtk-headless-type \
+if tl_gate "$gtk_skip_reason" gtk-headless-boot gtk-headless-type gtk-debugger \
         gtk-headless-colour; then
     GTK_TMP="$(mktemp -d)"
     trap 'rm -rf "$GTK_TMP"' EXIT
@@ -510,6 +510,22 @@ PY
     tl_want "$colours" "pens=3" "three drawing pens rendering as three distinct colours"
     tl_want "$colours" "equal=1" "the three lines covering equal numbers of pixels"
     tl_end "$out$colours"
+    # The debugger in the window's async mode (docs/DEBUGGER.md), driven
+    # headless on a pty so each command arrives after the stop, through
+    # z80dbg_poll_input() as the window's terminal watch delivers it. Two
+    # stops at the periodic interrupt handler must show different
+    # registers: resuming from a breakpoint has to run the instruction it
+    # stopped on, and without that the second `c` re-stops on the same one
+    # and the registers repeat, which is how this was seen to fail.
+    out=$(cd "$ROOT" && python3 "$ROOT/scripts/ptysession.py" \
+          'wait:1,text:b 3A6A,wait:0.5,text:c,wait:0.5,text:r,wait:0.3,text:c,wait:0.5,text:r,wait:0.3,text:d all,wait:0.3,text:c,wait:3' \
+          -- "$GTK_BIN" --cycles 20000000 --screenshot "$GTK_TMP/debug.png" --debug 2>&1)
+    tl_begin "gtk-debugger"
+    tl_want_eq "$(printf '%s\n' "$out" | grep -c '^\[breakpoint\] 3A6A')" "2" "two stops at 3A6A"
+    tl_want_eq "$(printf '%s\n' "$out" | grep -E "^AF'?=" | paste - - | sort -u | wc -l | tr -d ' ')" "2" \
+        "different registers at the two stops (the machine ran between them)"
+    tl_want "$out" "Wrote " "the run finishing after d all and c"
+    tl_end "$out"
     tl_gate_end
 fi
 

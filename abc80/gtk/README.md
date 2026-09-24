@@ -435,6 +435,14 @@ exactly) and 14,976,002 cycles/sec at `--turbo 5` - exactly 5.0000x, not
 approximately. Invalid values (`--turbo 0`, negative, or unparseable)
 are rejected with a clear error rather than doing something undefined.
 
+## Debugger
+
+The CLI's debug options work here too (`--debug`, `--break`, `--symbols`,
+`--debug-script`). The prompt is the terminal the window was started
+from, and the window stays live while the machine is stopped. Ctrl-C in
+that terminal or Ctrl-] in the window stops it. See
+[`../../docs/DEBUGGER.md`](../../docs/DEBUGGER.md#in-the-gtk-windows).
+
 ## Headless rendering, and how changes here get verified
 
 `--screenshot FILE` runs the machine unpaced and renders one frame through

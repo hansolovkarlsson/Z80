@@ -1348,6 +1348,50 @@ seconds must match the wall time minus the pause. Each check failed when
 broken: with the subtraction removed (`emulated=4.00 expected=2.01`), and
 with VINTR left disabled, where it fails on both counts.
 
+### In the GTK windows
+
+`bin/abc80-gtk`, `bin/abc802-gtk` and `bin/abc806-gtk` take the debug
+options. The user chose where the prompt lives: in the terminal the
+window was started from, with the window kept live while the machine is
+stopped. The alternatives were a blocking prompt that froze the window
+and a console pane inside it.
+
+A window cannot block, so the debugger gained an **async mode**. A stop
+prints the prompt and `z80dbg_before_step()` returns `Z80DBG_STOPPED`. The
+window's timer stops stepping, and a GLib watch on the terminal hands
+lines to `z80dbg_poll_input()`. Commands run through `run_command()`,
+which was extracted from the blocking prompt's loop so the two modes share
+one dispatcher. A script is not watched, since a file is always readable
+and a watch would spin the main loop. The debugger reads it itself
+whenever it needs the next line, so a script behaves exactly as in the
+CLIs: the headless window's transcript for a `b`/`c`/`r`/`s`/`m chr:`
+script is line for line the CLI's.
+
+Each window steps through one `debugged_step()`, shared by its timer and
+`--screenshot`. The headless path waits on the prompt at a stop, which is
+what lets the async code be tested with no window. With a debug option,
+SIGINT belongs to the debugger rather than closing the window, Ctrl-] in
+the window stops the machine, and the pacing subtracts the stopped time.
+`bin/abc80-gtk`'s Save/Load `.bas` menu actions run the machine
+themselves, so they step without the debugger and are refused while it is
+stopped.
+
+**Found the hard way, before any test ran:** resuming from the main loop
+left the next `before_step()` looking at the breakpoint the prompt had
+stopped on, so `c` would have stopped there again forever. The blocking
+prompt never met this, because its caller simply carries on and runs the
+instruction. A one-shot `resumed` flag now marks that instruction to run.
+
+`gtk-debugger` in each ABC suite drives the headless window on a pty, so
+commands arrive after the stop, as the window's watch delivers them: two
+stops at the machine's periodic interrupt handler must show different
+registers. With the `resumed` flag removed, all three fail
+(`expected '2', got '1'`).
+
+Not covered automatically: the live window's own glue (the watch
+callback, Ctrl-] in the window, `q` closing it). This machine's GTK has
+only the macOS backend, and opening a window takes the user's desktop.
+
 ## Phase 4, VS Code support for z80asm: done
 
 `asm/vscode/` is a VS Code extension with no dependencies and no build

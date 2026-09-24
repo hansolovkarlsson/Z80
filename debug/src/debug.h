@@ -19,8 +19,10 @@
 
 typedef struct Z80Debugger Z80Debugger;
 
-// What the run loop should do after z80dbg_before_step().
-enum { Z80DBG_RUN = 0, Z80DBG_QUIT = 1 };
+// What the run loop should do after z80dbg_before_step(). Z80DBG_STOPPED
+// comes only in async mode (below): the machine is at the prompt, and must
+// not step until z80dbg_poll_input() says it has resumed.
+enum { Z80DBG_RUN = 0, Z80DBG_QUIT = 1, Z80DBG_STOPPED = 2 };
 
 // Consumes one debugger option at argv[*i] (--debug, --break ADDR,
 // --debug-script FILE), creating *dbg on first use. Returns true if it was
@@ -59,6 +61,22 @@ void z80dbg_add_space(Z80Debugger *dbg, const Z80DbgSpace *space);
 // pacing execution against real time subtracts it, or the machine would
 // run flat out on resuming to make up for time it spent stopped.
 double z80dbg_seconds_stopped(const Z80Debugger *dbg);
+
+// Async mode, for a program with its own main loop (the GTK windows), which
+// must not block while the machine is stopped. Call before z80dbg_start().
+// A stop then prints the prompt and returns Z80DBG_STOPPED instead of
+// reading commands. The program watches z80dbg_input_fd() and calls
+// z80dbg_poll_input() when it is readable; that runs every complete line
+// waiting and returns Z80DBG_STOPPED while the prompt is still open,
+// Z80DBG_RUN once a command resumed the machine, or Z80DBG_QUIT for `q`.
+// Commands are the same as the blocking prompt's, run by the same code.
+void z80dbg_set_async(Z80Debugger *dbg, bool async);
+int z80dbg_input_fd(const Z80Debugger *dbg);
+int z80dbg_poll_input(Z80Debugger *dbg, Z80 *cpu);
+bool z80dbg_is_stopped(const Z80Debugger *dbg);
+
+// Stops before the next instruction, as Ctrl-C does: for a key in a window.
+void z80dbg_request_stop(Z80Debugger *dbg);
 
 // Call once, after the machine is set up and before the first step. Opens
 // the command source (the script, or /dev/tty) and installs the Ctrl-C

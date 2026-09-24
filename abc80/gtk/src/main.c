@@ -49,6 +49,7 @@
 #include <SDL2/SDL.h>
 
 #include "../../../z80core/z80.h"
+#include "../../../debug/src/debug.h"
 #include "../../../abc80/emu/src/step.h"
 #include "../../../abc80/emu/src/abcbus.h"
 #include "../../../abc80/emu/src/keyboard.h"
@@ -142,6 +143,10 @@ static const RomImage ROM_IMAGES[] = {
 
 typedef struct {
     Z80 cpu;
+    Z80Debugger *dbg;       // NULL unless a debug option was given
+    guint debug_watch_id;   // the terminal the prompt reads, when one is used
+    bool headless;          // --screenshot: pump_steps() runs under the debugger
+    bool debug_quit;        // the debugger's `q` ended a headless run
     uint8_t ram[RAM_SIZE];
     uint8_t attr_rom[256];
     uint8_t chargen_rom[ABC80_CHARGEN_ROM_SIZE];
@@ -340,7 +345,14 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval,
                                 guint keycode, GdkModifierType state, gpointer user_data) {
     (void)controller;
     (void)keycode;
-    (void)user_data;
+    AppState *app = user_data;
+
+    // Ctrl-] stops in the debugger, as it does in bin/abc80 --interactive
+    // (Z80DBG_BREAK_CHAR).
+    if (app->dbg && (state & GDK_CONTROL_MASK) && keyval == GDK_KEY_bracketright) {
+        z80dbg_request_stop(app->dbg);
+        return TRUE;
+    }
 
     int ascii = -1;
     guint lower = gdk_keyval_to_lower(keyval);
@@ -432,6 +444,26 @@ static void audio_callback(void *userdata, Uint8 *stream, int len) {
 // Defined below, beside pump_steps(), which shares it.
 static void maybe_quickload(AppState *app);
 
+// One instruction, with the debugger's hooks around it when there is one.
+// Returns Z80DBG_RUN once it has run, Z80DBG_STOPPED (nothing run) while the
+// debugger holds the machine at its prompt, Z80DBG_QUIT for its `q`, or -1
+// on an unimplemented opcode. The window's tick and the headless pump both
+// step through it.
+static int debugged_step(AppState *app) {
+    if (app->dbg) {
+        int r = z80dbg_before_step(app->dbg, &app->cpu);
+        if (r != Z80DBG_RUN) return r;
+    }
+    int cycles = abc80_step(&app->cpu, app->ram, &app->sound_log,
+                            &app->total_cycles, &app->next_pio_interrupt_at);
+    if (cycles < 0) {
+        fprintf(stderr, "Execution halted: unimplemented opcode at PC=0x%04X\n", app->cpu.pc);
+        return -1;
+    }
+    if (app->dbg) z80dbg_after_step(app->dbg, &app->cpu);
+    return Z80DBG_RUN;
+}
+
 static gboolean on_timer_tick(gpointer user_data) {
     AppState *app = user_data;
 
@@ -453,8 +485,10 @@ static gboolean on_timer_tick(gpointer user_data) {
 
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
+    // Time at the debugger's prompt is not time the machine ran.
     double elapsed_real = (double)(now.tv_sec - app->run_start_time.tv_sec) +
-                           (double)(now.tv_nsec - app->run_start_time.tv_nsec) / 1e9;
+                           (double)(now.tv_nsec - app->run_start_time.tv_nsec) / 1e9 -
+                           z80dbg_seconds_stopped(app->dbg);
     // turbo_multiplier scales both real-time-derived quantities below
     // (1.0 = today's unchanged real-ABC80-speed pacing) - see --turbo.
     // Everything downstream (the PIO interrupt period, any in-program
@@ -482,10 +516,14 @@ static gboolean on_timer_tick(gpointer user_data) {
         // to inject a saved program without a race against either.
         maybe_quickload(app);
 
-        int cycles = abc80_step(&app->cpu, app->ram, &app->sound_log,
-                                 &app->total_cycles, &app->next_pio_interrupt_at);
-        if (cycles < 0) {
-            fprintf(stderr, "Execution halted: unimplemented opcode at PC=0x%04X\n", app->cpu.pc);
+        int r = debugged_step(app);
+        if (r == Z80DBG_STOPPED) break;   // on_debug_input() resumes it
+        if (r == Z80DBG_QUIT) {
+            app->timer_source_id = 0;
+            gtk_window_destroy(GTK_WINDOW(app->window));
+            return G_SOURCE_REMOVE;
+        }
+        if (r < 0) {
             // GLib treats G_SOURCE_REMOVE as self-removal - matching that
             // here so on_window_destroy() (if the window closes later,
             // after a halt) doesn't call g_source_remove() on an ID GLib
@@ -526,12 +564,34 @@ static gboolean on_timer_tick(gpointer user_data) {
 // checks it first regardless of whether this handler's g_source_remove()
 // already stopped the timer, in case any tick was already queued before
 // this ran.
+// A line typed at the debugger's prompt, in the terminal the window was
+// started from. The window stays live meanwhile, because the debugger runs
+// in async mode and only this callback feeds it.
+static gboolean on_debug_input(gint fd, GIOCondition condition, gpointer user_data) {
+    (void)fd;
+    (void)condition;
+    AppState *app = user_data;
+    if (z80dbg_poll_input(app->dbg, &app->cpu) == Z80DBG_QUIT && app->window) {
+        gtk_window_destroy(GTK_WINDOW(app->window));
+        return G_SOURCE_REMOVE;
+    }
+    if (z80dbg_input_fd(app->dbg) < 0) {   // the terminal went away
+        app->debug_watch_id = 0;
+        return G_SOURCE_REMOVE;
+    }
+    return G_SOURCE_CONTINUE;
+}
+
 static void on_window_destroy(GtkWidget *window, gpointer user_data) {
     (void)window;
     AppState *app = user_data;
     if (app->timer_source_id != 0) {
         g_source_remove(app->timer_source_id);
         app->timer_source_id = 0;
+    }
+    if (app->debug_watch_id) {
+        g_source_remove(app->debug_watch_id);
+        app->debug_watch_id = 0;
     }
     app->drawing_area = NULL;
 
@@ -684,13 +744,44 @@ static void maybe_quickload(AppState *app) {
     }
 }
 
+// Headless (--screenshot), the debugger is in the loop and a stop waits
+// here on the prompt's input, since there is no main loop to bring it: a
+// script needs no waiting, and a terminal is select()ed on. In the live
+// window this also serves the Save/Load .bas menu actions, which drive the
+// machine themselves and step without the debugger; they are refused
+// while it holds the machine stopped (see debugger_holds_machine()).
 static void pump_steps(AppState *app, int count) {
     for (int i = 0; i < count; i++) {
         maybe_quickload(app);
-        int cycles = abc80_step(&app->cpu, app->ram, &app->sound_log,
-                                 &app->total_cycles, &app->next_pio_interrupt_at);
-        if (cycles < 0) return; // halted - nothing more this helper can do
+        if (!app->headless || !app->dbg) {
+            int cycles = abc80_step(&app->cpu, app->ram, &app->sound_log,
+                                     &app->total_cycles, &app->next_pio_interrupt_at);
+            if (cycles < 0) return; // halted - nothing more this helper can do
+            continue;
+        }
+        int r = debugged_step(app);
+        while (r == Z80DBG_STOPPED) {
+            int fd = z80dbg_input_fd(app->dbg);
+            if (fd >= 0) {
+                fd_set in;
+                FD_ZERO(&in);
+                FD_SET(fd, &in);
+                select(fd + 1, &in, NULL, NULL, NULL);
+            }
+            r = z80dbg_poll_input(app->dbg, &app->cpu);
+        }
+        if (r == Z80DBG_QUIT) {
+            app->debug_quit = true;
+            return;
+        }
+        if (r < 0) return;
     }
+}
+
+static bool debugger_holds_machine(AppState *app) {
+    if (!z80dbg_is_stopped(app->dbg)) return false;
+    fprintf(stderr, "The machine is stopped in the debugger; continue it first\n");
+    return true;
 }
 
 // Types one line (any direct-mode command, or a program line) plus a
@@ -706,12 +797,14 @@ static void inject_line(AppState *app, const char *text) {
     for (const char *p = text; *p; p++) {
         while (!abc80_keyboard_ready_for_next()) {
             pump_steps(app, 200);
+            if (app->debug_quit) return;   // `q` ended the run: nothing is stepping
         }
         abc80_keyboard_press((uint8_t)*p);
         pump_steps(app, 2000);
     }
     while (!abc80_keyboard_ready_for_next()) {
         pump_steps(app, 200);
+        if (app->debug_quit) return;
     }
     abc80_keyboard_press(0x0D);
     pump_steps(app, 30000);
@@ -886,7 +979,9 @@ static void on_save_program_response(GObject *source, GAsyncResult *res, gpointe
     if (!file) return;
     char *path = g_file_get_path(file);
     if (path) {
-        if (path_has_suffix_ci(path, ".bas")) {
+        if (path_has_suffix_ci(path, ".bas") && debugger_holds_machine(app)) {
+            // refused: listing the program runs the machine
+        } else if (path_has_suffix_ci(path, ".bas")) {
             char *text = build_bas_text(app);
             g_file_set_contents(path, text, -1, NULL);
             g_free(text);
@@ -916,7 +1011,9 @@ static void on_load_program_response(GObject *source, GAsyncResult *res, gpointe
     if (!file) return;
     char *path = g_file_get_path(file);
     if (path) {
-        if (path_has_suffix_ci(path, ".bas")) {
+        if (path_has_suffix_ci(path, ".bas") && debugger_holds_machine(app)) {
+            // refused: typing the program in runs the machine
+        } else if (path_has_suffix_ci(path, ".bas")) {
             char *text = NULL;
             if (g_file_get_contents(path, &text, NULL, NULL)) {
                 load_bas_text(app, text);
@@ -1256,8 +1353,12 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_widget_add_controller(window, key_controller);
 
     g_signal_connect(window, "destroy", G_CALLBACK(on_window_destroy), app);
-    g_unix_signal_add(SIGINT, on_unix_signal, window);
+    // With a debugger, Ctrl-C in the terminal stops the machine instead of
+    // closing the window: the debugger installed its own SIGINT handler.
+    if (!app->dbg) g_unix_signal_add(SIGINT, on_unix_signal, window);
     g_unix_signal_add(SIGTERM, on_unix_signal, window);
+    if (app->dbg && z80dbg_input_fd(app->dbg) >= 0)
+        app->debug_watch_id = g_unix_fd_add(z80dbg_input_fd(app->dbg), G_IO_IN, on_debug_input, app);
 
     clock_gettime(CLOCK_MONOTONIC, &app->run_start_time);
     app->last_render_sec = 0.0;
@@ -1309,6 +1410,9 @@ static void print_usage(const char *prog) {
     printf("  --quicksave FILE   Dump BASIC's current program storage (BOFA..EOFA) to\n");
     printf("                     FILE when the window closes - also available from the\n");
     printf("                     File menu as \"Save Program...\"\n");
+    printf("\nDebugger (the prompt is the terminal this was started from; Ctrl-C\n");
+    printf("there or Ctrl-] in the window stops the machine):\n");
+    z80dbg_print_usage(stdout);
 }
 
 int main(int argc, char *argv[]) {
@@ -1322,6 +1426,7 @@ int main(int argc, char *argv[]) {
     const char *type_text = NULL;
     long long screenshot_steps = 4000000;
     double turbo_multiplier = 1.0;
+    Z80Debugger *dbg = NULL;
     int arg_i = 1;
     if (arg_i < argc && argv[arg_i][0] != '-') {
         rom_dir = argv[arg_i++];
@@ -1360,6 +1465,8 @@ int main(int argc, char *argv[]) {
             }
         } else if (strcmp(argv[arg_i], "--ram32k") == 0 || strcmp(argv[arg_i], "--amber") == 0) {
             // handled below, after AppState exists
+        } else if (z80dbg_parse_option(&dbg, argc, argv, &arg_i)) {
+            // handled
         } else {
             fprintf(stderr, "Unknown argument: %s\n\n", argv[arg_i]);
             print_usage(argv[0]);
@@ -1441,6 +1548,15 @@ int main(int argc, char *argv[]) {
     abc80_sound_log_init(&app.sound_log);
     app.next_pio_interrupt_at = ABC80_PIO_INTERRUPT_PERIOD_TSTATES;
 
+    app.dbg = dbg;
+    app.headless = screenshot_path != NULL;
+    if (app.dbg) {
+        // Async: the window's main loop must keep running while the machine
+        // is stopped, so the prompt never blocks (debug.h).
+        z80dbg_set_async(app.dbg, true);
+        if (!z80dbg_start(app.dbg)) return EXIT_FAILURE;
+    }
+
     // Headless render, and the reason this app has one at all: automating a
     // screen capture against the user's real desktop steals focus and
     // switches Spaces while they are working (see this directory's
@@ -1453,7 +1569,7 @@ int main(int argc, char *argv[]) {
     // through the identical draw_screen() the live window uses.
     if (screenshot_path) {
         pump_steps(&app, (int)(screenshot_steps > 0 ? screenshot_steps : 0));
-        if (type_text) {
+        if (type_text && !app.debug_quit) {
             char *decoded = decode_utf8_to_abc80(type_text, strlen(type_text));
             inject_line(&app, decoded ? decoded : type_text);
             g_free(decoded);

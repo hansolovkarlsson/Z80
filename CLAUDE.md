@@ -1143,7 +1143,13 @@ terminal in cooked mode while it reads and restores the machine's raw mode
 after. Under the ABC machines' `--interactive`, Ctrl-C belongs to BASIC, so
 the break key is Ctrl-] (`Z80DBG_BREAK_CHAR`, made the terminal's VINTR),
 and each loop's pacing subtracts `z80dbg_seconds_stopped()` so a resumed
-machine does not run flat out to make up the pause.
+machine does not run flat out to make up the pause. The three ABC GTK
+windows use an **async mode** (`z80dbg_set_async()`): a stop prints the
+prompt and returns `Z80DBG_STOPPED`, and the window's GLib watch on the
+terminal feeds lines to `z80dbg_poll_input()`, which runs them through
+the same `run_command()` the blocking prompt uses. A resume there sets a
+one-shot `resumed` flag, since the next `before_step()` is for the
+instruction the prompt stopped on and must run it, not stop on it again.
 
 ## GTK terminal (`cpm/gtk/src/`, work in progress)
 

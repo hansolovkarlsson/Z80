@@ -157,6 +157,36 @@ count_loop:
 breakpoint 0129 fail
 ```
 
+### In the GTK windows
+
+`bin/abc80-gtk`, `bin/abc802-gtk` and `bin/abc806-gtk` take the same debug
+options. **The prompt is the terminal the window was started from**, and
+the window stays live while the machine is stopped: it keeps repainting
+and responding, because the debugger runs in an async mode where a stop
+opens the prompt and returns instead of waiting for a command. The window
+watches the terminal and hands each typed line to the debugger, which
+runs it with the same code as the blocking prompt.
+
+```
+bin/abc802-gtk --symbols abc802/resources/rom/abc802.sym
+```
+
+**Ctrl-C in that terminal** stops the machine, and so does **Ctrl-] in
+the window**. With a debug option Ctrl-C no longer closes the window;
+File > Quit, closing it, or `q` at the prompt do. Time at the prompt is
+subtracted from the pacing, as under `--interactive`.
+
+`--screenshot` runs under the debugger too, stepping through the same
+function the window's timer does, and waiting on the prompt at a stop;
+that is how the async path is tested without opening a window. On
+`bin/abc80-gtk`, the File menu's Save and Load of a `.bas` program run the
+machine themselves to type and list the lines, and are refused while it
+is stopped. The `.bac` forms only copy memory and work at any time.
+
+A window started from the Finder has no terminal, so a debug option there
+fails at start-up with the same message the CLIs give; `--debug-script`
+works without one.
+
 ## What it sees
 
 **A plain address is the flat 64K array**, the bytes instruction fetch
@@ -226,4 +256,9 @@ after it; `n` over the `CALL 0005h` is the natural way past one.
 
 ## Not yet
 
-- The GTK apps have no debugger.
+- `bin/z80-gtk` passes its options through to `bin/z80`, which runs on the
+  window's own terminal, so `--debug` there should put the prompt inside
+  the window. It has not been tried.
+- The live GTK windows' own pieces (the terminal watch, Ctrl-] in the
+  window, `q` closing it) are checked by hand only; see
+  [In the GTK windows](#in-the-gtk-windows).

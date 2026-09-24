@@ -21,6 +21,34 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-24 (14): the debugger in the GTK windows
+
+The last debugger item. Where the prompt should live was the user's
+decision, asked rather than assumed: in the launching terminal, with the
+window kept live. That meant the debugger could no longer block, so it
+gained an async mode. The blocking prompt's command loop was cut into a
+`run_command()` that both modes call, which is what keeps them from
+drifting apart. Scripts turned out not to need the main loop at all: the
+debugger reads them itself, and the headless window then printed the same
+transcript as the CLI, line for line.
+
+The bug worth recording was found by reading the code back before running
+it. Resuming from the main loop returned control to a `before_step()`
+still looking at the breakpoint just stopped on, so `c` would re-stop
+there forever. The blocking prompt had hidden this, because its caller
+runs the instruction without asking again. The check that pins it drives
+the headless window through a pty, since a script is drained inside
+`before_step()` and never takes the path that has the bug. It compares the
+registers at two stops, and removing the fix makes all three machines
+fail it.
+
+What is not automated is the live window's own glue. This GTK build has
+only the macOS backend, with no Broadway to run a window off-screen, and
+opening one on the user's desktop is what the GTK READMEs already warn
+against. That part waits on a hand check.
+
+---
+
 ## 2026-09-24 (13): the debugger under --interactive
 
 The next debugger item, and a smaller change than the refusal suggested.

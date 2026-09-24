@@ -105,6 +105,14 @@ first key, the same readiness gate the CLI uses: the ROM reports the
 keyboard ready long before it is listening, and typing at T-state 0 loses
 the opening characters.
 
+## Debugger
+
+The CLI's debug options work here too (`--debug`, `--break`, `--symbols`,
+`--debug-script`). The prompt is the terminal the window was started
+from, and the window stays live while the machine is stopped. Ctrl-C in
+that terminal or Ctrl-] in the window stops it. See
+[`../../docs/DEBUGGER.md`](../../docs/DEBUGGER.md#in-the-gtk-windows).
+
 ## Keyboard
 
 Printable keys, including Å/Ä/Ö/Ü/É, go through the emulator's own charset

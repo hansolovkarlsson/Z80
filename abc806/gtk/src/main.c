@@ -39,9 +39,11 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
 #include <time.h>
 
 #include "../../../abcbus/disk.h"
+#include "../../../debug/src/debug.h"
 #include "../../../z80core/z80.h"
 #include "../../emu/src/chargen.h"
 #include "../../emu/src/memory.h"
@@ -83,6 +85,8 @@
 
 typedef struct {
     Z80 cpu;
+    Z80Debugger *dbg;       // NULL unless a debug option was given
+    guint debug_watch_id;   // the terminal the prompt reads, when one is used
     uint8_t ram[RAM_SIZE];
     long long total_cycles;
     struct timespec run_start_time;
@@ -229,6 +233,13 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval,
     (void)keycode;
     AppState *app = user_data;
 
+    // Ctrl-] stops in the debugger, as it does in bin/abc806 --interactive
+    // (Z80DBG_BREAK_CHAR). Without a debugger it is not a key the ROM uses.
+    if (app->dbg && (state & GDK_CONTROL_MASK) && keyval == GDK_KEY_bracketright) {
+        z80dbg_request_stop(app->dbg);
+        return TRUE;
+    }
+
     if ((state & GDK_CONTROL_MASK) != 0) {
         guint lower = gdk_keyval_to_lower(keyval);
         if (lower >= 'a' && lower <= 'z') {
@@ -279,6 +290,24 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval,
 // The run loop
 // ---------------------------------------------------------------------
 
+// One instruction, with the debugger's hooks around it when there is one.
+// Returns Z80DBG_RUN once it has run, Z80DBG_STOPPED (nothing run) while the
+// debugger holds the machine at its prompt, Z80DBG_QUIT for its `q`, or -1
+// on an unimplemented opcode. Shared by the window and --screenshot, so the
+// headless path exercises exactly the stepping the window does.
+static int debugged_step(AppState *app) {
+    if (app->dbg) {
+        int r = z80dbg_before_step(app->dbg, &app->cpu);
+        if (r != Z80DBG_RUN) return r;
+    }
+    if (abc806_step(&app->cpu, app->ram, &app->total_cycles) < 0) {
+        fprintf(stderr, "Execution halted: unimplemented opcode at PC=0x%04X\n", app->cpu.pc);
+        return -1;
+    }
+    if (app->dbg) z80dbg_after_step(app->dbg, &app->cpu);
+    return Z80DBG_RUN;
+}
+
 static gboolean on_timer_tick(gpointer user_data) {
     AppState *app = user_data;
 
@@ -289,8 +318,10 @@ static gboolean on_timer_tick(gpointer user_data) {
 
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
+    // Time at the debugger's prompt is not time the machine ran.
     app->elapsed_real = (double)(now.tv_sec - app->run_start_time.tv_sec) +
-                        (double)(now.tv_nsec - app->run_start_time.tv_nsec) / 1e9;
+                        (double)(now.tv_nsec - app->run_start_time.tv_nsec) / 1e9 -
+                        z80dbg_seconds_stopped(app->dbg);
     double target_cycles = app->elapsed_real * ABC806_CLOCK_HZ;
 
     // Bounded per-tick batch: if the host stalled (a slow redraw, the
@@ -309,8 +340,14 @@ static gboolean on_timer_tick(gpointer user_data) {
             app->next_key_at = app->total_cycles + KEY_GAP_TSTATES;
         }
 
-        if (abc806_step(&app->cpu, app->ram, &app->total_cycles) < 0) {
-            fprintf(stderr, "Execution halted: unimplemented opcode at PC=0x%04X\n", app->cpu.pc);
+        int r = debugged_step(app);
+        if (r == Z80DBG_STOPPED) break;   // on_debug_input() resumes it
+        if (r == Z80DBG_QUIT) {
+            app->timer_source_id = 0;
+            gtk_window_destroy(GTK_WINDOW(app->window));
+            return G_SOURCE_REMOVE;
+        }
+        if (r < 0) {
             app->halted = true;
             // GLib treats G_SOURCE_REMOVE as self-removal, so clear the id
             // to stop on_window_destroy() removing it a second time.
@@ -339,12 +376,34 @@ static gboolean on_unix_signal(gpointer user_data) {
     return G_SOURCE_REMOVE;
 }
 
+// A line typed at the debugger's prompt, in the terminal the window was
+// started from. The window stays live meanwhile, because the debugger runs
+// in async mode and only this callback feeds it.
+static gboolean on_debug_input(gint fd, GIOCondition condition, gpointer user_data) {
+    (void)fd;
+    (void)condition;
+    AppState *app = user_data;
+    if (z80dbg_poll_input(app->dbg, &app->cpu) == Z80DBG_QUIT && app->window) {
+        gtk_window_destroy(GTK_WINDOW(app->window));
+        return G_SOURCE_REMOVE;
+    }
+    if (z80dbg_input_fd(app->dbg) < 0) {   // the terminal went away
+        app->debug_watch_id = 0;
+        return G_SOURCE_REMOVE;
+    }
+    return G_SOURCE_CONTINUE;
+}
+
 static void on_window_destroy(GtkWidget *window, gpointer user_data) {
     (void)window;
     AppState *app = user_data;
     if (app->timer_source_id) {
         g_source_remove(app->timer_source_id);
         app->timer_source_id = 0;
+    }
+    if (app->debug_watch_id) {
+        g_source_remove(app->debug_watch_id);
+        app->debug_watch_id = 0;
     }
     app->drawing_area = NULL;
 }
@@ -477,7 +536,11 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     app->last_render_sec = -1.0;
     app->timer_source_id = g_timeout_add(TIMER_INTERVAL_MS, on_timer_tick, app);
     g_unix_signal_add(SIGTERM, on_unix_signal, app);
-    g_unix_signal_add(SIGINT, on_unix_signal, app);
+    // With a debugger, Ctrl-C in the terminal stops the machine instead of
+    // closing the window: the debugger installed its own SIGINT handler.
+    if (!app->dbg) g_unix_signal_add(SIGINT, on_unix_signal, app);
+    if (app->dbg && z80dbg_input_fd(app->dbg) >= 0)
+        app->debug_watch_id = g_unix_fd_add(z80dbg_input_fd(app->dbg), G_IO_IN, on_debug_input, app);
 
     gtk_window_present(GTK_WINDOW(window));
 }
@@ -501,6 +564,9 @@ static void print_usage(const char *prog) {
     printf("                     (default 20000000)\n");
     printf("  --type TEXT        with --screenshot, type TEXT before rendering\n");
     printf("  -h, --help         this message\n");
+    printf("\nDebugger (the prompt is the terminal this was started from; Ctrl-C\n");
+    printf("there or Ctrl-] in the window stops the machine):\n");
+    z80dbg_print_usage(stdout);
 }
 
 int main(int argc, char *argv[]) {
@@ -538,6 +604,8 @@ int main(int argc, char *argv[]) {
             screenshot_cycles = atoll(argv[++i]);
         } else if (!strcmp(argv[i], "--type") && i + 1 < argc) {
             type_text = argv[++i];
+        } else if (z80dbg_parse_option(&app.dbg, argc, argv, &i)) {
+            // handled
         } else {
             fprintf(stderr, "Unknown option '%s'\n", argv[i]);
             print_usage(argv[0]);
@@ -546,6 +614,19 @@ int main(int argc, char *argv[]) {
     }
 
     if (!machine_init(&app, &opts)) return 1;
+
+    if (app.dbg) {
+        // Async: the window's main loop must keep running while the machine
+        // is stopped, so the prompt never blocks (debug.h).
+        z80dbg_set_async(app.dbg, true);
+        z80dbg_add_space(app.dbg, &(Z80DbgSpace){"chr", "character RAM, 7800-7FFF to data reads",
+                                                 ABC806_CHAR_RAM_SIZE, abc806_char_ram_peek, abc806_char_ram_poke});
+        z80dbg_add_space(app.dbg, &(Z80DbgSpace){"attr", "attribute RAM, one byte per character cell",
+                                                 ABC806_ATTR_RAM_SIZE, abc806_attr_ram_peek, abc806_attr_ram_poke});
+        z80dbg_add_space(app.dbg, &(Z80DbgSpace){"plane", "high-resolution video RAM, 32K per bank",
+                                                 ABC806_VIDEO_RAM_SIZE, abc806_videoram_read, abc806_videoram_write});
+        if (!z80dbg_start(app.dbg)) return 1;
+    }
 
     // Headless render. Deliberately opens no window and starts no
     // GtkApplication: automating a screen capture against the user's real
@@ -562,10 +643,22 @@ int main(int argc, char *argv[]) {
         bool type_gate_open = false;
 
         while (app.total_cycles < screenshot_cycles) {
-            if (abc806_step(&app.cpu, app.ram, &app.total_cycles) < 0) {
-                fprintf(stderr, "Execution halted: unimplemented opcode at PC=0x%04X\n", app.cpu.pc);
-                return 1;
+            int r = debugged_step(&app);
+            // Stopped: with no main loop here, wait on the prompt's input
+            // directly. A script needs no waiting, and a terminal is
+            // select()ed on, so this is the async path the window takes.
+            while (r == Z80DBG_STOPPED) {
+                int fd = z80dbg_input_fd(app.dbg);
+                if (fd >= 0) {
+                    fd_set in;
+                    FD_ZERO(&in);
+                    FD_SET(fd, &in);
+                    select(fd + 1, &in, NULL, NULL, NULL);
+                }
+                r = z80dbg_poll_input(app.dbg, &app.cpu);
             }
+            if (r == Z80DBG_QUIT) break;
+            if (r < 0) return 1;
             // The same readiness gate the CLI uses: the ROM reports the
             // keyboard ready long before it is listening, and typing at
             // T-state 0 loses the first characters. Waiting for the

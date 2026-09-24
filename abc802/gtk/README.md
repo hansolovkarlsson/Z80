@@ -117,6 +117,14 @@ own sake: the DART holds exactly one receive byte, and a GTK key event
 cannot be left waiting in a terminal buffer the way a CLI keystroke can,
 so without a queue a fast typist's keys would overwrite each other.
 
+## Debugger
+
+The CLI's debug options work here too (`--debug`, `--break`, `--symbols`,
+`--debug-script`). The prompt is the terminal the window was started
+from, and the window stays live while the machine is stopped. Ctrl-C in
+that terminal or Ctrl-] in the window stops it. See
+[`../../docs/DEBUGGER.md`](../../docs/DEBUGGER.md#in-the-gtk-windows).
+
 ## Known gaps
 
 - **No File dialog for disks.** `--disk FILE` attaches floppy images at

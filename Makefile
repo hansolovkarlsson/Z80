@@ -110,7 +110,7 @@ ABC806_CHARGEN_DUMP_TARGET := $(BIN_DIR)/abc806-chargen-dump
 # emulator does not sound.
 ABC806_GTK_SRC_DIR := abc806/gtk/src
 ABC806_GTK_SRCS := $(wildcard $(ABC806_GTK_SRC_DIR)/*.c)
-ABC806_GTK_OBJS := $(ABC806_GTK_SRCS:.c=.o) $(ABC806_SRC_DIR)/memory.o $(ABC806_SRC_DIR)/ports.o $(ABC806_SRC_DIR)/render.o $(ABC806_SRC_DIR)/text.o $(ABC806_SRC_DIR)/chargen.o $(ABC806_SRC_DIR)/rtc.o $(ABC806_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC806_GTK_OBJS := $(ABC806_GTK_SRCS:.c=.o) $(ABC806_SRC_DIR)/memory.o $(ABC806_SRC_DIR)/ports.o $(ABC806_SRC_DIR)/render.o $(ABC806_SRC_DIR)/text.o $(ABC806_SRC_DIR)/chargen.o $(ABC806_SRC_DIR)/rtc.o $(ABC806_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o $(DEBUG_OBJS)
 ABC806_GTK_TARGET := $(BIN_DIR)/abc806-gtk
 ABC806_GTK_PKGS := gtk4
 ABC806_GTK_CFLAGS := $(shell pkg-config --cflags $(ABC806_GTK_PKGS) 2>/dev/null)
@@ -207,7 +207,7 @@ GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 # of `all`; `make test` builds it when pkg-config finds gtk4.
 ABC802_GTK_SRC_DIR := abc802/gtk/src
 ABC802_GTK_SRCS := $(wildcard $(ABC802_GTK_SRC_DIR)/*.c)
-ABC802_GTK_OBJS := $(ABC802_GTK_SRCS:.c=.o) $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/cassette.o $(ABC802_SRC_DIR)/render.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC802_GTK_OBJS := $(ABC802_GTK_SRCS:.c=.o) $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/cassette.o $(ABC802_SRC_DIR)/render.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o $(DEBUG_OBJS)
 ABC802_GTK_TARGET := $(BIN_DIR)/abc802-gtk
 ABC802_GTK_PKGS := gtk4
 ABC802_GTK_CFLAGS := $(shell pkg-config --cflags $(ABC802_GTK_PKGS) 2>/dev/null)
@@ -215,7 +215,7 @@ ABC802_GTK_LIBS := $(shell pkg-config --libs $(ABC802_GTK_PKGS) 2>/dev/null)
 
 ABC80_GTK_SRC_DIR := abc80/gtk/src
 ABC80_GTK_SRCS := $(wildcard $(ABC80_GTK_SRC_DIR)/*.c)
-ABC80_GTK_OBJS := $(ABC80_GTK_SRCS:.c=.o) $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/chargen.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/abcbus.o $(ABC80_SRC_DIR)/step.o $(ABCBUS_OBJS) $(ABC80_SRC_DIR)/sound.o $(ABC80_SRC_DIR)/cassette.o $(ABC80_SRC_DIR)/charset.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC80_GTK_OBJS := $(ABC80_GTK_SRCS:.c=.o) $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/chargen.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/abcbus.o $(ABC80_SRC_DIR)/step.o $(ABCBUS_OBJS) $(ABC80_SRC_DIR)/sound.o $(ABC80_SRC_DIR)/cassette.o $(ABC80_SRC_DIR)/charset.o $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o $(DEBUG_OBJS)
 ABC80_GTK_TARGET := $(BIN_DIR)/abc80-gtk
 ABC80_GTK_PKGS := gtk4 sdl2
 ABC80_GTK_CFLAGS := $(shell pkg-config --cflags $(ABC80_GTK_PKGS) 2>/dev/null)
