@@ -103,6 +103,21 @@ Real, understood, and deliberately not solved yet — not oversights.
 - **The DART/SIO/CTC are modeled only as far as the boot path needs.**
   Baud-rate generation, transmit interrupts, and the SIO's own vectors
   are absent.
+- **Some ROM table details are unread.** The DOS device table
+  (`0x6ED3`, see `ABC802_REFERENCE.md`) has a second byte per entry
+  (`HD` `05`, `MF`/`SF`/`RM` `02`, the rest `00`) and select bytes whose
+  top two bits the bus never sees; what either means is unknown. The
+  BASIC function table opens with `XFN` (token `0xFE`). Its statement
+  counterpart `XSTM` turned out to be the prefix for a second statement
+  table, so `XFN` is probably a prefix too, but no prefixed function has
+  been found or tested. Also unread: the word table at `0x0A6C` that the
+  statement pointer block names, the nameless `0x81` entry heading the
+  secondary keywords at `0x0945`, and the `0x00` bytes inside the main
+  statement table (after `XSTM` and after `DEF FN`). Finally, the
+  operator range and every row below the statements in
+  `ABC802_BASIC_REFERENCE.md`'s table list have not been rechecked
+  against the ROM's own pointers, as the function, attribute and
+  statement ranges were on 2026-09-24.
 - **Frame frequency is ambiguous** — MAME's DIP label and the code
   comment that consumes it disagree; see `ABC802_REFERENCE.md`. Nothing
   currently depends on it.

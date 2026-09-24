@@ -197,7 +197,10 @@ which is what turns "an implementation exists for a related machine" into
    immediately before `OUT (01h),A`.
 3. **The device-select values match.** abc80sim uses 36/44/45/46 for
    HD/MF/MO/SF; the ROM carries `2Dh`, `2Eh` and `2Ch` (45, 46, 44) in a
-   table at `0x61DA`-`0x61FB`.
+   table at `0x61DA`-`0x61FB`. *(Corrected 2026-09-24: that range is
+   code, and the bytes found there are `INC L`. The values are right, but
+   they come from the device table at `0x6ED3`; see
+   [`ABC802_REFERENCE.md`](ABC802_REFERENCE.md#abc-bus).)*
 
 The ABC802 and ABC80 use the same bus and the same drives, so this is the
 expected result — but it is now evidence rather than assumption.

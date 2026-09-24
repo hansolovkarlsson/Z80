@@ -185,9 +185,11 @@ in the ROM, which is what settles it.
 
 ## Statements
 
-Read out of the ROM's statement table at `0x08A5`-`0x0A22`, plus the
-extension table at `0x4BFA` that adds `WIDTH`. Grouped here by what they
-do rather than by token order.
+Read out of the ROM's two statement tables, the main one at
+`0x089F`-`0x0944` and a second at `0x097E`-`0x0A21` whose statements a
+program stores behind a prefix token, plus the extension table at `0x4BFA`
+that adds `WIDTH`. Grouped here by what they do rather than by token
+order.
 
 ### Control flow
 
@@ -254,7 +256,8 @@ see [Variables, types and declarations](#variables-types-and-declarations).
 
 ## Functions
 
-Read out of the ROM's function table at `0x0676`-`0x079A` (56 entries).
+Read out of the ROM's function table at `0x0675`-`0x079D` (56 functions,
+plus `FN` itself and an entry named `XFN` whose purpose is unknown).
 `LEFT`/`LEFT$`, `RIGHT`/`RIGHT$`, `MID`/`MID$` and `ASC`/`ASCII` are each
 pairs of synonyms sharing one token, so the `$` is optional on the three
 string-slicing functions.
@@ -481,7 +484,7 @@ turn on graphics mode for a row**.
 Each attribute word simply stores one *character code* into the current
 screen cell. The code is exactly the ROM token minus `0x80`, which makes
 the whole table derivable from the ROM's attribute table at
-`0x0810`-`0x088C`:
+`0x0814`-`0x088A`:
 
 | Word | Code | Effect on the ABC802 |
 |---|---|---|
@@ -1239,13 +1242,47 @@ token, which is how `NEW`/`SCR`, `RENUMBER`/`REN`, `LEFT`/`LEFT$` and
 | Table | Address | Contents |
 |---|---|---|
 | Operators | `0x0625`-`0x0661` | 18 entries, in nine precedence groups |
-| Functions | `0x0676`-`0x079A` | 56 entries |
-| Attributes | `0x0810`-`0x088C` | 25 entries |
-| Statements | `0x08A5`-`0x0A22` | 62 entries, statements then secondary keywords |
+| Functions | `0x0675`-`0x079D` | 58 entries: 56 functions, `FN`, `XFN` |
+| Attributes | `0x0814`-`0x088A` | 25 entries |
+| Statements | `0x089F`-`0x0944` | 29 entries: 28 statements and the `XSTM` prefix |
+| Secondary keywords | `0x0945`-`0x097D` | 11 entries in 8 groups (`ELSE`, `THEN`, `TO`, `STEP`, ...) |
+| Prefixed statements | `0x097E`-`0x0A21` | 24 entries (`DIM` to `CLR DOT`) |
 | Commands | `0x4057`-`0x40B2` | 17 entries |
 | Extension | `0x4BFA`-`0x4C0B` | 1 entry (`WIDTH`) |
 | Device names | `0x6E37`-`0x6EB4` | 16 entries, in the DOS ROM |
 | DOS commands | `0x6F87`-`0x6F99` | 4 entries (`BYE`, `KILL`, `NAME`, `AS`) |
+
+The function and attribute starts are the addresses the ROM's own
+pointers hold, in a block at `0x0661`: `0x0667` holds `0x0814`, and
+`0x0671` holds `0x0675` followed by `0x079E`. That second address is not
+the name list's end. It starts a separate list of bare tokens
+(`9A 86 84 A3 …`, which are `ABS`, `ATN`, `COS`, `EXP` in name-list
+order), which the routine at `0x1785` searches. The three bytes before the
+first attribute entry (`29 2D 6C` at `0x0811`) are not part of the table.
+They are an argument-type list that `0x16F7` hands to the parser at
+`0x1802`, and that list ends on `RED`'s token, which is the first byte
+with bit 7 set.
+
+The statement tables are pinned the same way. A block at `0x088B` holds
+`0x097E` (at `0x0891`), `0x0A6C` (at `0x0893`, not yet read) and
+`0x089F` (at `0x089B`). The main table opens with **`XSTM`, token
+`0x86`, which is a prefix rather than a statement**: the 24 statements
+at `0x097E` number their tokens from `0x80` again, and a program stores
+one as `0x86` followed by its token minus `0x80`. A program saved to
+cassette shows it: `GOTO 10` is stored as `80 0A 00`, `STOP` as
+`86 08` and `DIM` as `86 00`. Between the two tables are the secondary
+keywords, most in a group of their own that code looks up alone:
+`LD DE,0950h` at `0x1A26` for `STEP`, `LD DE,0978h` at `0x195C` for
+`THEN`, and likewise for `TO`, `AS FILE`, `COUNT`, `USING` and `LOCAL`.
+The first group (`0x0945`: an entry with token `0x81` and no name, then
+`?`, `:` and `ELSE`) has no pointer that has been found.
+
+The function, attribute and three statement-region ranges end on their
+table's closing `0xFF`. The operator row ends one byte past its own
+(`0x0660`), and it and the rows below the statements were not rechecked. (Until 2026-09-24 the functions read
+`0x0676`-`0x079A`, the attributes `0x0810`-`0x088C`, and the statements
+`0x08A5`-`0x0A22` as one table of 62 entries. None of the three starts
+fell on an entry the ROM points at.)
 
 Two things fell out of that format for free. The operator table's `0xFF`
 separators are **precedence group boundaries**, which is where the

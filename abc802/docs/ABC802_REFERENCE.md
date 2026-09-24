@@ -295,20 +295,41 @@ pulse attention and reset. A transaction is a four-byte command header
 followed by a 256-byte sector transfer, with `INI`/`OUTI` block moves
 gated on the status byte.
 
-**Device-select codes.** These were recorded as coming from a select table
-at `0x61DA`-`0x61FB`, but that range holds code in both DOS images
-(`LD HL,(FD12h)`, `LD A,(HL)`, `INC A`, `JR Z`, ...), checked on 2026-09-24
-while writing `resources/rom/abc802.sym`. The codes below are unaffected;
-where in the ROM they come from is not confirmed:
+**Device-select codes.** They come from a device table in the DOS ROM,
+four bytes per entry (a select byte, one byte not yet identified, then the
+two-letter device prefix), which the DOS's init at `0x6C85` copies with
+`LDIR` into RAM at `0xFDE2`. It sits at `0x6ED3` in v.20
+(`ABC802-dos.32-31.bin`) and `0x6EDB` in v.19 (`ABC802-dos.32-21.bin`),
+whose copy is `LD HL,6EDBh` at `0x6C8D`. The select routine at `0x6184`
+indexes that RAM copy and `0x6172` masks the result with `AND 3Fh` before
+`OUT (01h),A`, so the upper two bits of each select byte never reach the
+bus:
 
-| Select | Device |
-|---|---|
-| `0x24` | hard disk (`HD`) |
-| `0x2C` | ABC832/834 floppy, 640K (`MF`) |
-| `0x2D` | ABC830 floppy, 160K (`MO`) |
-| `0x2E` | 8-inch floppy (`SF`) |
+| Entry | Select byte | On the bus | Device |
+|---|---|---|---|
+| `DR` | `0x08` | (none) | the default: an offset to the `MF` entry |
+| `HD` | `0x24` | `0x24` | hard disk |
+| `MF` | `0x6C` | `0x2C` | ABC832/834 floppy, 640K |
+| `MO` | `0xAD` | `0x2D` | ABC830 floppy, 160K |
+| `SF` | `0x6E` | `0x2E` | 8-inch floppy |
+| `??` | `0x00` | | two unnamed entries |
+| `RM` | `0x00` | | |
 
-The boot ROM scans all four, twelve times each. **A status byte of `0x00`
+The byte at `0xFD01` chooses the entry: `0x61B2` takes its low five bits
+(or `0xFFF9` when they are `0x1E`), and `0x6184` masks those with `0x1C`,
+so each entry is a multiple of four from `0xFDE2`. A zero index reads the
+`DR` entry's select byte as the offset instead, which is how `DR` becomes
+`MF`. What the second byte of each entry means, and what the top bits of
+`MF`/`MO`/`SF`'s select bytes carry, are not known.
+
+(These codes were once recorded as coming from a "select table" at
+`0x61DA`-`0x61FB`. That range is code in both DOS images, where the `2Ch`
+bytes are `INC L`; corrected on 2026-09-24.)
+
+With no card answering, the boot ROM selects `0x24`, `0x2C`, `0x2D` and
+`0x2E` twelve times each, then `0x00` twenty-four times, observed at
+`OUT (01h),A` (`0x6177`) with `bin/abc802 --break 6177`. With an `MO` or
+`MF` image attached it stops at that drive's code. **A status byte of `0x00`
 or `0xFF` means "no device"** — the poll loop at `0x6196` aborts on either
 (`INC A / JR Z`, `DEC A / JR Z`) — so a present card must never report
 either.

@@ -21,6 +21,60 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-24 (11): ABC802 table claims, settled
+
+These were the two fixes yesterday's standup carried forward, both left
+over from writing `abc802.sym`: a device-select "table" at `0x61DA` that
+turned out to be code, and BASIC function and attribute table starts that
+fell mid-entry.
+
+The select codes (`24`, `2C`, `2D`, `2E`) had been right all along; only
+their source was wrong. A static search for the byte values led nowhere,
+because the ROM computes the code at run time: the select routine at
+`0x6184` indexes a RAM table at `0xFDE2`. A debugger watch on that address
+answered in one run: the DOS's init at `0x6C85` `LDIR`s it in from a
+four-byte-per-entry device table at `0x6ED3` (`DR`, `HD`, `MF`, `MO`,
+`SF`, two unnamed entries, `RM`). The bus sees each select byte `AND 3Fh`,
+which is how `MF`'s `6C` becomes `2C`. Watching `OUT (01h),A` across a
+whole boot then confirmed the codes as the ROM actually emits them: each
+one twelve times with no card present, then twenty-four selects of `00`,
+which nothing had recorded before. v.19's table is the same, eight bytes
+later. The `2Ch` bytes the old claim had pointed at are `INC L`.
+
+The BASIC tables were settled by the ROM's own pointers instead of by
+reading the format. A block at `0x0661` holds `0x0814` for the attributes
+and `0x0675`/`0x079E` for the functions. The second function address had
+looked like an end, but it starts a separate list of bare tokens. So the
+function table begins with an `XFN` entry the old range had cut in half.
+The three bytes before the first attribute entry looked like a header.
+They are an argument-type list for the parser at `0x1802`, which runs
+until a byte with bit 7 set and so ends on `RED`'s token: two structures
+sharing one byte.
+
+One trap on the way. `z80dasm` could not show `0x6184` or `0x16F7`,
+because its reachability walk from a slice's origin stops at the first
+unconditional jump and renders the rest as `DB`. The debugger's `u`
+decodes linearly from any address and was the right tool for reading
+arbitrary ROM.
+
+The same pattern turned up in the statement table, and the user asked
+for that fixed too before committing. The ROM's pointer gives `0x089F`,
+an `XSTM` entry ahead of the documented start at `LET`. Following the
+rest of that pointer block showed the documented "one table of 62
+entries" to be three structures: the main statements, a run of
+secondary-keyword groups each loaded by its own `LD DE` (`STEP`, `TO`,
+`THEN`, ...), and a second statement table at `0x097E` whose tokens start
+again at `0x80`. That raised the question of how `DIM` (`0x80` there) and
+`GOTO` (`0x80` in the main table) could both exist in a program. It was
+answered by using the machine as its own harness rather than by reading
+more code. A five-line program saved to cassette stores `GOTO` as `80`
+but `STOP` as `86 08` and `DIM` as `86 00`, and `0x86` is `XSTM`'s token.
+So `XSTM` is the escape prefix, and the pointer included it for a reason.
+`XFN` at the head of the function table looks like the same device, but
+that is recorded on the ABC802 roadmap as untested rather than claimed.
+
+---
+
 ## 2026-09-24 (10) — a VS Code extension
 
 VS Code support, asked for by the user: an extension in `asm/vscode/`
