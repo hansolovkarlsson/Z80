@@ -365,6 +365,7 @@ static void print_help(FILE *out) {
         "  w [addr [len]]   stop when those bytes change, or list watches\n"
         "  r [reg=val]      show all registers, or set one (a, bc, ix, af', pc...)\n"
         "  m addr [len]     dump memory (default 64 bytes)\n"
+        "  e addr byte...   write bytes to memory, then show them\n"
         "  u [addr] [n]     disassemble n instructions (default: PC, 8)\n"
         "  q                end the run\n"
         "Addresses and values are hex; counts are decimal. An empty line\n"
@@ -472,11 +473,11 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
             start = line;
         }
 
-        char *argv[8];
+        char *argv[64];   // enough for a long `e`
         int argc = 0;
         char copy[256];
         strcpy(copy, start);
-        for (char *tok = strtok(copy, " \t"); tok && argc < 8; tok = strtok(NULL, " \t"))
+        for (char *tok = strtok(copy, " \t"); tok && argc < 64; tok = strtok(NULL, " \t"))
             argv[argc++] = tok;
         const char *cmd = argv[0];
         dbg->last_command[0] = '\0';
@@ -570,6 +571,35 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
                 continue;
             }
             dump_memory(out, cpu, (uint16_t)a, len);
+        } else if (!strcmp(cmd, "e") || !strcmp(cmd, "enter")) {
+            // Into the flat array, like every other access here: it can
+            // patch code in a ROM image, and cannot reach memory a machine
+            // diverts elsewhere. Every byte is checked before any is
+            // written, so a typo writes nothing.
+            unsigned long a, v;
+            uint8_t bytes[64];
+            int n = 0;
+            bool ok = argc >= 3 && resolve_addr(dbg, argv[1], 0xFFFF, &a);
+            for (int k = 2; ok && k < argc; k++) {
+                ok = parse_hex(argv[k], 0xFF, &v);
+                bytes[n++] = (uint8_t)v;
+            }
+            if (!ok) {
+                fprintf(out, "e: usage is e addr byte..., bytes in hex (00-FF)\n");
+                continue;
+            }
+            for (int k = 0; k < n; k++) {
+                uint16_t at = (uint16_t)(a + (unsigned long)k);
+                cpu->memory[at] = bytes[k];
+                // A watch must not report the debugger's own write as a
+                // change the program made.
+                for (int w = 0; w < dbg->watch_count; w++) {
+                    Watch *wt = &dbg->watches[w];
+                    uint16_t off = (uint16_t)(at - wt->addr);
+                    if (off < wt->len) wt->snapshot[off] = bytes[k];
+                }
+            }
+            dump_memory(out, cpu, (uint16_t)a, n);
         } else if (!strcmp(cmd, "u") || !strcmp(cmd, "dis")) {
             unsigned long a = cpu->pc;
             long n = 8;

@@ -252,7 +252,8 @@ Three more things worth knowing:
   at `0005` runs the entire CP/M call and the instruction after it at once,
   since `z80` provides CP/M itself rather than as Z80 code.
 - **`w addr` stops when memory changes**, and names the instruction that
-  wrote it.
+  wrote it. **`e addr byte...` changes memory**: `e 0134 4A` turns the
+  greeting into `Jello`, and `e 0112 06` patches `CP 5` into `CP 6`.
 - **The same session can be scripted.** Put the commands in a file and run
   `z80 --debug --debug-script cmds.txt hello.com`; the commands are echoed
   so the output reads like the session above. When the file runs out, the

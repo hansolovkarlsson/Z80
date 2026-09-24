@@ -57,6 +57,7 @@ with its count, or `n`.
 | `r` | show all registers, the alternate set, `I` and `R` |
 | `r reg=val` | set one: `a f b c d e h l i r af bc de hl ix iy sp pc af' bc' de' hl'` |
 | `m addr [len]` | hex and ASCII dump (default 64 bytes) |
+| `e addr byte...` | write bytes (hex) starting at addr, then show them |
 | `u [addr] [n]` | disassemble n instructions (default: from PC, 8) |
 | `q` | end the run |
 | `h` | help |
@@ -129,6 +130,14 @@ machine diverts elsewhere: the ABC802's and ABC806's character RAM, and the
 ABC806's high-resolution plane. Disassembly is unaffected, since fetch
 reads the same array.
 
+`e` writes to the same array. That makes it a way to **patch code**,
+including a ROM image, since the array is what the CPU fetches from, and
+it bypasses the machines' write hooks, so a ROM that is read-only to the
+program is writable from the prompt. It has the same blind spot as `m`:
+memory a machine diverts elsewhere is out of reach. Every byte on the line
+is checked before any is written, so a typo writes nothing, and a write to
+a watched byte does not trigger the watch.
+
 **`n` watches the stack, not the return address.** It stops at the first
 instruction where SP is back to its value before the call. On a plain
 machine the two agree, but CP/M's BDOS emulation runs an intercepted call
@@ -142,4 +151,3 @@ after it; `n` over the `CALL 0005h` is the natural way past one.
 - `--interactive` is refused with a debug option: that mode owns the
   terminal for the keyboard and the screen.
 - The GTK apps have no debugger.
-- No memory writes from the prompt; registers only.

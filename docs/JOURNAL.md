@@ -189,6 +189,11 @@ first: no script or test in the repo passes `-o` or `-l`, and the README's
 own example already wrote `-l 0x34`. `z80dasm/hex-arguments` pins it, and
 with C's base detection put back it fails on both `-o 0100` and `-l 34`.
 
+Then `e`, memory writes from the prompt, the second piece of milestone 2
+and a small one. The only design question was watchpoints: a write to a
+watched byte would have been reported, one step later, as a change the
+program made. `e` updates the snapshot as it writes.
+
 Then debugger symbols, the first piece of milestone 2: `z80asm -s` writes
 them, `--symbols` reads them, and names work in every command, in
 `--break`, and in the listing (`DJNZ count_loop`). The assembler had never

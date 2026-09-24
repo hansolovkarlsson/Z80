@@ -288,6 +288,23 @@ $(want "$out" "CALL 0005h" "an equ (BDOS) never used to name an address")
 $(want "$out" "[breakpoint] fail:" "the run stopping at fail after the counter is corrupted")"
     report "debugger-symbols" "$(printf '%s' "$reasons" | grep .)" "$out"
 
+    # `e` writes memory. Data: the greeting's H becomes J, under a watch
+    # that must not report the debugger's own write. Code: `cp 5` becomes
+    # `cp 6` (its operand is at 0112), so the program's check fails. And a
+    # line with one bad byte must write none of them.
+    out=$(debugger_run "$hello" $'w 0134 1\ne 0134 4A\ne 0135 58 zz\nc\n')
+    reasons="$(want "$out" "Jello from z80asm!" "the data write reaching the program")
+$(want "$out" "e: usage" "a bad byte rejected")"
+    case "$out" in *"[watch]"*) reasons="$reasons
+    the watch fired on the debugger's own write" ;; esac
+    case "$out" in *"JXllo"*) reasons="$reasons
+    a line with a bad byte still wrote the good one" ;; esac
+    local code_out
+    code_out=$(debugger_run "$hello" $'e 0112 06\nc\n')
+    reasons="$reasons
+$(want "$code_out" "loop counter wrong" "the patched cp 6 failing the program's own check")"
+    report "debugger-memory-write" "$(printf '%s' "$reasons" | grep .)" "$out$code_out"
+
     # A watchpoint names the instruction that wrote. The expected addresses
     # come from z80dasm, not from the debugger, so the two cannot agree by
     # sharing a mistake.

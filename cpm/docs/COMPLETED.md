@@ -1245,3 +1245,13 @@ which, which it had never done.
 the debugger is checked against the assembler rather than itself. It was
 broken four ways and failed each time: every symbol treated as a label,
 names ignored, operand naming off, and the assembler not marking `EQU`s.
+
+### Memory writes
+
+`e addr byte...` writes hex bytes into the flat array and shows them
+afterwards. Three rules, each pinned by `debugger-memory-write` and each
+seen to fail when broken: the bytes land where the program reads them (a
+data write and a code patch, `cp 5` to `cp 6`); every byte is validated
+before any is written, so `e 0135 58 zz` writes nothing; and a write to a
+watched byte updates the watch's snapshot, so the debugger's own write is
+not reported as the program's.
