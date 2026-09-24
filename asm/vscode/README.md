@@ -1,7 +1,7 @@
 # z80asm for VS Code
 
-Syntax colouring, completion and go-to-definition for source written for
-this repository's assembler, `bin/z80asm`
+Syntax colouring, completion, go-to-definition and error markers for
+source written for this repository's assembler, `bin/z80asm`
 ([`docs/ASSEMBLER.md`](../../docs/ASSEMBLER.md)).
 It covers `.asm`, `.z80`, `.mac`, `.inc` and `.sym` files.
 
@@ -37,8 +37,23 @@ macro jumps to where it is defined, including into an `INCLUDE`d file.
 Names match exactly, since labels are case-sensitive in the assembler, and
 nothing inside a comment or a macro's `&name` has one.
 
+**Error markers** come from the assembler itself: on opening and on saving
+a `.asm`, `.z80` or `.mac` file, the extension runs `z80asm` on it and
+underlines each line it reports, in the file it names, so an error in an
+`INCLUDE`d file lands there and an error inside a macro lands on the call,
+with the macro named. It assembles into a temporary directory and never
+touches the `.com` beside your source. The assembler is `bin/z80asm` in the
+nearest directory above the file, or the `z80asm.path` setting; one found
+only on `PATH` is never used, since Homebrew ships an unrelated `z80asm`.
+
 ## Limits
 
+- **Errors arrive a pass at a time**, as on the command line: the
+  assembler stops after pass 1 if it found anything, so an undefined
+  symbol (a pass-2 error) is only marked once the pass-1 errors are fixed.
+- `.inc` files are not checked on their own, since assembled alone they
+  would report symbols their includer defines; their errors show when the
+  file that includes them is checked.
 - A label **without a colon** is only coloured as one in column 0. The
   assembler also accepts an indented one, but so indented a word is far
   more often a macro call, which the grammar cannot tell apart.
@@ -60,8 +75,10 @@ install and tests the grammar with the code that will run it. It checks:
 - **the symbol scanner against `z80asm -s`** on every example and on
   `zexall.mac`: the same labels and constants, no more and no fewer.
 - **the grammar**, by tokenising real lines and asserting on their scopes.
-- **completion and go-to-definition**, by calling the extension's own code
-  through a stand-in for VS Code's API. The places a definition should land
+- **completion, go-to-definition and error markers**, by calling the
+  extension's own code through a stand-in for VS Code's API. The marker
+  check writes its own broken files, so the lines that must be marked are
+  known from the input. The places a definition should land
   are found by a plain text search of the file, not by the scanner.
 
 The grammar and `keywords.json` are generated: edit `build_grammar.py` and

@@ -206,6 +206,13 @@ test run failed loudly rather than silently: the test's stand-in for VS
 Code had no `registerDefinitionProvider`, so activation threw and the
 runner reported it, which is the behaviour wanted from a harness.
 
+Then error markers: the extension runs the real assembler on save. One
+of five injected faults, writing the `.com` beside the source, passed the
+first version of the check, because the assembler writes nothing when there
+are errors and the check looked only after the broken save. Moved after
+the clean save, it fails as it should. The assembler is never taken from
+`PATH`, for the reason the morning's postmortem gives.
+
 Then symbol files for the ABC ROMs. The rule was that every name comes
 from an address a document already states, so three search agents
 collected the claims with their sources, and each claim was then checked

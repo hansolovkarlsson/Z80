@@ -142,27 +142,52 @@ async function grammarChecks() {
 // Not a live editor: the stand-in records the provider extension.js
 // registers and hands it documents, so what is checked is the extension's
 // own logic (what is offered, in which order, in which case).
-function completionChecks() {
+// One stand-in for the vscode API, shared by every check below. It records
+// what extension.js registers (providers, event handlers, markers) so the
+// checks can drive the extension's own code without a live editor.
+let ext = null;
+function loadExtension() {
+    if (ext) return ext;
     const Module = require('module');
-    let provider = null, definer = null;
+    ext = { provider: null, definer: null, onSave: null, config: {}, warnings: [], markers: new Map() };
     class CompletionItem { constructor(label, kind) { this.label = label; this.kind = kind; } }
     class Position { constructor(line, character) { this.line = line; this.character = character; } }
     class Location { constructor(uri, pos) { this.file = uri.fsPath; this.line = pos.line; this.character = pos.character; } }
+    class Range { constructor(l1, c1, l2, c2) { this.start = { line: l1, character: c1 }; this.end = { line: l2, character: c2 }; } }
+    class Diagnostic { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; } }
+    const event = (key) => (cb) => { if (key) ext[key] = cb; return { dispose() {} }; };
     const fake = {
-        CompletionItem, Position, Location,
-        Uri: { file: (f) => ({ fsPath: f }) },
+        CompletionItem, Position, Location, Range, Diagnostic,
+        DiagnosticSeverity: { Error: 'Error' },
+        Uri: { file: (f) => ({ fsPath: f, toString: () => f }) },
         CompletionItemKind: { Keyword: 'Keyword', Function: 'Function', Field: 'Field', Constant: 'Constant',
                               Variable: 'Variable', EnumMember: 'EnumMember', Operator: 'Operator' },
-        workspace: { asRelativePath: (p) => path.relative(ROOT, p) },
+        window: { showWarningMessage: (m) => { ext.warnings.push(m); } },
+        workspace: {
+            asRelativePath: (p) => path.relative(ROOT, p),
+            getConfiguration: () => ({ get: (k) => ext.config[k] }),
+            onDidSaveTextDocument: event('onSave'), onDidOpenTextDocument: event(null),
+            onDidCloseTextDocument: event(null), textDocuments: [],
+        },
         languages: {
-            registerCompletionItemProvider: (lang, p) => { provider = p; return { dispose() {} }; },
-            registerDefinitionProvider: (lang, p) => { definer = p; return { dispose() {} }; },
+            registerCompletionItemProvider: (lang, p) => { ext.provider = p; return { dispose() {} }; },
+            registerDefinitionProvider: (lang, p) => { ext.definer = p; return { dispose() {} }; },
+            createDiagnosticCollection: () => ({
+                set: (uri, list) => ext.markers.set(uri.fsPath, list),
+                delete: (uri) => ext.markers.delete(uri.fsPath),
+                dispose() {},
+            }),
         },
     };
     const realLoad = Module._load;
     Module._load = function (req, ...rest) { return req === 'vscode' ? fake : realLoad.call(this, req, ...rest); };
     try { require(path.join(HERE, 'extension.js')).activate({ subscriptions: [] }); }
     finally { Module._load = realLoad; }
+    return ext;
+}
+
+function completionChecks() {
+    const { provider, definer } = loadExtension();
 
     const complete = (file, lineText) => {
         const text = fs.readFileSync(file, 'utf8');
@@ -217,10 +242,53 @@ function completionChecks() {
     report('go-to-definition', defProblems);
 }
 
+// Error markers: the extension runs the real assembler on save. The test
+// writes its own broken files, so the lines that must carry a marker are
+// known from the input, not from anything the extension computed.
+async function diagnosticsChecks() {
+    const e = loadExtension();
+    const problems = [];
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'z80asm-diag-'));
+    const main = path.join(dir, 'bad.asm'), defs = path.join(dir, 'defs.inc');
+    const write = (f, lines) => fs.writeFileSync(f, lines.join('\n') + '\n');
+    write(main, ['        org 100h', '        include "defs.inc"', 'start:  ld a, 5',
+                 '        ld q, 1', '        TWICE 3', '        nop']);
+    write(defs, ['TWICE   MACRO n', '        ld b, &n', '        ld zz, &n', '        ENDM', '        ld q, 2']);
+    const doc = (f) => ({ languageId: 'z80asm', uri: { fsPath: f, scheme: 'file' } });
+    e.config.path = path.join(ROOT, 'bin/z80asm');
+
+    await e.onSave(doc(main));
+    const at = (f) => (e.markers.get(f) || []).map((d) => `${d.range.start.line}:${d.range.start.character}`).sort();
+    if (at(main).join(' ') !== '3:8 4:8') problems.push(`bad.asm markers at ${at(main).join(' ') || 'none'}, expected lines 4 and 5 at the indent (3:8 4:8)`);
+    if (at(defs).join(' ') !== '4:8') problems.push(`defs.inc markers at ${at(defs).join(' ') || 'none'}, expected its line 5 (4:8)`);
+    const macroMsg = (e.markers.get(main) || []).find((d) => d.range.start.line === 4);
+    if (!macroMsg || !macroMsg.message.includes('in macro TWICE')) problems.push('the macro call\'s marker does not name the macro');
+    write(main, ['        org 100h', '        include "defs.inc"', 'start:  ld a, 5', '        nop']);
+    write(defs, ['TWICE   MACRO n', '        ld b, &n', '        ENDM']);
+    await e.onSave(doc(main));
+    if (e.markers.has(main) || e.markers.has(defs)) problems.push('fixing the errors did not clear the markers');
+    // Only a clean assembly writes output, so this is the moment a .com
+    // beside the source would appear if the check wrote one there.
+    const left = fs.readdirSync(dir).filter((f) => f !== 'bad.asm' && f !== 'defs.inc');
+    if (left.length) problems.push(`the check left ${left.join(', ')} beside the source`);
+
+    const incOnly = await e.onSave(doc(defs));
+    if (incOnly.length || e.markers.has(defs)) problems.push('an .inc file was checked on its own');
+
+    delete e.config.path;
+    await e.onSave(doc(path.join(ROOT, 'asm/examples/hello.asm')));
+    if (e.warnings.length) problems.push(`a file inside the repo did not find bin/z80asm: ${e.warnings[0]}`);
+    await e.onSave(doc(main));
+    if (!e.warnings.some((w) => w.includes('z80asm.path'))) problems.push('a file with no bin/z80asm above it gave no warning');
+    fs.rmSync(dir, { recursive: true, force: true });
+    report('error-markers', problems);
+}
+
 (async () => {
     keywordChecks();
     scannerChecks();
     completionChecks();
+    await diagnosticsChecks();
     await grammarChecks();
     process.exit(failed ? 1 : 0);
 })().catch((e) => { console.log(`FAIL: vscode/runner\n    ${e.stack}`); process.exit(1); });

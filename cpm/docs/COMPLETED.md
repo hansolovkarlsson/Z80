@@ -1323,3 +1323,20 @@ exactly, because labels are case-sensitive in the assembler. The
 search of the file rather than by the scanner, and failed under all three
 injected faults: case-insensitive matching, the comment guard removed, and
 the column ignored.
+
+### Error markers
+
+On open and on save the extension runs the real `z80asm` and underlines
+what it reports, parsing both of its error forms (`file:line:` and
+`file:line (macro NAME):`), so an error in an `INCLUDE`d file marks that
+file and one inside a macro marks the call. The assembler is found by
+walking up from the file to a `bin/z80asm`, or from the `z80asm.path`
+setting, and **never from `PATH`**: on this machine `PATH` finds Homebrew's
+unrelated `z80asm`, the day's postmortem in miniature. Output goes to a
+temporary directory; `.inc` files are left to their includers.
+
+`error-markers` writes its own broken files and checks the marked lines
+against them. It failed under five injected faults, but only after one
+test fix: writing the output beside the source first passed, because the
+assembler writes nothing when there are errors and the leftover-file check
+ran after the broken save. It now runs after the clean one, and fails.

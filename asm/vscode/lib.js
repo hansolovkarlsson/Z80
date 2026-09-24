@@ -155,4 +155,38 @@ function definitionsOf(syms, name) {
     return [...syms.labels, ...syms.equs, ...syms.macros].filter((d) => d.name === name);
 }
 
-module.exports = { keywords, stripComment, scanText, scanFile, prefersLowercase, wordAt, definitionsOf };
+// z80asm's error lines, as asm/src/main.c prints them:
+//   file:line: error: message
+//   file:line (macro NAME): error: message   (line = where the macro was called)
+// A file is printed as it was given, so relative paths resolve against the
+// directory the assembler ran in. Lines come back 0-based, as VS Code counts.
+const ERROR_LINE = /^(.+?):(\d+)(?: \(macro ([^)]*)\))?: error: (.*)$/;
+
+function parseAssemblerErrors(output, cwd) {
+    const errors = [];
+    for (const raw of output.split(/\r?\n/)) {
+        const m = ERROR_LINE.exec(raw);
+        if (m) errors.push({ file: path.resolve(cwd, m[1]), line: Number(m[2]) - 1,
+                             macro: m[3] || null, message: m[4] });
+    }
+    return errors;
+}
+
+// This repository's assembler: bin/z80asm in the nearest directory above
+// `startDir` that has one. Deliberately no fallback to whatever `z80asm`
+// is on PATH: Homebrew ships an unrelated assembler by that name, and its
+// errors would be reported against the wrong dialect without a word (see
+// docs/postmortems/2026-09-24-the-command-ran-but-not-the-program.md).
+function findAssembler(startDir, exists = fs.existsSync) {
+    let dir = path.resolve(startDir);
+    for (;;) {
+        const candidate = path.join(dir, 'bin', 'z80asm');
+        if (exists(candidate)) return candidate;
+        const up = path.dirname(dir);
+        if (up === dir) return null;
+        dir = up;
+    }
+}
+
+module.exports = { keywords, stripComment, scanText, scanFile, prefersLowercase, wordAt, definitionsOf,
+                   parseAssemblerErrors, findAssembler };

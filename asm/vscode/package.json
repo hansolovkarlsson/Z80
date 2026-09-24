@@ -1,19 +1,32 @@
 {
   "name": "z80asm",
   "displayName": "z80asm",
-  "description": "Syntax colouring, completion and go-to-definition for this repository's Z80 assembler (bin/z80asm)",
-  "version": "0.2.0",
+  "description": "Syntax colouring, completion, go-to-definition and error markers for this repository's Z80 assembler (bin/z80asm)",
+  "version": "0.3.0",
   "publisher": "z80-project",
   "license": "SEE LICENSE IN ../../LICENSE",
-  "engines": { "vscode": "^1.75.0" },
-  "categories": ["Programming Languages"],
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
   "main": "./extension.js",
   "contributes": {
     "languages": [
       {
         "id": "z80asm",
-        "aliases": ["Z80 Assembly (z80asm)", "z80asm"],
-        "extensions": [".asm", ".z80", ".mac", ".inc", ".sym"],
+        "aliases": [
+          "Z80 Assembly (z80asm)",
+          "z80asm"
+        ],
+        "extensions": [
+          ".asm",
+          ".z80",
+          ".mac",
+          ".inc",
+          ".sym"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -23,6 +36,16 @@
         "scopeName": "source.z80asm",
         "path": "./syntaxes/z80asm.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "z80asm",
+      "properties": {
+        "z80asm.path": {
+          "type": "string",
+          "default": "",
+          "description": "The z80asm to check files with. Empty means bin/z80asm in the nearest directory above the file that has one; a z80asm found only on PATH is never used, since other packages ship unrelated assemblers by that name."
+        }
+      }
+    }
   }
 }
