@@ -201,6 +201,11 @@ defines, and both had drifted before they were ever committed. A symlink
 into `~/.vscode/extensions` turned out to do nothing, since VS Code loads
 only what its registry lists, so `install.sh` builds a real `.vsix`.
 
+The extension then gained go-to-definition, from the same scan. Its first
+test run failed loudly rather than silently: the test's stand-in for VS
+Code had no `registerDefinitionProvider`, so activation threw and the
+runner reported it, which is the behaviour wanted from a harness.
+
 Then symbol files for the ABC ROMs. The rule was that every name comes
 from an address a document already states, so three search agents
 collected the claims with their sources, and each claim was then checked

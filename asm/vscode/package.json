@@ -1,8 +1,8 @@
 {
   "name": "z80asm",
   "displayName": "z80asm",
-  "description": "Syntax colouring and completion for this repository's Z80 assembler (bin/z80asm)",
-  "version": "0.1.0",
+  "description": "Syntax colouring, completion and go-to-definition for this repository's Z80 assembler (bin/z80asm)",
+  "version": "0.2.0",
   "publisher": "z80-project",
   "license": "SEE LICENSE IN ../../LICENSE",
   "engines": { "vscode": "^1.75.0" },

@@ -1,6 +1,6 @@
-// asm/vscode/extension.js - completion for z80asm source. Colouring is the
-// grammar's job (syntaxes/); this adds suggestions, from lib.js's scan of
-// the file and everything it INCLUDEs.
+// asm/vscode/extension.js - completion and go-to-definition for z80asm
+// source. Colouring is the grammar's job (syntaxes/); both of these come
+// from lib.js's scan of the file and everything it INCLUDEs.
 //
 // Where the cursor is decides what comes first: at the start of a
 // statement, mnemonics, directives and macros; in operands, the file's
@@ -57,9 +57,23 @@ function provide(document, position) {
     return items;
 }
 
+// Go to definition (F12, Ctrl-click): the same scan, looked up by the
+// exact name under the cursor. Nothing inside a comment, and nothing for a
+// mnemonic, register or number, which have no definition in the file.
+function define(document, position) {
+    const line = document.lineAt(position.line).text;
+    if (lib.stripComment(line).length < position.character) return [];
+    const name = lib.wordAt(line, position.character);
+    if (!name) return [];
+    const syms = lib.scanFile(document.uri.fsPath, document.getText());
+    return lib.definitionsOf(syms, name).map((d) =>
+        new vscode.Location(vscode.Uri.file(d.file), new vscode.Position(d.line, d.column)));
+}
+
 function activate(context) {
     context.subscriptions.push(
-        vscode.languages.registerCompletionItemProvider('z80asm', { provideCompletionItems: provide }));
+        vscode.languages.registerCompletionItemProvider('z80asm', { provideCompletionItems: provide }),
+        vscode.languages.registerDefinitionProvider('z80asm', { provideDefinition: define }));
 }
 
 module.exports = { activate, deactivate() {} };

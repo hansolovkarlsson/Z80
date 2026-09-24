@@ -59,11 +59,12 @@ function scanText(text, knownMacros = new Set()) {
     lines.forEach((raw, line) => {
         const text = raw.trim();
         if (!text) return;
+        const column = raw.search(/\S/);   // a definition is the line's first word
 
         const def = /^([A-Za-z_.][A-Za-z0-9_.]*):?\s+(macro|equ)\b\s*(.*)$/i.exec(text);
         if (def && def[2].toLowerCase() === 'macro') {
             if (depth === 0) {
-                out.macros.push({ name: def[1], line,
+                out.macros.push({ name: def[1], line, column,
                     params: def[3].split(',').map((p) => p.trim()).filter(Boolean) });
             }
             depth++;
@@ -75,16 +76,16 @@ function scanText(text, knownMacros = new Set()) {
         if (word === 'ENDM') { if (depth > 0) depth--; return; }
         if (depth > 0) return;   // bodies are expanded per call; their names are not the file's
 
-        if (def) { out.equs.push({ name: def[1], line, value: def[3].trim() }); return; }
+        if (def) { out.equs.push({ name: def[1], line, column, value: def[3].trim() }); return; }
         if (word === 'INCLUDE') {
             const p = text.slice(7).trim().replace(/^["']|["']$/g, '');
             if (p) out.includes.push(p);
             return;
         }
         const colon = /^([A-Za-z_.][A-Za-z0-9_.]*):/.exec(text);
-        if (colon) { out.labels.push({ name: colon[1], line }); return; }
+        if (colon) { out.labels.push({ name: colon[1], line, column }); return; }
         if (first && /^[A-Za-z_]/.test(first[1]) && !isKeyword(first[1]) && !macroNames.has(first[1])) {
-            out.labels.push({ name: first[1], line });
+            out.labels.push({ name: first[1], line, column });
         }
     });
     return out;
@@ -136,4 +137,22 @@ function prefersLowercase(text) {
     return lower >= up;
 }
 
-module.exports = { keywords, stripComment, scanText, scanFile, prefersLowercase };
+// The identifier under a cursor, or null. `&name` inside a macro body is a
+// parameter or LOCAL, which has no single definition, so it gives null too.
+function wordAt(lineText, character) {
+    const re = /&?[A-Za-z_.][A-Za-z0-9_.]*/g;
+    for (const m of lineText.matchAll(re)) {
+        if (m.index <= character && character <= m.index + m[0].length) {
+            return m[0].startsWith('&') ? null : m[0];
+        }
+    }
+    return null;
+}
+
+// Where a name is defined: every label, constant or macro of that exact
+// name, since labels are case-sensitive in the assembler.
+function definitionsOf(syms, name) {
+    return [...syms.labels, ...syms.equs, ...syms.macros].filter((d) => d.name === name);
+}
+
+module.exports = { keywords, stripComment, scanText, scanFile, prefersLowercase, wordAt, definitionsOf };

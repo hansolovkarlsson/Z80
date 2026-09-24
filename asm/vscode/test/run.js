@@ -144,14 +144,20 @@ async function grammarChecks() {
 // own logic (what is offered, in which order, in which case).
 function completionChecks() {
     const Module = require('module');
-    let provider = null;
+    let provider = null, definer = null;
     class CompletionItem { constructor(label, kind) { this.label = label; this.kind = kind; } }
+    class Position { constructor(line, character) { this.line = line; this.character = character; } }
+    class Location { constructor(uri, pos) { this.file = uri.fsPath; this.line = pos.line; this.character = pos.character; } }
     const fake = {
-        CompletionItem,
+        CompletionItem, Position, Location,
+        Uri: { file: (f) => ({ fsPath: f }) },
         CompletionItemKind: { Keyword: 'Keyword', Function: 'Function', Field: 'Field', Constant: 'Constant',
                               Variable: 'Variable', EnumMember: 'EnumMember', Operator: 'Operator' },
         workspace: { asRelativePath: (p) => path.relative(ROOT, p) },
-        languages: { registerCompletionItemProvider: (lang, p) => { provider = p; return { dispose() {} }; } },
+        languages: {
+            registerCompletionItemProvider: (lang, p) => { provider = p; return { dispose() {} }; },
+            registerDefinitionProvider: (lang, p) => { definer = p; return { dispose() {} }; },
+        },
     };
     const realLoad = Module._load;
     Module._load = function (req, ...rest) { return req === 'vscode' ? fake : realLoad.call(this, req, ...rest); };
@@ -186,6 +192,29 @@ function completionChecks() {
     if (!macro || macro.kind !== 'Function') problems.push('PRINTMSG, a macro from the INCLUDEd file, not offered as one');
     if (!bdos || !String(bdos.documentation).includes('include_defs.inc')) problems.push('BDOS not offered with the file that defines it');
     report('completion-items', problems);
+
+    // Go to definition. The expected places come from a plain text search
+    // of the file, not from the scanner, so the two cannot share a mistake.
+    const defProblems = [];
+    const lineOf = (file, re) => fs.readFileSync(file, 'utf8').split(/\r?\n/).findIndex((l) => re.test(l));
+    const define = (file, lineText, at) => {
+        const text = fs.readFileSync(file, 'utf8');
+        const doc = { getText: () => text, uri: { fsPath: file }, lineAt: () => ({ text: lineText }) };
+        return definer.provideDefinition(doc, { line: 0, character: lineText.indexOf(at) + 1 });
+    };
+    const defs = path.join(ROOT, 'asm/examples/include_defs.inc');
+    const expectAt = (label, got, file, line) => {
+        if (got.length !== 1 || got[0].file !== file || got[0].line !== line || got[0].character !== 0)
+            defProblems.push(`${label}: got ${JSON.stringify(got)}, expected ${path.basename(file)}:${line + 1}`);
+    };
+    expectAt('count_loop', define(hello, '        djnz count_loop', 'count_loop'), hello, lineOf(hello, /^count_loop:/));
+    expectAt('fail', define(hello, '        jp nz, fail', 'fail'), hello, lineOf(hello, /^fail:/));
+    expectAt('PRINTMSG, a macro in an INCLUDEd file', define(inc, '        PRINTMSG msg', 'PRINTMSG'), defs, lineOf(defs, /^PRINTMSG\s+MACRO/i));
+    expectAt('BDOS, an equ in an INCLUDEd file', define(inc, '        ld c, BDOS', 'BDOS'), defs, lineOf(defs, /^BDOS\b/));
+    if (define(hello, '        djnz count_loop', 'djnz').length) defProblems.push('a mnemonic has a definition');
+    if (define(hello, '        djnz COUNT_LOOP', 'COUNT_LOOP').length) defProblems.push('COUNT_LOOP matched count_loop; labels are case-sensitive');
+    if (define(hello, '        nop   ; see count_loop', 'count_loop').length) defProblems.push('a name inside a comment has a definition');
+    report('go-to-definition', defProblems);
 }
 
 (async () => {

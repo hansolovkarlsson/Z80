@@ -1,7 +1,8 @@
 # z80asm for VS Code
 
-Syntax colouring and completion for source written for this repository's
-assembler, `bin/z80asm` ([`docs/ASSEMBLER.md`](../../docs/ASSEMBLER.md)).
+Syntax colouring, completion and go-to-definition for source written for
+this repository's assembler, `bin/z80asm`
+([`docs/ASSEMBLER.md`](../../docs/ASSEMBLER.md)).
 It covers `.asm`, `.z80`, `.mac`, `.inc` and `.sym` files.
 
 ## Install
@@ -31,6 +32,11 @@ them), each with where it is defined. At the start of a statement the
 instructions come first; in operands, the file's own names do. Mnemonics
 are offered in the case the file already uses.
 
+**Go to definition** (F12, or Ctrl/Cmd-click) on a label, constant or
+macro jumps to where it is defined, including into an `INCLUDE`d file.
+Names match exactly, since labels are case-sensitive in the assembler, and
+nothing inside a comment or a macro's `&name` has one.
+
 ## Limits
 
 - A label **without a colon** is only coloured as one in column 0. The
@@ -54,6 +60,9 @@ install and tests the grammar with the code that will run it. It checks:
 - **the symbol scanner against `z80asm -s`** on every example and on
   `zexall.mac`: the same labels and constants, no more and no fewer.
 - **the grammar**, by tokenising real lines and asserting on their scopes.
+- **completion and go-to-definition**, by calling the extension's own code
+  through a stand-in for VS Code's API. The places a definition should land
+  are found by a plain text search of the file, not by the scanner.
 
 The grammar and `keywords.json` are generated: edit `build_grammar.py` and
 run `python3 asm/vscode/build_grammar.py`.

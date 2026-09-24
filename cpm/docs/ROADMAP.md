@@ -22,8 +22,8 @@ Aspirational, not yet scoped:
 
 - **VS Code support for `z80asm` source: done**, in `asm/vscode/`
   (colouring and completion; write-up in [`COMPLETED.md`](COMPLETED.md)).
-  Possible next steps, none started: go-to-definition and hover from the
-  same symbol scan, and diagnostics by running `z80asm` on save.
+  Go-to-definition is done too. Possible next steps, none started: hover
+  from the same symbol scan, and diagnostics by running `z80asm` on save.
 - **A GTK-based UI, in progress but currently blocked** (`gtk/`) — a real
   standalone app, not depending on the host terminal, useful for handing
   someone a double-clickable program rather than a CLI incantation. No

@@ -1311,3 +1311,15 @@ removed), the scanner (on the include-graph macros), the grammar (with its
 colon-less label rule removed, and with both `AF'` defences removed), and
 completion (with its comment guard removed, and with a fixed order). `make test` runs them through the CP/M suite and skips
 them loudly where VS Code is absent.
+
+### Go to definition
+
+F12 or Ctrl/Cmd-click on a label, constant or macro jumps to its
+definition, into `INCLUDE`d files too, from the same scan completion uses;
+the scanner now records each definition's column, which is its line's
+indentation since a definition is always the first word. Names match
+exactly, because labels are case-sensitive in the assembler. The
+`go-to-definition` check finds where each name should land by a plain text
+search of the file rather than by the scanner, and failed under all three
+injected faults: case-insensitive matching, the comment guard removed, and
+the column ignored.
