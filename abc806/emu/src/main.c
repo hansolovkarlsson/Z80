@@ -131,12 +131,11 @@ static int poll_stdin_byte(void) {
 // in the Latin-1 Supplement block, so 3- and 4-byte leads need no
 // handling), and ESC-introduced sequences from arrow and function keys.
 //
-// Of the arrow keys only Left is translated, to BS. Right is dropped: the
-// ABC802's editor was swept byte by byte and turned out to have no cursor
-// movement at all, and this ROM is from the same family and the same year.
-// That is an inference rather than a sweep, and it is flagged as one - the
-// honest version of this comment on the ABC802 rests on evidence this one
-// does not have yet.
+// Of the arrow keys only Left is translated, to BS. Right is dropped: a
+// byte-by-byte sweep of this ROM's line editor found no cursor movement
+// at all (ABC806_REFERENCE.md, Line editing). Note the high bytes: any
+// byte with bit 7 set ends the input line, so nothing may be mapped there
+// as a harmless no-op.
 static int poll_keyboard_byte(void) {
     static enum { ESC_NONE, ESC_SEEN, ESC_BRACKET } esc_state = ESC_NONE;
     static struct timespec esc_started;

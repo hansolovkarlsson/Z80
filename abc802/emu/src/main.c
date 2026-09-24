@@ -131,16 +131,16 @@ static int poll_stdin_byte(void) {
 // every byte 0x00-0x1F and a sample of 0x80-0xFF, and reading back what
 // each did to a typed line. Its entire vocabulary is:
 //
-//   0x03  terminate the line (break)
-//   0x08  destructive backspace
-//   0x0A  terminate the line
-//   0x0C  clear the screen
-//   0x0D  terminate the line (Return)
-//   0x18  discard the whole line
-//   everything else  ignored, or appended if printable
+//   0x03       terminate the line (break)
+//   0x08       destructive backspace
+//   0x0C       clear the screen
+//   0x0D       terminate the line (Return)
+//   0x18       discard the whole line
+//   0x80-0xFF  terminate the line
+//   everything else  ignored, or appended if printable (0x0A is ignored)
 //
 // **There is no cursor movement of any kind** - no non-destructive left,
-// no right, nothing in the high range either. So Left maps to 0x08, the
+// no right, and the high range only ends the line. So Left maps to 0x08, the
 // only leftward motion the editor has (and the same key that *is*
 // backspace on the ABC80's own keyboard), and Right is dropped because
 // the machine has nothing for it to do. That is a property of this ROM,

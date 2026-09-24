@@ -221,8 +221,8 @@ static void queue_key(AppState *app, uint8_t byte) {
 // Left arrow maps to 0x08; the other three are dropped. Sweeping the ROM's
 // line editor with every byte 0x00-0x1F (and a sample of 0x80-0xFF)
 // established that its whole vocabulary is backspace (0x08), discard-line
-// (0x18), clear-screen (0x0C) and the three line terminators 0x03/0x0A/
-// 0x0D - **no cursor movement of any kind**. So Left becomes the only
+// (0x18), clear-screen (0x0C) and the line terminators 0x03/0x0D plus any
+// byte with bit 7 set - **no cursor movement of any kind**. So Left becomes the only
 // leftward motion that exists, and Right has nothing to become. See
 // abc802/emu/src/main.c for the full table.
 static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval,

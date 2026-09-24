@@ -196,22 +196,34 @@ roughly human speed to survive.
 
 ### Line editing
 
-The ROM's line editor recognizes **six control codes, and nothing else**.
-Established by feeding it every byte `0x00`-`0x1F` plus a sample across
-`0x80`-`0xFF` and reading back what each did to a typed line, rather than
-by disassembly — that routine is only entered indirectly, so a
-reachability-based disassembler cannot reach it.
+The ROM's line editor recognizes **five control codes, and every byte with
+bit 7 set ends the line**. Established by feeding it every byte
+`0x00`-`0x1F` plus a sample across `0x80`-`0xFF` and reading back what each
+did to a typed line, rather than by disassembly. That routine is only
+entered indirectly, so a reachability-based disassembler cannot reach it.
 
 | Code | Key | Effect |
 |---|---|---|
 | `0x03` | Ctrl-C | terminates the line (break) |
 | `0x08` | Backspace | destructive delete-left |
-| `0x0A` | Ctrl-J | terminates the line |
 | `0x0C` | Ctrl-L | clears the screen |
 | `0x0D` | Return | terminates the line |
 | `0x18` | Ctrl-X | discards the whole line |
+| `0x80`-`0xFF` | | terminates the line, keeping what was typed |
 
-Every other byte is either ignored or, if printable, appended. `0x7F`
+Every other byte is either ignored or, if printable, appended. `0x0A` is
+ignored.
+
+**Corrected 2026-09-24.** This table first listed `0x0A` as a terminator
+and said `0x80`-`0xFF` behave like their low equivalents. A resweep through
+`--interactive`, which hands the DART each byte unaltered, shows `0x0A`
+ignored and every sampled high byte (`0x80`, `0x88`, `0xC1`, `0xE0`,
+`0xFF`) ending the line. The ROM programs the keyboard channel for 8-bit
+characters (`WR3 = C1`), so bit 7 reaches it on real hardware too.
+`--type` turns `0x0A` into `0x0D` and drops a raw high byte, so a sweep
+through it could test neither, and it would produce exactly the `0x0A`
+result first recorded. The original commit does not say which path it
+used. `0x7F`
 (DEL) is **not** a delete: it is treated as an ordinary character and
 echoes a blank into the line, which matters because that is what a modern
 terminal's Backspace key actually sends.
@@ -219,7 +231,7 @@ terminal's Backspace key actually sends.
 Two consequences worth stating plainly:
 
 - **There is no cursor movement.** No non-destructive left, no right,
-  nothing in the high byte range. This is a simpler editor than the
+  and the high byte range only ends the line. This is a simpler editor than the
   ABC80's, which does have a non-destructive cursor-right at `0x09`. An
   emulator front-end has nothing to map a right-arrow key to.
 - **Editing is delete-and-retype.** Backspace to the mistake and type the

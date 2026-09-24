@@ -72,10 +72,6 @@ is small:
 Every milestone is complete; what follows is what the machine still does
 not do, and why each one is deliberate rather than an oversight.
 
-- **Right arrow is dropped, on inference rather than evidence.** The
-  ABC802's line editor was swept byte by byte and turned out to have no
-  cursor movement at all; this ROM is from the same family and the same
-  year and is *assumed* to match. The sweep has not been done here.
 - **The flash rate is assumed.** 2 Hz, the conventional rate. No source
   consulted gives the ABC806's own divider, and the ROM does not blink its
   cursor in software the way the ABC802's does, so nothing in the machine

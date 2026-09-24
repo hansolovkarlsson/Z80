@@ -872,3 +872,47 @@ of the two things separating the two windows.
 
 A build break: they skip when the opt-in binary is absent. See the same
 note in [`../../abc802/docs/ABC802_COMPLETED.md`](../../abc802/docs/ABC802_COMPLETED.md).
+
+## The line editor's vocabulary: swept, and Right stays dropped
+
+Right arrow had been dropped on inference: the ABC802's editor was swept
+and has no cursor movement, and this ROM is from the same family and year.
+The sweep has now been done here, typing `10 REM ABCDE<code>X` and then
+`LIST` for each byte, so the screen shows both what the editor echoed and
+what BASIC stored.
+
+| Code | Effect |
+|---|---|
+| `0x03` | break |
+| `0x08` | destructive backspace |
+| `0x0C` | clear screen |
+| `0x0D` | end of line |
+| `0x18` | discard the line |
+| `0x80`-`0xFF` | end of line, keeping what was typed |
+| `0x7F` | an ordinary character, stored and shown as a blank |
+| every other `0x00`-`0x1F` | ignored |
+
+`0x01`-`0x1F` went through `--type`, apart from `0x0A`, which `--type`
+turns into `0x0D`. `0x00`, `0x0A` and twelve high bytes (`0x80`, `0x83`,
+`0x88`, `0x89`, `0x8B`, `0x8C`, `0x8D`, `0x98`, `0x9B`, `0xA0`, `0xE0`,
+`0xFF`) went through `--interactive` with piped input, which hands each
+byte to the DART unaltered. `0x7F` went through `--type`, because the
+interactive path rewrites DEL to BS before the ROM sees it. `0xC2`-`0xDF`
+and `0x1B` cannot be sent raw through either path, since the interactive
+path reads them as the start of UTF-8 and escape sequences.
+
+**No byte moves the cursor, so dropping Right is correct**, now on
+evidence. Tab (`0x09`), the ABC80's non-destructive cursor-right, is
+ignored here.
+
+The high-byte result looked like a modelling artifact at first: the DART
+decides by its receive width whether bit 7 survives, and the model passes
+all eight bits regardless. The ROM programs channel B for 8-bit
+characters (`WR3 = C1`, traced), so real hardware delivers bit 7 too and
+the result is the ROM's own.
+
+It also corrected the ABC802's record. Running the same bytes there gave
+the same answers, where Milestone 8 had listed `0x0A` as a terminator and
+said the high bytes behave like their low equivalents. See
+[`ABC802_REFERENCE.md`](../../abc802/docs/ABC802_REFERENCE.md)'s Line
+editing section.

@@ -86,6 +86,35 @@ One stray found on the way: `abc802/tests/run_tests.sh` closed its GTK
 block with ` fi`, indented by one space. Harmless to the shell, but it is
 why a pattern that matched the other six blocks missed this one.
 
+Then the ABC806's Right arrow, dropped since that target's Milestone 3 on
+inference from the ABC802. The sweep typed `10 REM ABCDE<code>X` and
+`LIST` for every byte `0x01`-`0x1F` through `--type`, and `0x00`, `0x0A`
+and a sample of high bytes through `--interactive`, which is the only path
+that hands the DART a byte unaltered. No byte moves the cursor, so Right
+stays dropped, now on evidence. The editor is the ABC802's: break,
+backspace, clear, Return and discard.
+
+Two results did not match the ABC802's record, and checking them corrected
+that record rather than distinguishing the machines. `0x0A` is ignored,
+where Milestone 8 lists it as a terminator, and every high byte ends the
+line, where Milestone 8 says they behave like their low equivalents. The
+high-byte result was suspect first, because the DART model passes all
+eight bits whatever the receive width; a trace shows the ROM programs the
+keyboard channel for 8 bits (`WR3 = C1`), so real hardware passes bit 7
+too. Then the same bytes on the ABC802 gave the same answers. `--type`
+turns `0x0A` into `0x0D` and drops a raw high byte, which would produce
+exactly the `0x0A` row first recorded; the commit does not say which path
+it used, so that is the likely cause rather than a proven one: an input
+path that rewrote the stimulus before the subject saw it.
+
+The ABC802's reference, BASIC reference, code comments and `CLAUDE.md`
+now carry the corrected table, and its Milestone 8 write-up gains a dated
+note rather than an edit. The ABC806 gains a Line editing section in its
+reference and a COMPLETED entry, since this closed an investigation, and
+loses the known gap. One practical consequence is written into
+`abc806/emu/src/main.c`: a high byte is not a harmless no-op on either
+machine, so no key may be mapped there to mean "do nothing".
+
 Earlier the same session, three items went onto Phase 4 of
 `cpm/docs/ROADMAP.md` at the user's request: a Z80 debugger (confirmed
 absent: no target has a trace, breakpoint or register-dump option),

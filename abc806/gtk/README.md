@@ -114,8 +114,7 @@ letter plus a modifier bit rather than pre-folding it the way a tty driver
 does — Ctrl-C therefore reaches BASIC as a plain 0x03, which is where a
 break belongs.
 
-Left arrow maps to backspace and the other three arrows are dropped. On the
-ABC802 that follows from a byte-by-byte sweep of its line editor, which
-turned out to have no cursor movement at all. **Here it is inference** from
-the same family and the same year rather than a sweep of this ROM, and is
-listed as such in the roadmap's gaps.
+Left arrow maps to backspace and the other three arrows are dropped. A
+byte-by-byte sweep of this ROM's line editor found no cursor movement at
+all, the same result as the ABC802's; see `ABC806_REFERENCE.md`'s Line
+editing section.

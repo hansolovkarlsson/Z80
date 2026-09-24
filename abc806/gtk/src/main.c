@@ -220,11 +220,9 @@ static void queue_key(AppState *app, uint8_t byte) {
 // pre-folding it the way a tty driver does. Ctrl-C matters in particular,
 // reaching BASIC as a plain 0x03, which is where a break belongs.
 //
-// Left arrow maps to BS and the other three are dropped. On the ABC802
-// that follows from a byte-by-byte sweep of its line editor, which turned
-// out to have no cursor movement at all; here it is **inference** from the
-// same family and year rather than a sweep of this ROM. Flagged as such in
-// ABC806_ROADMAP.md's gaps too, so it is not mistaken for evidence.
+// Left arrow maps to BS and the other three are dropped: a byte-by-byte
+// sweep of this ROM's line editor found no cursor movement at all (see
+// ABC806_REFERENCE.md's Line editing section).
 static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval,
                                 guint keycode, GdkModifierType state, gpointer user_data) {
     (void)controller;

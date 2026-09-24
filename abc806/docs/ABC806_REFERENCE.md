@@ -418,6 +418,25 @@ until RR0 bit 4 *changes* (`IN A,(C) / XOR B / AND 10h / JR Z`). `ports.c`
 drives it from a 50 Hz square wave; that is **inference**, not read out of
 MAME, which drives channel A's RI and channel B's CTS and leaves this alone.
 
+## Line editing
+
+The same editor as the ABC802's, established by sweeping this ROM rather
+than assumed (see [`ABC806_COMPLETED.md`](ABC806_COMPLETED.md) for the
+method). **It has no cursor movement.**
+
+| Code | Key | Effect |
+|---|---|---|
+| `0x03` | Ctrl-C | ends the line (break) |
+| `0x08` | Backspace | destructive delete-left |
+| `0x0C` | Ctrl-L | clears the screen |
+| `0x0D` | Return | ends the line |
+| `0x18` | Ctrl-X | discards the whole line |
+| `0x80`-`0xFF` | | ends the line, keeping what was typed |
+
+Every other control code is ignored, including `0x0A` and Tab (`0x09`).
+`0x7F` (DEL) is an ordinary character. Left arrow therefore maps to `0x08`
+and Right is dropped, in both `--interactive` and `bin/abc806-gtk`.
+
 ## Character set
 
 The Swedish/Finnish ISO 646 variant (SEN 850200 Annex B), as on the ABC80

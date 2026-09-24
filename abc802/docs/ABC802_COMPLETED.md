@@ -565,6 +565,15 @@ reading back what the editor did to the line. The whole vocabulary:
 | `0x18` | Ctrl-X | discards the whole line |
 | everything else | — | ignored, or appended if printable |
 
+> **Corrected 2026-09-24.** Two rows of this table were wrong. `0x0A` is
+> ignored, not a terminator, and every sampled byte in `0x80`-`0xFF` ends
+> the line rather than behaving like its low equivalent. Found while
+> sweeping the ABC806's editor through `--interactive`, which delivers
+> bytes unaltered; `--type` turns `0x0A` into `0x0D` and drops raw high
+> bytes, so a sweep through it could test neither. The conclusion that
+> matters here, no cursor movement, is unaffected.
+> [`ABC802_REFERENCE.md`](ABC802_REFERENCE.md) has the corrected table.
+
 **There is no cursor movement of any kind.** Not a non-destructive left,
 not a right, and nothing in the high byte range either — `0x80`-`0xFF`
 behave exactly like their low equivalents. This is a genuinely simpler

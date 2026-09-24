@@ -139,7 +139,8 @@ this and a listing always shows BASIC II's canonical form.
 
 **The line editor has no cursor movement at all.** Its entire vocabulary
 is backspace (`0x08`), discard-line (`0x18` / Ctrl-X), clear-screen
-(`0x0C` / Ctrl-L) and the terminators `0x03` (Ctrl-C), `0x0A` and `0x0D`.
+(`0x0C` / Ctrl-L) and the terminators `0x03` (Ctrl-C) and `0x0D`, plus
+every byte with bit 7 set, which also ends the line.
 Editing is delete-and-retype. This is hardware, not a missing emulator
 feature — see [`ABC802_REFERENCE.md`](ABC802_REFERENCE.md)'s "Line
 editing" section, which establishes it by sweeping every byte `0x00`-`0x1F`

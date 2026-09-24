@@ -237,7 +237,10 @@ Milestone 8 settled the line editor by sweeping every control code rather
 than disassembling it (that routine is only entered indirectly, so
 `bin/z80dasm` renders it as `DB` bytes). Its entire vocabulary is
 backspace `0x08`, discard-line `0x18`, clear-screen `0x0C`, and the
-terminators `0x03`/`0x0A`/`0x0D` — **no cursor movement at all**, unlike
+terminators `0x03`/`0x0D` plus every byte with bit 7 set (`0x0A` is
+ignored; it was recorded as a terminator until a resweep on 2026-09-24),
+and the ABC806's editor is the same, swept byte by byte. **No cursor
+movement at all**, unlike
 the ABC80's editor, which has a non-destructive cursor-right at `0x09`.
 Left arrow therefore maps to `0x08` and Right is deliberately dropped;
 that is hardware, not a missing feature.
