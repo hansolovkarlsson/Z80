@@ -21,6 +21,14 @@ outside the one place it was first needed lives here instead.
   `python3 scripts/8080_to_z80.py <input.asm> <output.asm>`. See its own
   header comment for the full approach, and `cpm/resources/ccp/derive.sh` for
   a real example of driving it as part of a larger build pipeline.
+- **`ptysession.py`**: run a command on a pseudo-terminal and play a
+  timed script of keys at it (`wait:1,key:1d,wait:2,text:c,key:1c`),
+  printing what it wrote and when each marked step happened. For what a
+  pipe cannot test: a program in raw mode that takes its interrupt
+  character from the terminal, as the ABC machines' `--interactive` does
+  with Ctrl-] under the debugger. The three `debugger-interactive` checks
+  use it. Usage: `python3 scripts/ptysession.py STEPS -- COMMAND [ARG...]`;
+  its header comment lists the steps.
 - **`pngart.py`** — print a rectangle of a PNG as ASCII art, one character
   per pixel, distinct colours as distinct characters with a legend. The
   counterpart to `abc80/tests/litpix.py`, which *counts* lit pixels: a

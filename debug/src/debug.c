@@ -22,6 +22,7 @@
 #include <string.h>
 #include <strings.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "../../disasm/src/decode.h"
@@ -79,6 +80,7 @@ struct Z80Debugger {
     int break_name_count;
     Z80DbgSpace spaces[MAX_SPACES];
     int space_count;
+    double seconds_stopped;  // at the prompt, for z80dbg_seconds_stopped()
 };
 
 static volatile sig_atomic_t interrupted;
@@ -206,6 +208,10 @@ static const char *label_for(const Z80Debugger *dbg, uint16_t addr) {
     return dbg->symbols[dbg->label_at[addr]].name;
 }
 
+double z80dbg_seconds_stopped(const Z80Debugger *dbg) {
+    return dbg ? dbg->seconds_stopped : 0.0;
+}
+
 void z80dbg_add_space(Z80Debugger *dbg, const Z80DbgSpace *space) {
     if (!dbg || dbg->space_count == MAX_SPACES) return;
     dbg->spaces[dbg->space_count++] = *space;
@@ -309,6 +315,8 @@ void z80dbg_print_usage(FILE *out) {
     fprintf(out, "  --debug-script F read debugger commands from F instead of the\n");
     fprintf(out, "                   terminal; at its end the run continues undisturbed.\n");
     fprintf(out, "                   See docs/DEBUGGER.md for the commands\n");
+    fprintf(out, "  With --interactive, where Ctrl-C belongs to the machine, Ctrl-]\n");
+    fprintf(out, "  stops in the debugger instead.\n");
 }
 
 bool z80dbg_start(Z80Debugger *dbg) {
@@ -748,7 +756,12 @@ int z80dbg_before_step(Z80Debugger *dbg, Z80 *cpu) {
         fflush(stdout);   // the program's output so far lands before ours
         fprintf(stderr, "[%s] ", why);
         print_insn(dbg, stderr, cpu, pc);
-        if (prompt(dbg, cpu) == Z80DBG_QUIT) return Z80DBG_QUIT;
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        int result = prompt(dbg, cpu);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        dbg->seconds_stopped += (double)(t1.tv_sec - t0.tv_sec) + (double)(t1.tv_nsec - t0.tv_nsec) / 1e9;
+        if (result == Z80DBG_QUIT) return Z80DBG_QUIT;
         if (dbg->detached) return Z80DBG_RUN;
     }
 

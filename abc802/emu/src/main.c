@@ -74,7 +74,7 @@ static void abc802_console_shutdown(void) {
     }
 }
 
-static void abc802_console_init(void) {
+static void abc802_console_init(bool debugger) {
     if (!isatty(STDIN_FILENO)) return;
     if (tcgetattr(STDIN_FILENO, &abc802_orig_termios) != 0) return;
     abc802_termios_saved = 1;
@@ -84,7 +84,9 @@ static void abc802_console_init(void) {
     raw.c_lflag &= ~(ICANON | ECHO);          // no line buffering, no local echo
     raw.c_iflag &= ~(ICRNL | INLCR | IGNCR);  // real Enter must arrive as 0x0D
     raw.c_iflag &= ~IXON;                     // don't swallow Ctrl-S/Ctrl-Q
-    raw.c_cc[VINTR] = _POSIX_VDISABLE;        // Ctrl-C reaches the ROM instead
+    // Ctrl-C reaches the ROM instead. With a debug option the interrupt
+    // character becomes Ctrl-], which stops in the debugger (debug.h).
+    raw.c_cc[VINTR] = debugger ? Z80DBG_BREAK_CHAR : _POSIX_VDISABLE;
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSANOW, &raw);
@@ -382,13 +384,14 @@ int main(int argc, char **argv) {
     }
 
     if (interactive) {
-        abc802_console_init();
+        abc802_console_init(dbg != NULL);
         struct sigaction sa = {0};
         sa.sa_handler = abc802_handle_quit_signal;
         sigemptyset(&sa.sa_mask);
         sigaction(SIGINT, &sa, NULL);
         sigaction(SIGQUIT, &sa, NULL);
-        printf("Interactive - Ctrl-C reaches BASIC, Ctrl-\\ exits.\n");
+        printf("Interactive - Ctrl-C reaches BASIC, Ctrl-\\ exits%s.\n",
+               dbg ? ", Ctrl-] stops in the debugger" : "");
     }
 
     // Per-address execution counts. A flat 64K array of counters is the
@@ -443,12 +446,6 @@ int main(int argc, char **argv) {
     long long instructions = 0;
     bool halted = false;
     if (dbg) {
-        // --interactive owns the terminal for the keyboard and screen, so
-        // the prompt has nowhere to live yet (docs/DEBUGGER.md).
-        if (interactive) {
-            fprintf(stderr, "The debugger does not work with --interactive yet\n");
-            return EXIT_FAILURE;
-        }
         // What the bus hooks divert out of the flat array, which the
         // debugger reads nowhere else (docs/DEBUGGER.md).
         z80dbg_add_space(dbg, &(Z80DbgSpace){"chr", "character RAM, 7800-7FFF to data reads",
@@ -513,7 +510,8 @@ int main(int argc, char **argv) {
         // CRTC, so pacing execution correctly is what makes the blink
         // look right (see render.h).
         if (interactive && (instructions % ABC802_PACING_CHECK_INTERVAL) == 0) {
-            double elapsed_real = elapsed_since(&run_start_time);
+            // Time at the debugger's prompt is not time the machine ran.
+            double elapsed_real = elapsed_since(&run_start_time) - z80dbg_seconds_stopped(dbg);
             double elapsed_emulated = (double)cycles / ABC802_CLOCK_HZ;
 
             if (elapsed_emulated > elapsed_real) {

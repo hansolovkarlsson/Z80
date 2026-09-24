@@ -612,4 +612,26 @@ tl_want "$out" "0000  18 72" "0000 still ROM after the lowram poke"
 tl_want_eq "$(printf '%s\n' "$out" | grep -cE '^\|ZBC802 ')" "1" "the poke into chr on the rendered screen"
 tl_end "$out"
 
+# The debugger under --interactive, which needs a real terminal: the mode
+# takes Ctrl-] as its interrupt character, and only a pty makes one
+# (scripts/ptysession.py). Ctrl-] must stop at the prompt, and the machine
+# must not make up the time it spent there: 1s running, 2s stopped, 1s
+# running is about 2s of emulated time. Without the subtraction it is
+# nearly 4, since the machine runs flat out on resuming, which is how this
+# check was seen to fail. The bounds leave room for start-up and a busy
+# host, and are far from 4 either way.
+out=$(cd "$ROOT" && python3 "$ROOT/scripts/ptysession.py" \
+      'wait:1,mark:stop,key:1d,wait:2,mark:cont,text:c,wait:1,mark:quit,key:1c' \
+      -- "$ABC802" --interactive --symbols "$ROOT/abc802/resources/rom/abc802.sym" 2>&1)
+tstates=$(printf '%s\n' "$out" | sed -n 's/^Ran .* \/ \([0-9]*\) T-states.*/\1/p' | tail -1)
+report=$(printf '%s\n' "$out" | grep '^ptysession:')
+verdict=$(printf '%s\n' "$report" | tr ' =' '\n\n' | awk -v t="${tstates:-0}" -v hz=3000000 '
+    /^stop$/ {getline; stop=$0} /^cont$/ {getline; cont=$0} /^quit$/ {getline; quit=$0}
+    END { emu = t / hz; want = quit - (cont - stop);
+          printf "%s emulated=%.2f expected=%.2f", (emu > want - 1.0 && emu < want + 0.5) ? "ok" : "off", emu, want }')
+tl_begin "debugger-interactive"
+tl_want "$out" "[interrupted]" "Ctrl-] stopping at the prompt"
+tl_want "$verdict" "ok " "emulated time excluding the pause ($verdict)"
+tl_end "$out"
+
 tl_summary "abc802"

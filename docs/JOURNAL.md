@@ -21,6 +21,31 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-24 (13): the debugger under --interactive
+
+The next debugger item, and a smaller change than the refusal suggested.
+The prompt already handled a raw terminal, because CP/M's console is one.
+What `--interactive` added was two things the refusal had been standing
+in for. The first was a way in. Ctrl-C belongs to BASIC there, and a break
+key read from the input stream would only be seen when the emulated
+keyboard asked for a byte, so a hung program could never be stopped.
+Making Ctrl-] the terminal's interrupt character reuses the debugger's
+existing SIGINT path. The second was time. The first pty run, before the
+change, stopped for 4 s and then counted 7.76 emulated seconds out of 8
+wall seconds: the machine had raced through the whole pause on resuming.
+Subtracting the time spent at the prompt brings it to 4.05.
+
+Testing needed a pseudo-terminal, since a pipe has no interrupt character,
+so `scripts/ptysession.py` now plays a timed script of keys at a command.
+The checks compare T-states with the wall clock, the one thing here that
+depends on the host's speed. They pass with a second of margin on either
+side of the expected value, and the broken versions miss it by two.
+
+Found on the way and not chased: on the ABC802, Ctrl-C does not break
+`10 GOTO 10`, with or without the debugger. It is on the ABC802 roadmap.
+
+---
+
 ## 2026-09-24 (12): the debugger reaches diverted memory
 
 The first debugger item on the roadmap: a view of the memory the ABC802

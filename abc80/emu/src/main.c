@@ -155,7 +155,7 @@ static void abc80_console_shutdown(void) {
     }
 }
 
-static void abc80_console_init(void) {
+static void abc80_console_init(bool debugger) {
     if (!isatty(STDIN_FILENO)) return;
 
     if (tcgetattr(STDIN_FILENO, &abc80_orig_termios) != 0) return;
@@ -166,7 +166,9 @@ static void abc80_console_init(void) {
     raw.c_lflag &= ~(ICANON | ECHO); // no line buffering, no local echo
     raw.c_iflag &= ~(ICRNL | INLCR | IGNCR); // real Enter must arrive as 0x0D
     raw.c_iflag &= ~IXON;                    // don't swallow Ctrl-S/Ctrl-Q
-    raw.c_cc[VINTR] = _POSIX_VDISABLE;       // Ctrl-C reaches the ROM instead
+    // Ctrl-C reaches the ROM instead. With a debug option the interrupt
+    // character becomes Ctrl-], which stops in the debugger (debug.h).
+    raw.c_cc[VINTR] = debugger ? Z80DBG_BREAK_CHAR : _POSIX_VDISABLE;
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSANOW, &raw);
@@ -642,14 +644,15 @@ int main(int argc, char *argv[]) {
     cpu.pc = 0x0000;
 
     if (interactive_mode) {
-        abc80_console_init();
+        abc80_console_init(dbg != NULL);
         struct sigaction sa = {0};
         sa.sa_handler = abc80_handle_quit_signal;
         sigemptyset(&sa.sa_mask);
         sigaction(SIGINT, &sa, NULL);
         sigaction(SIGQUIT, &sa, NULL);
         printf("\nStarting ABC80 ROM execution at PC=0x0000 "
-               "(interactive - Ctrl-C reaches BASIC, Ctrl-\\ exits)...\n");
+               "(interactive - Ctrl-C reaches BASIC, Ctrl-\\ exits%s)...\n",
+               dbg ? ", Ctrl-] stops in the debugger" : "");
     } else {
         printf("\nStarting ABC80 ROM execution at PC=0x0000 (cap: %ld instructions)...\n\n",
                max_instructions);
@@ -683,12 +686,6 @@ int main(int argc, char *argv[]) {
     }
 
     if (dbg) {
-        // --interactive owns the terminal for the keyboard and screen, so
-        // the prompt has nowhere to live yet (docs/DEBUGGER.md).
-        if (interactive_mode) {
-            fprintf(stderr, "The debugger does not work with --interactive yet\n");
-            return EXIT_FAILURE;
-        }
         if (!z80dbg_start(dbg)) return EXIT_FAILURE;
     }
     while (!abc80_quit_requested && instructions < max_instructions) {
@@ -741,8 +738,10 @@ int main(int argc, char *argv[]) {
         if (interactive_mode && (instructions % ABC80_PACING_CHECK_INTERVAL) == 0) {
             struct timespec now;
             clock_gettime(CLOCK_MONOTONIC, &now);
+            // Time at the debugger's prompt is not time the machine ran.
             double elapsed_real = (double)(now.tv_sec - run_start_time.tv_sec) +
-                                   (double)(now.tv_nsec - run_start_time.tv_nsec) / 1e9;
+                                   (double)(now.tv_nsec - run_start_time.tv_nsec) / 1e9 -
+                                   z80dbg_seconds_stopped(dbg);
             double elapsed_emulated = (double)total_cycles / ABC80_CLOCK_HZ;
 
             if (elapsed_emulated > elapsed_real) {

@@ -1314,6 +1314,40 @@ under one. With that, the latching peek turns the text white and the check
 fails. The ABC802 check failed with the `chr` poke made a
 no-op.
 
+### Under `--interactive`
+
+`bin/abc80`, `bin/abc802` and `bin/abc806` accept the debug options with
+`--interactive`, which they had refused. Two decisions made it work.
+
+**The break key is Ctrl-], made the terminal's interrupt character.**
+Ctrl-C was already spoken for: each machine's raw mode disables VINTR so
+Ctrl-C reaches BASIC as `0x03`. A key read from the keyboard stream would
+not do either, because each machine reads stdin only when its emulated
+keyboard can take a byte, so a program that never reads the keyboard
+could never be stopped. Setting VINTR to Ctrl-] under a debug option makes
+the terminal raise the SIGINT the debugger already stops on, immediately
+and whatever the program is doing. Ctrl-] is the key telnet uses for the
+same job. The terminal consumes it, so the machine never sees the byte.
+
+**Time at the prompt is subtracted from the pacing.** Each loop sleeps off
+any lead the emulated clock has over the wall clock. After a pause the
+wall clock is far ahead, so without a correction the machine ran flat out
+on resuming until it had made the whole pause up: 1 s running, 2 s
+stopped and 1 s running gave 4 emulated seconds instead of 2.
+`z80dbg_seconds_stopped()` reports the prompt's cumulative wall time, and
+each loop subtracts it.
+
+The prompt needed nothing new. It already switched the terminal to cooked
+mode and back for CP/M's raw console, and the frames go to stdout with no
+alternate screen, so the prompt simply appears below the last one.
+
+`debugger-interactive` in each ABC suite runs the machine on a pty through
+the new `scripts/ptysession.py`, since only a pty has an interrupt
+character. Pressing Ctrl-] must give `[interrupted]`, and the emulated
+seconds must match the wall time minus the pause. Each check failed when
+broken: with the subtraction removed (`emulated=4.00 expected=2.01`), and
+with VINTR left disabled, where it fails on both counts.
+
 ## Phase 4, VS Code support for z80asm: done
 
 `asm/vscode/` is a VS Code extension with no dependencies and no build

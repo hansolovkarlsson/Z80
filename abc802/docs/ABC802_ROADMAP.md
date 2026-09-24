@@ -103,6 +103,15 @@ Real, understood, and deliberately not solved yet — not oversights.
 - **The DART/SIO/CTC are modeled only as far as the boot path needs.**
   Baud-rate generation, transmit interrupts, and the SIO's own vectors
   are absent.
+- **Ctrl-C does not break a running program under `--interactive`.**
+  `10 GOTO 10`, `RUN`, then Ctrl-C through a pty: the loop keeps running
+  and nothing is printed, with or without a debug option (2026-09-24).
+  `ABC802_BASIC_REFERENCE.md` says `CON` continues "after `STOP` or
+  Ctrl-C", but only the `STOP` half is shown verified there. One
+  candidate, not tested: the live keyboard feed only hands a byte to the
+  DART when `abc802_keyboard_ready()` says the ROM is listening, which a
+  running program may never do. The real machine's break may also be a
+  different key.
 - **Some ROM table details are unread.** The DOS device table
   (`0x6ED3`, see `ABC802_REFERENCE.md`) has a second byte per entry
   (`HD` `05`, `MF`/`SF`/`RM` `02`, the rest `00`) and select bytes whose

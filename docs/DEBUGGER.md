@@ -38,8 +38,35 @@ run continues undisturbed, so a script can never leave a run waiting for
 input. End it with `q` to stop the run there instead.
 
 **Ctrl-C** during a debugged run stops at the next instruction and opens the
-prompt. Without a debug option, Ctrl-C behaves as it always has.
+prompt. Without a debug option, Ctrl-C behaves as it always has. Under an
+ABC machine's `--interactive`, where Ctrl-C belongs to BASIC, the key is
+**Ctrl-]** instead; see below.
 
+### Under `--interactive`
+
+`bin/abc80`, `bin/abc802` and `bin/abc806` take the debug options with
+`--interactive` too:
+
+```
+bin/abc802 --interactive --symbols abc802/resources/rom/abc802.sym
+```
+
+Any debug option turns the debugger on, so `--symbols` alone gives a live
+session that runs undisturbed until **Ctrl-]** is pressed. That key is the
+terminal's interrupt character for the session (telnet uses the same one
+to reach its own prompt), so it stops the machine at the next instruction
+whatever the program is doing, including when nothing is reading the
+keyboard. Ctrl-C still reaches BASIC and Ctrl-\ still exits; the sign-on
+line says which keys do what.
+
+The prompt appears below the last frame drawn, with line editing, and the
+screen stops updating while it is open. `c` resumes, and the next frame
+replaces the debugger's text. **Time at the prompt does not count as the
+machine's time**: execution is paced against the wall clock, and the
+pacing subtracts the seconds spent stopped, so a machine resumed after a
+minute carries on at 3 MHz instead of running flat out to catch the minute
+up. `s` still works, though a frame drawn during a long `s` clears the
+steps printed before it.
 ## Commands
 
 Addresses and values are hex (`1234`, `0x1234`, `$1234` and `1234h` are
@@ -199,6 +226,4 @@ after it; `n` over the `CALL 0005h` is the natural way past one.
 
 ## Not yet
 
-- `--interactive` is refused with a debug option: that mode owns the
-  terminal for the keyboard and the screen.
 - The GTK apps have no debugger.

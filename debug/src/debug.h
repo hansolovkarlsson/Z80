@@ -48,6 +48,18 @@ typedef struct {
 // given), which does nothing, so a CLI can register unconditionally.
 void z80dbg_add_space(Z80Debugger *dbg, const Z80DbgSpace *space);
 
+// The key that stops a machine in the debugger under --interactive, where
+// Ctrl-C belongs to the machine: Ctrl-]. A CLI in raw mode makes it the
+// terminal's interrupt character (VINTR), so it raises the SIGINT the
+// debugger already stops on, whatever the program is doing; telnet uses the
+// same key to reach its own prompt.
+#define Z80DBG_BREAK_CHAR 0x1D
+
+// Wall-clock seconds spent at the prompt so far (0 with dbg NULL). A CLI
+// pacing execution against real time subtracts it, or the machine would
+// run flat out on resuming to make up for time it spent stopped.
+double z80dbg_seconds_stopped(const Z80Debugger *dbg);
+
 // Call once, after the machine is set up and before the first step. Opens
 // the command source (the script, or /dev/tty) and installs the Ctrl-C
 // handler. Returns false, with a message, if there is nowhere to read

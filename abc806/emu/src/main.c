@@ -78,7 +78,7 @@ static void console_shutdown(void) {
     if (termios_saved) tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
 }
 
-static void console_init(void) {
+static void console_init(bool debugger) {
     if (!isatty(STDIN_FILENO)) return;
     if (tcgetattr(STDIN_FILENO, &orig_termios) != 0) return;
     termios_saved = 1;
@@ -88,7 +88,9 @@ static void console_init(void) {
     raw.c_lflag &= ~(ICANON | ECHO);
     raw.c_iflag &= ~(ICRNL | INLCR | IGNCR);
     raw.c_iflag &= ~IXON;
-    raw.c_cc[VINTR] = _POSIX_VDISABLE;
+    // With a debug option Ctrl-] interrupts instead, stopping in the
+    // debugger (debug.h); Ctrl-C still reaches BASIC.
+    raw.c_cc[VINTR] = debugger ? Z80DBG_BREAK_CHAR : _POSIX_VDISABLE;
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSANOW, &raw);
@@ -341,19 +343,13 @@ int main(int argc, char **argv) {
     struct timespec run_start = {0, 0};
     double last_render_sec = -1.0;
     if (interactive) {
-        console_init();
+        console_init(dbg != NULL);
         signal(SIGINT, handle_quit_signal);
         signal(SIGQUIT, handle_quit_signal);
         clock_gettime(CLOCK_MONOTONIC, &run_start);
     }
 
     if (dbg) {
-        // --interactive owns the terminal for the keyboard and screen, so
-        // the prompt has nowhere to live yet (docs/DEBUGGER.md).
-        if (interactive) {
-            fprintf(stderr, "The debugger does not work with --interactive yet\n");
-            return EXIT_FAILURE;
-        }
         // What the bus hooks divert out of the flat array, which the
         // debugger reads nowhere else (docs/DEBUGGER.md).
         z80dbg_add_space(dbg, &(Z80DbgSpace){"chr", "character RAM, 7800-7FFF to data reads",
@@ -412,7 +408,8 @@ int main(int argc, char **argv) {
         instructions++;
 
         if (interactive && (instructions % ABC806_PACING_CHECK_INTERVAL) == 0) {
-            double elapsed_real = elapsed_since(&run_start);
+            // Time at the debugger's prompt is not time the machine ran.
+            double elapsed_real = elapsed_since(&run_start) - z80dbg_seconds_stopped(dbg);
             double elapsed_emulated = (double)cycles / ABC806_CLOCK_HZ;
 
             // If the emulated machine has raced ahead of real time, sleep

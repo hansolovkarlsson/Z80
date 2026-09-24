@@ -1140,8 +1140,10 @@ an intercepted BDOS call and the instruction after it in one step, so PC is
 never seen at the return address. And **commands come from `/dev/tty`**,
 not stdin, which a CP/M program reads as its console; the prompt puts the
 terminal in cooked mode while it reads and restores the machine's raw mode
-after. `--interactive` is refused with a debug option for now, since that
-mode owns the terminal.
+after. Under the ABC machines' `--interactive`, Ctrl-C belongs to BASIC, so
+the break key is Ctrl-] (`Z80DBG_BREAK_CHAR`, made the terminal's VINTR),
+and each loop's pacing subtracts `z80dbg_seconds_stopped()` so a resumed
+machine does not run flat out to make up the pause.
 
 ## GTK terminal (`cpm/gtk/src/`, work in progress)
 
