@@ -189,6 +189,18 @@ first: no script or test in the repo passes `-o` or `-l`, and the README's
 own example already wrote `-l 0x34`. `z80dasm/hex-arguments` pins it, and
 with C's base detection put back it fails on both `-o 0100` and `-l 34`.
 
+Then VS Code support, asked for by the user: an extension in `asm/vscode/`
+for colouring and completion. There is no Node on this machine, but VS
+Code's Electron runs as Node and ships `vscode-textmate` and Oniguruma, so
+the grammar is tested by the engine that colours the editor. The test that
+earned its place first was the dullest one: comparing the keyword lists
+with the assembler's own table found `SL1` missing on its first run, and
+comparing the scanner with `z80asm -s` found macros from `INCLUDE`d files
+being read as labels. Both are copies of something the assembler already
+defines, and both had drifted before they were ever committed. A symlink
+into `~/.vscode/extensions` turned out to do nothing, since VS Code loads
+only what its registry lists, so `install.sh` builds a real `.vsix`.
+
 Then symbol files for the ABC ROMs. The rule was that every name comes
 from an address a document already states, so three search agents
 collected the claims with their sources, and each claim was then checked

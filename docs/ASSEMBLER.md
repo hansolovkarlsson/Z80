@@ -4,7 +4,9 @@ Syntax reference for `bin/z80asm` (`asm/src/`). For what's implemented vs.
 not yet, and known limitations/trade-offs, see `cpm/docs/ROADMAP.md`'s Phase 2
 section — this document describes the syntax as it exists today without
 re-litigating that history. [`TOOLCHAIN.md`](TOOLCHAIN.md) walks through
-using it with the disassembler and the debugger.
+using it with the disassembler and the debugger, and
+[`asm/vscode/`](../asm/vscode/README.md) is a VS Code extension for this
+syntax: colouring and completion, installed with `asm/vscode/install.sh`.
 
 ## Usage
 

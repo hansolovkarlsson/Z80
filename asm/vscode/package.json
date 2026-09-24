@@ -1,0 +1,28 @@
+{
+  "name": "z80asm",
+  "displayName": "z80asm",
+  "description": "Syntax colouring and completion for this repository's Z80 assembler (bin/z80asm)",
+  "version": "0.1.0",
+  "publisher": "z80-project",
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages"],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "z80asm",
+        "aliases": ["Z80 Assembly (z80asm)", "z80asm"],
+        "extensions": [".asm", ".z80", ".mac", ".inc", ".sym"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "z80asm",
+        "scopeName": "source.z80asm",
+        "path": "./syntaxes/z80asm.tmLanguage.json"
+      }
+    ]
+  }
+}

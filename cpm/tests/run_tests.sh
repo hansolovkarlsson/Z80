@@ -318,6 +318,18 @@ $(want "$out" "written by the instruction at $store" "the store at $store named 
     report "debugger-watch" "$(printf '%s' "$reasons" | grep .)" "$out"
 }
 
+# The VS Code extension (asm/vscode/): its keyword lists against the
+# assembler's source, its symbol scanner against `z80asm -s`, and its
+# grammar through VS Code's own TextMate engine. Runs on VS Code's bundled
+# Node, so it skips loudly, rather than failing, where VS Code is absent.
+check_vscode_extension() {
+    local out status
+    out=$("$ROOT/asm/vscode/test/run_tests.sh" 2>&1)
+    status=$?
+    printf '%s\n' "$out"
+    [ "$status" -eq 0 ] || overall_status=1
+}
+
 TEST_INTERRUPTS="$ROOT/bin/z80-test-interrupts"
 
 if [ ! -x "$Z80" ] || [ ! -x "$Z80ASM" ] || [ ! -x "$Z80DASM" ] || [ ! -x "$TEST_INTERRUPTS" ]; then
@@ -344,5 +356,6 @@ done
 
 check_term_test
 check_debugger
+check_vscode_extension
 
 exit "$overall_status"

@@ -983,7 +983,11 @@ since `main.c` no longer breaks its loop there either).
 ## Assembler (`asm/src/`)
 
 A conventional two-pass design, no lexer/token-stream stage — each source
-line is parsed directly as a string:
+line is parsed directly as a string. (Editor support is `asm/vscode/`, a VS
+Code extension whose keyword lists are a copy of the ones here; its tests,
+run by `make test`, compare them with this source both ways and its symbol
+scanner with `z80asm -s`, so a new mnemonic or directive added here fails
+the run until the extension learns it too.)
 
 - `symtab.c`/`.h` — a simple linked-list symbol table. `symtab_define()`
   tolerates being called twice with the *same* value (pass 1 defines a

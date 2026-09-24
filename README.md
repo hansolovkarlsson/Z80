@@ -134,6 +134,8 @@ CP/M-specific — see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
 - `cpm/emu/zexall/ZEXALL-main/` — the ZEXALL/ZEXDOC instruction exerciser
   (third-party, GPLv2, by Frank D. Cringle via YAZE-AG — not this
   project's code, not meant to be edited).
+- `asm/vscode/`: a VS Code extension for `z80asm` source, colouring and
+  completion; `asm/vscode/install.sh` installs it (see its README).
 - `asm/src/` — the assembler (`symtab`, `expr`, `encode`, `assemble`,
   `preprocess`, `main`); `asm/examples/` has example `.asm` programs, all
   wired into `make test` (`cpm/tests/run_tests.sh`) as automated regression
