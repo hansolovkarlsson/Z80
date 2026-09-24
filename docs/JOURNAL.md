@@ -189,6 +189,15 @@ first: no script or test in the repo passes `-o` or `-l`, and the README's
 own example already wrote `-l 0x34`. `z80dasm/hex-arguments` pins it, and
 with C's base detection put back it fails on both `-o 0100` and `-l 34`.
 
+Starting the debugger-symbols work showed the toolchain guide had been
+verified partly against the wrong assembler. `scripts/config.sh` appended
+`bin/` to `PATH`, so in the guide's own setup `z80asm` meant Homebrew's
+unrelated `z80asm`, which produced the same bytes and no status line; the
+guide said the assembler "prints nothing when it succeeds". Fixed by
+putting `bin/` first, re-capturing the guide with the right binaries (only
+the assembler's own lines changed), and a postmortem,
+[the command ran, but not the program](postmortems/2026-09-24-the-command-ran-but-not-the-program.md).
+
 Earlier the same session, three items went onto Phase 4 of
 `cpm/docs/ROADMAP.md` at the user's request: a Z80 debugger (confirmed
 absent: no target has a trace, breakpoint or register-dump option),

@@ -14,7 +14,9 @@ The references hold the details this guide skips:
 
 Build everything and put `bin/` on your `PATH`. `scripts/config.sh` takes
 the repo root from the directory it is sourced in, so **source it from the
-repo root**:
+repo root**. It puts `bin/` first on `PATH`, ahead of any other `z80asm`
+you may have installed (Homebrew ships an unrelated one); `which z80asm`
+should name this repo's `bin/`:
 
 ```
 cd path/to/Z80
@@ -85,10 +87,11 @@ program asks the operating system for something: function 9 prints the
 
 ```
 $ z80asm hello.asm -o hello.com
+z80asm: wrote 99 bytes to 'hello.com' (origin 0x0100)
 ```
 
-It prints nothing when it succeeds. `hello.com` is 99 bytes: the code and
-data from `0100h` to the last byte of `failmsg`, and nothing else.
+`hello.com` is the code and data from `0100h` to the last byte of
+`failmsg`, and nothing else.
 
 ## Run
 
@@ -153,6 +156,7 @@ bytes back:
 ```
 $ z80dasm hello.com > round.asm
 $ z80asm round.asm -o round.com
+z80asm: wrote 99 bytes to 'round.com' (origin 0x0100)
 $ cmp hello.com round.com
 ```
 

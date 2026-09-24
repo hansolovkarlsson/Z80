@@ -9,7 +9,9 @@ outside the one place it was first needed lives here instead.
 - **`config.sh`** — `source scripts/config.sh` from the repo root puts
   `bin/` on `PATH` (and sets `$BASEDIR` to the repo root), so
   `z80`/`z80asm`/`z80dasm` work without the `./bin/` prefix. Optional —
-  everything also works as `./bin/z80` etc.
+  everything also works as `./bin/z80` etc. It puts `bin/` *first*:
+  Homebrew ships an unrelated `z80asm`, and while `bin/` came last that one
+  ran instead, silently (2026-09-24).
 - **`8080_to_z80.py`** — a general-purpose 8080-mnemonic → Z80-mnemonic
   assembly translator (register-pair renaming, `M`→`(HL)`, `PSW`→`AF`,
   condition-code jump/call/return forms, which ALU ops need an explicit
