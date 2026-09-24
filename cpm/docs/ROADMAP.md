@@ -68,6 +68,16 @@ Aspirational, not yet scoped:
   ABC806 plane), which needs a side-effect-free peek per machine because
   the ABC806's read hook latches attribute bytes; symbols, e.g. from a
   `z80asm` listing; memory writes from the prompt; and the GTK apps.
+- **Documentation for the assembler, disassembler and debugger.** Today
+  the three are documented unevenly: `z80asm` has a syntax reference
+  ([`../../docs/ASSEMBLER.md`](../../docs/ASSEMBLER.md)), the debugger a
+  command reference ([`../../docs/DEBUGGER.md`](../../docs/DEBUGGER.md)),
+  and `z80dasm` nothing beyond a usage example in the top-level `README.md`.
+  None of them has a guide to using it, or to using the three together:
+  write a program, assemble it, run it, disassemble it, and debug it. Scope
+  still open: a guide per tool, or one toolchain guide with the three
+  references beside it, and whether it covers the ABC machines' ROMs as
+  well as CP/M programs.
 - **More machine targets, such as the ZX Spectrum.** It is Z80-based, so it
   would link `z80core/` the way the three ABC targets do rather than
   bringing a core of its own, which is what keeps it in this repo, unlike
