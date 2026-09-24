@@ -63,6 +63,29 @@ never agreed with; it needs `sdl2` too.
 No `*_COMPLETED.md` entry, on the 2026-09-04 and 2026-09-08 precedent:
 this is test infrastructure, not a milestone.
 
+Then the standup's second item: the ABC80 suite's hand-written skip
+lists, described as "the last instance" of the class and "roughly a
+two-line change to the `DISK_CHECKS` shape". Both halves were wrong.
+Reading the blocks showed seven gated blocks across three suites, every
+one hand-writing its names, and showed that `DISK_CHECKS` never removed
+the second list: the block under it still names each check in its own
+`tl_begin`. Copying that shape into ABC80 would have spread the mistake
+while looking like the fix.
+
+A shell block's membership cannot be derived without running it, so the
+list stays and is now measured instead. `tl_gate` in `scripts/testlib.sh`
+takes the skip reason and the names; `tl_gate_end` compares the checks the
+block actually began against them and fails the suite on a difference.
+All seven blocks use it. `make test` gave the same 102 passed and 5
+skipped afterwards, and both failure shapes were injected and caught: a
+new check inside a gate but not in its list (the 2026-08-29 defect), and a
+gate never closed. The postmortem gains a dated follow-up rather than a
+rewrite, since its body records what was believed on the day.
+
+One stray found on the way: `abc802/tests/run_tests.sh` closed its GTK
+block with ` fi`, indented by one space. Harmless to the shell, but it is
+why a pattern that matched the other six blocks missed this one.
+
 Earlier the same session, three items went onto Phase 4 of
 `cpm/docs/ROADMAP.md` at the user's request: a Z80 debugger (confirmed
 absent: no target has a trace, breakpoint or register-dump option),

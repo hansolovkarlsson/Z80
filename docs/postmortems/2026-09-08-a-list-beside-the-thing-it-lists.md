@@ -126,3 +126,22 @@ was, in the sense that everything reported had passed.
 Nothing was actually broken by it, which is the uncomfortable part. The
 check would have passed had it run, on any machine with the media. The cost
 is entirely in what was not being verified while everyone believed it was.
+
+## Follow-up, 2026-09-24: the remedy was the same mistake
+
+`DISK_CHECKS` did not make one copy serve both uses. It served the skip
+loop, but the block beneath it still named every check again in its own
+`tl_begin` calls, so it was a list beside the block exactly as before,
+only moved to the block's top. And the class was not down to one suite:
+all seven gated blocks across the three ABC suites hand-wrote their names.
+
+A shell block's membership cannot be derived without running it, so the
+second of the habit's options was never available here and the third
+applies: the list is a claim, and it needs measuring. `scripts/testlib.sh`
+now measures it. `tl_gate` takes the skip reason and the names; when the
+block runs, `tl_gate_end` compares the checks it actually began against
+the names and fails the suite on any difference, and `tl_summary` fails it
+if a gate is never closed. All seven blocks use it. Both failure shapes
+were injected and caught: an unlisted check added inside a gate, and a
+missing `tl_gate_end`. The first is the 2026-08-29 defect exactly, and it
+now fails on the author's own first run with the media.

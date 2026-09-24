@@ -269,12 +269,8 @@ fresh_disk1() {
     cp "$DISK001" "$WORKDIR/$1.img" && echo "$WORKDIR/$1.img"
 }
 
-if [ -n "$disk_skip_reason" ]; then
-    for name in disk-boot disk-abcbus-status disk-lib-directory \
-                disk-save-load disk-alternate-dos-rom; do
-        tl_skip "$name" "$disk_skip_reason"
-    done
-else
+if tl_gate "$disk_skip_reason" disk-boot disk-abcbus-status \
+        disk-lib-directory disk-save-load disk-alternate-dos-rom; then
     # One run covering the attach, a clean DOS boot, and the whole
     # ABC-bus path driven from BASIC: select the ABC830 (0x2D = 45) on the
     # CS port, then read the status port. 137 is 0x89 - ready, idle, and
@@ -334,6 +330,7 @@ else
         tl_note "UFD-DOS issued only $commands bus commands; expected a real directory walk (20+)"
     fi
     tl_end "$out"
+    tl_gate_end
 fi
 
 # --- Two drives --------------------------------------------------------
@@ -347,11 +344,8 @@ fi
 # ABC-DOS scans all eight drives at boot; it does not. A full boot issues
 # four bus commands, all to unit 0. The second drive is reached when
 # something asks for it, which is why every check below asks.
-if [ -n "$two_drive_skip_reason" ]; then
-    for name in disk-two-drives disk-drive1-roundtrip disk-pinned-drive; do
-        tl_skip "$name" "$two_drive_skip_reason"
-    done
-else
+if tl_gate "$two_drive_skip_reason" disk-two-drives disk-drive1-roundtrip \
+        disk-pinned-drive; then
     # LIB walks the drives it can find and prints each one's volume label.
     # Asserting on *both* labels is what makes this a two-drive check: the
     # same image mounted twice would print one label twice, and a second
@@ -396,6 +390,7 @@ else
     tl_want "$out" "SYSTEMSKIVA" "the pinned image being readable as drive 1"
     tl_want_not "$out" "SYSTEM-DISKETT ABC-80" "any trace of the drive-0 image"
     tl_end "$out"
+    tl_gate_end
 fi
 
 # --- bin/abc80-gtk, headlessly -----------------------------------------
@@ -418,10 +413,9 @@ fi
 # Cairo version; a pixel count still fails loudly if the decode breaks,
 # and the *relative* check below is the stronger half.
 GTK_BIN="$ROOT/bin/abc80-gtk"
-if [ ! -x "$GTK_BIN" ]; then
-    tl_skip "gtk-headless-boot" "bin/abc80-gtk not built ('make test' builds it when pkg-config finds gtk4 and sdl2)"
-    tl_skip "gtk-headless-type" "bin/abc80-gtk not built ('make test' builds it when pkg-config finds gtk4 and sdl2)"
-else
+gtk_skip_reason=""
+[ -x "$GTK_BIN" ] || gtk_skip_reason="bin/abc80-gtk not built ('make test' builds it when pkg-config finds gtk4 and sdl2)"
+if tl_gate "$gtk_skip_reason" gtk-headless-boot gtk-headless-type; then
     GTK_TMP="$(mktemp -d)"
     trap 'rm -rf "$GTK_TMP"' EXIT
 
@@ -444,6 +438,7 @@ else
     tl_want_eq "$more_ok" "yes" \
         "typed text adding pixels (got $typed_lit against the boot screen's $boot_lit)"
     tl_end "$out"
+    tl_gate_end
 fi
 
 tl_summary "abc80"

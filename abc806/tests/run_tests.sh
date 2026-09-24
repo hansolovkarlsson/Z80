@@ -397,10 +397,9 @@ RTC_IMAGE="$ABC806_MEDIA/sys832-ufd.img"
 # Every check below needs the media, so each skips in its own right -
 # reporting one skip for a block of three would undercount what is not
 # being run.
-DISK_CHECKS="disk-boot-and-rtc dos-shell dos-runs-lib"
-if [ ! -f "$RTC_IMAGE" ]; then
-    for c in $DISK_CHECKS; do tl_skip "$c" "$RTC_IMAGE not found - a 640K ABC832 UFD-DOS system disk, or set ABC806_TEST_DISKS"; done
-else
+disk_skip_reason=""
+[ -f "$RTC_IMAGE" ] || disk_skip_reason="$RTC_IMAGE not found - a 640K ABC832 UFD-DOS system disk, or set ABC806_TEST_DISKS"
+if tl_gate "$disk_skip_reason" disk-boot-and-rtc dos-shell dos-runs-lib; then
     # Copy first: the DOS writes to media, and a test must never mutate
     # the user's archive.
     WORK="$(mktemp -d)"
@@ -440,6 +439,7 @@ else
     # worked end to end - not merely that a boot sector ran.
     tl_want "$out" "DOSGEN" "LIB loading off the disk and listing its files"
     tl_end "$out"
+    tl_gate_end
 fi
 
 
@@ -459,11 +459,10 @@ fi
 # count of non-background pixels rather than an image comparison, because
 # a committed reference PNG would be hostage to the host's Cairo version.
 GTK_BIN="$ROOT/bin/abc806-gtk"
-if [ ! -x "$GTK_BIN" ]; then
-    for c in gtk-headless-boot gtk-headless-type gtk-headless-colour; do
-        tl_skip "$c" "bin/abc806-gtk not built ('make test' builds it when pkg-config finds gtk4)"
-    done
-else
+gtk_skip_reason=""
+[ -x "$GTK_BIN" ] || gtk_skip_reason="bin/abc806-gtk not built ('make test' builds it when pkg-config finds gtk4)"
+if tl_gate "$gtk_skip_reason" gtk-headless-boot gtk-headless-type \
+        gtk-headless-colour; then
     GTK_TMP="$(mktemp -d)"
     trap 'rm -rf "$GTK_TMP"' EXIT
 
@@ -511,6 +510,7 @@ PY
     tl_want "$colours" "pens=3" "three drawing pens rendering as three distinct colours"
     tl_want "$colours" "equal=1" "the three lines covering equal numbers of pixels"
     tl_end "$out$colours"
- fi
+    tl_gate_end
+fi
 
 tl_summary "abc806"

@@ -293,21 +293,13 @@ for image in "$MO_IMAGE" "$MF_IMAGE" "$MF_BASIC_IMAGE"; do
     fi
 done
 
-# Every check the media gate guards, named once. The list and the block
-# below have to agree, and a hand-written skip list is exactly how they
-# stop agreeing: abcdisk-list-real-media was absent from this loop while
-# running inside the else branch, so on a bare checkout it neither ran
-# nor skipped - it vanished, and the suite reported 27 checks where the
-# script defines 28. A check that is not run and not counted is worse
-# than one that fails.
-DISK_CHECKS="disk-mo-160k disk-mf-640k disk-drive-independence \
-             disk-cross-drive-load abcdisk-list-real-media"
-
-if [ -n "$disk_skip_reason" ]; then
-    for name in $DISK_CHECKS; do
-        tl_skip "$name" "$disk_skip_reason"
-    done
-else
+# Every check the media gate guards. abcdisk-list-real-media was once
+# missing from this list while running inside the block, so on a bare
+# checkout it neither ran nor skipped - it vanished, and the suite
+# reported 27 checks where the script defines 28. tl_gate_end now fails
+# the suite if the list and the block disagree.
+if tl_gate "$disk_skip_reason" disk-mo-160k disk-mf-640k \
+        disk-drive-independence disk-cross-drive-load abcdisk-list-real-media; then
     cp "$MO_IMAGE" "$WORKDIR/mo.img"
     out=$("$ABC802" --columns 80 --screen --cycles "$DISK_CAP" \
           --disk "$WORKDIR/mo.img" 2>&1)
@@ -369,6 +361,7 @@ else
     tl_want "$out" "mo, 640 sectors" "the format identified from the image size"
     tl_want "$out" "BASICINI SYS" "a real file listed out of media abcdisk did not write"
     tl_end "$out"
+    tl_gate_end
 fi
 
 # --- DOSGEN, the DOS's own disk generator -------------------------------
@@ -392,12 +385,8 @@ if [ ! -f "$UFD_IMAGE" ]; then
     dosgen_skip_reason="$UFD_IMAGE not found - a 640K ABC832 UFD-DOS system disk, or set ABC802_TEST_DISKS"
 fi
 
-if [ -n "$dosgen_skip_reason" ]; then
-    for name in dosgen-completes dosgen-marks-beyond-media \
-                dosgen-filesystem-is-usable; do
-        tl_skip "$name" "$dosgen_skip_reason"
-    done
-else
+if tl_gate "$dosgen_skip_reason" dosgen-completes dosgen-marks-beyond-media \
+        dosgen-filesystem-is-usable; then
     # The dialogue: BYE to leave BASIC for the DOS shell, DOSGEN, the
     # drive, "-" for filesystem-only (its F option is a low-level format,
     # which a synthetic controller has nothing to do), then three separate
@@ -475,6 +464,7 @@ PY
     tl_begin "dosgen-filesystem-is-usable"
     tl_want "$out" '10 PRINT "DOSGEN OK"' "a program read back off the generated filesystem in a second process"
     tl_end "$out"
+    tl_gate_end
 fi
 
 # --- Formatted blank media, with no external images needed ------------
@@ -543,11 +533,9 @@ done
 # count of non-background pixels rather than an image comparison, because
 # a committed reference PNG would be hostage to the host's Cairo version.
 GTK_BIN="$ROOT/bin/abc802-gtk"
-if [ ! -x "$GTK_BIN" ]; then
-    for c in gtk-headless-boot gtk-headless-type; do
-        tl_skip "$c" "bin/abc802-gtk not built ('make test' builds it when pkg-config finds gtk4)"
-    done
-else
+gtk_skip_reason=""
+[ -x "$GTK_BIN" ] || gtk_skip_reason="bin/abc802-gtk not built ('make test' builds it when pkg-config finds gtk4)"
+if tl_gate "$gtk_skip_reason" gtk-headless-boot gtk-headless-type; then
     GTK_TMP="$(mktemp -d)"
     trap 'rm -rf "$GTK_TMP"' EXIT
 
@@ -569,6 +557,7 @@ else
     tl_want_eq "$more_ok" "yes" \
         "typed text adding pixels (got $typed_lit against the boot screen's $boot_lit)"
     tl_end "$out"
- fi
+    tl_gate_end
+fi
 
 tl_summary "abc802"

@@ -1,6 +1,6 @@
 # scripts/testlib.sh - the shared reporting primitives for the machine
-# targets' regression suites (abc80/tests/, abc802/tests/). Sourced, not
-# executed.
+# targets' regression suites (abc80/tests/, abc802/tests/, abc806/tests/).
+# Sourced, not executed.
 #
 # It exists because both suites do the same thing to different machines:
 # run a real emulator over real ROMs, capture what it produced, and assert
@@ -25,9 +25,62 @@ tl_skipped=0
 tl_current=""
 tl_reasons=""
 
+tl_gate_open=0
+tl_gate_names=""
+tl_gate_seen=""
+
 tl_begin() {
     tl_current="$1"
     tl_reasons=""
+    if [ "$tl_gate_open" = 1 ]; then
+        tl_gate_seen="$tl_gate_seen $1"
+    fi
+}
+
+# tl_gate <why-not> <name>...  /  tl_gate_end
+# A block of checks that all need one thing (media, an opt-in binary):
+#
+#   if tl_gate "$skip_reason" check-a check-b; then
+#       ... tl_begin check-a ... tl_begin check-b ...
+#       tl_gate_end
+#   fi
+#
+# With a reason, every named check skips and the block is not entered.
+# Without one, tl_gate_end compares the checks the block actually began
+# against the names and fails the suite if they differ. The names are
+# still a list beside the block, but no longer one kept right by
+# attention: a check added to the block and not to the list fails on the
+# first run that has what the block needs, which is the author's own.
+# Before this, such a check simply vanished wherever the block skipped
+# (abcdisk-list-real-media, 2026-09-08).
+tl_gate() {
+    local why="$1" name
+    shift
+    if [ -n "$why" ]; then
+        for name in "$@"; do
+            tl_skip "$name" "$why"
+        done
+        return 1
+    fi
+    tl_gate_open=1
+    tl_gate_names="$*"
+    tl_gate_seen=""
+    return 0
+}
+
+tl_gate_end() {
+    local declared seen missing extra
+    declared=$(printf '%s\n' $tl_gate_names | sort)
+    seen=$(printf '%s\n' $tl_gate_seen | sort)
+    tl_gate_open=0
+    [ "$declared" = "$seen" ] && return 0
+    missing=$(comm -23 <(printf '%s\n' "$declared") <(printf '%s\n' "$seen") | tr '\n' ' ' | sed 's/ $//')
+    extra=$(comm -13 <(printf '%s\n' "$declared") <(printf '%s\n' "$seen") | tr '\n' ' ' | sed 's/ $//')
+    tl_begin "gate-membership"
+    [ -n "$missing" ] && tl_note "named in tl_gate but never run: $missing"
+    [ -n "$extra" ] && tl_note "run inside the gate but not named in tl_gate: $extra"
+    tl_note "(gate: $tl_gate_names)"
+    tl_end
 }
 
 # tl_want <haystack> <needle> [description]
@@ -127,6 +180,11 @@ tl_fixture() {
 
 # tl_summary <suite name> - final tally plus the exit status to use.
 tl_summary() {
+    if [ "$tl_gate_open" = 1 ]; then
+        tl_begin "gate-membership"
+        tl_note "a tl_gate block never reached tl_gate_end (gate: $tl_gate_names)"
+        tl_end
+    fi
     echo
     if [ "$tl_skipped" -gt 0 ]; then
         echo "$1: $tl_passed passed, $tl_failed failed, $tl_skipped skipped"
