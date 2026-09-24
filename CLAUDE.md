@@ -137,7 +137,7 @@ images directly rather than transcribing a manual. As of
 Milestone 1 it boots the real, unmodified BASIC II ROM images (committed
 under `abc802/resources/rom/`, every one verified byte-for-byte against
 MAME's published CRC32 *and* SHA1) to a working prompt: `bin/abc802
---columns 80 --type "PRINT 6*7"` renders the ROM's own sign-on banner,
+--columns 80 --type $'PRINT 6*7\r'` renders the ROM's own sign-on banner,
 its echo of the typed line, and its answer, `42`. Milestone 2 adds
 `--interactive`: a genuine live session (raw-terminal keyboard, real
 3 MHz pacing, a screen redrawn at 30fps with inverse video and a real
@@ -510,12 +510,15 @@ all of it completed-work narrative. The milestone write-ups themselves are
 unchanged and still worth reading: most of this project's hard-won
 hardware knowledge is in them, especially the "found the hard way" notes.
 
-Two generic reference docs live in the top-level `docs/` (not
-CP/M-specific, so not under `cpm/docs/` — same reasoning as `asm/`/
+The generic reference docs live in the top-level `docs/` (not
+CP/M-specific, so not under `cpm/docs/`, for the same reason as `asm/`/
 `disasm/` above, which they document): `Z80_REFERENCE.md` (the Z80
 instruction set, including undocumented opcodes/flag behavior, plus
-which of those this emulator can actually execute today) and
-`ASSEMBLER.md` (the `z80asm` syntax — directives, expressions, macros).
+which of those this emulator can actually execute today),
+`ASSEMBLER.md` (the `z80asm` syntax: directives, expressions, macros),
+`DISASSEMBLER.md` (`z80dasm`'s options and listing), `DEBUGGER.md` (the
+debugger's commands), and `TOOLCHAIN.md`, a guide that takes one real
+program through all three tools with every command's output as run.
 `cpm/docs/CPM_REFERENCE.md` (the CP/M 2.2 BDOS/BIOS call spec — function
 numbers, FCB layout, BIOS jump table — that Phase 3's `cpm.c` work
 targets) stays in `cpm/docs/` alongside the roadmap, genuinely

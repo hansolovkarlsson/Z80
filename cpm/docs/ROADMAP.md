@@ -68,16 +68,6 @@ Aspirational, not yet scoped:
   ABC806 plane), which needs a side-effect-free peek per machine because
   the ABC806's read hook latches attribute bytes; symbols, e.g. from a
   `z80asm` listing; memory writes from the prompt; and the GTK apps.
-- **Documentation for the assembler, disassembler and debugger.** Today
-  the three are documented unevenly: `z80asm` has a syntax reference
-  ([`../../docs/ASSEMBLER.md`](../../docs/ASSEMBLER.md)), the debugger a
-  command reference ([`../../docs/DEBUGGER.md`](../../docs/DEBUGGER.md)),
-  and `z80dasm` nothing beyond a usage example in the top-level `README.md`.
-  None of them has a guide to using it, or to using the three together:
-  write a program, assemble it, run it, disassemble it, and debug it. Scope
-  still open: a guide per tool, or one toolchain guide with the three
-  references beside it, and whether it covers the ABC machines' ROMs as
-  well as CP/M programs.
 - **More machine targets, such as the ZX Spectrum.** It is Z80-based, so it
   would link `z80core/` the way the three ABC targets do rather than
   bringing a core of its own, which is what keeps it in this repo, unlike
@@ -114,6 +104,13 @@ check — are all done, and their write-ups have moved to
   can raise one against itself, which is why
   `cpm/tests/test_interrupts.c` drives it at the C level instead. The
   ABC80 and ABC802 targets do raise real interrupts.
+- **`z80dasm` reads a leading zero as octal.** Its `-o`/`-l` arguments go
+  through C's `strtol(..., 0)`, so `-o 0100`, the usual way to write the
+  CP/M origin, loads the file at `0040h` with no warning. The debugger reads
+  a bare number as hex, so the two tools disagree. Documented in
+  [`../../docs/DISASSEMBLER.md`](../../docs/DISASSEMBLER.md) rather than
+  changed, since making bare numbers hex would silently change what `-l 52`
+  means to anyone already using it; a decision, not a fix.
 - **A non-`RST` `IM 0` vector** returns `-1` (the "unimplemented" signal),
   deliberately: dispatching a general instruction fetched from the device
   rather than from memory would need a bus model this does not have. Real

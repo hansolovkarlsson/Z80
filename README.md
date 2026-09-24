@@ -167,10 +167,15 @@ CP/M-specific — see [`CLAUDE.md`](CLAUDE.md) for the full reasoning.
   program. See `cpm/cpm_disk/README.md`.
 - `disasm/src/` — the disassembler (`decode`, `main`); `disasm/examples/`
   has example output.
+- `debug/src/`: the debugger (`--debug`, `--break`, `--debug-script`),
+  linked into all four machine CLIs.
 - `docs/` — generic, non-CP/M-specific reference docs: a Z80 CPU
   reference including undocumented opcodes
-  ([`Z80_REFERENCE.md`](docs/Z80_REFERENCE.md)) and the assembler syntax
-  reference ([`ASSEMBLER.md`](docs/ASSEMBLER.md)). Also the project's
+  ([`Z80_REFERENCE.md`](docs/Z80_REFERENCE.md)), a reference for each
+  tool ([`ASSEMBLER.md`](docs/ASSEMBLER.md),
+  [`DISASSEMBLER.md`](docs/DISASSEMBLER.md),
+  [`DEBUGGER.md`](docs/DEBUGGER.md)), and a guide to using the three
+  together on a real program ([`TOOLCHAIN.md`](docs/TOOLCHAIN.md)). Also the project's
   cross-cutting history: [`JOURNAL.md`](docs/JOURNAL.md), a running log of
   what was worked on and what it taught, and
   [`postmortems/`](docs/postmortems/), write-ups of the failures whose

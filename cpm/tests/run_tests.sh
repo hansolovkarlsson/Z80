@@ -242,6 +242,13 @@ $(want "$out" "terminated normally" "the program running to its end afterwards")
 $(want "$out" "loop counter wrong" "the program noticing the changed register")"
     report "debugger-register-set" "$(printf '%s' "$reasons" | grep .)" "$out"
 
+    # An empty line repeats the last step *with its count*: `s 2` then an
+    # empty line is four instructions, so DJNZ has taken B from 5 to 3.
+    # Repeating a bare `s` instead stops after three, with B still at 4.
+    out=$(debugger_run "$hello" $'b 010D\nc\ns 2\n\nq\n')
+    reasons="$(want "$out" "BC=0309" "the fourth step, from an empty line repeating s 2")"
+    report "debugger-step-repeat" "$(printf '%s' "$reasons" | grep .)" "$out"
+
     # A watchpoint names the instruction that wrote. The expected addresses
     # come from z80dasm, not from the debugger, so the two cannot agree by
     # sharing a mistake.

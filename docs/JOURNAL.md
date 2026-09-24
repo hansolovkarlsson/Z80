@@ -150,6 +150,37 @@ and restore in a `finally` block. And the ABC80 half of the sweep found
 prints `[    42]`: the second check in one day found asserting on text that
 was present whatever the subject did.
 
+Then the documentation item, the same afternoon it was added:
+`docs/DISASSEMBLER.md`, the reference `z80dasm` never had, and
+`docs/TOOLCHAIN.md`, a guide that takes `hello.asm` through all three
+tools. Every command in the guide was run and its output pasted, and
+running them was not a formality. It found four things.
+
+- **`z80dasm -o 0100` means octal.** The origin goes through C's
+  `strtol(..., 0)`, so the way a Z80 programmer writes the CP/M origin
+  loads the file at `0040h` with no warning. Documented and put on the
+  roadmap as a decision rather than changed, since making bare numbers hex
+  would silently change what `-l 52` means.
+- **The debugger's empty line dropped the count**: `s 2` then Return took
+  one step. It now repeats `s 2`; `debugger-step-repeat` pins it and fails
+  with the old behaviour restored.
+- **`--type` without `\r` never runs the line**, so `CLAUDE.md`'s own
+  example of the ABC802 answering `PRINT 6*7` was wrong as written: BASIC
+  echoes the line and waits. Corrected there and written correctly in the
+  guide.
+- **The disassemble-reassemble round trip is exact for eleven of the
+  twelve examples.** `gaps_test.asm` holds the undocumented `IM` encodings
+  `ED 66/76/7E`, which disassemble by name and reassemble as the
+  documented form. Same instruction, different bytes; the reference says
+  so rather than claiming a round trip it does not have.
+
+The guide's ABC802 section stops the ROM at `3A76` and reads the registers:
+`DI`, `IM 2`, and an `INC (HL)` on `FFF5`, an interrupt handler counting
+ticks at about 90 a second of emulated time, consistent with the 93.75 Hz
+clock. The guide states that as an inference, which is what it is. The
+README and `CLAUDE.md` both listed "two" reference documents; there are
+now five, and both lists are corrected.
+
 Earlier the same session, three items went onto Phase 4 of
 `cpm/docs/ROADMAP.md` at the user's request: a Z80 debugger (confirmed
 absent: no target has a trace, breakpoint or register-dump option),

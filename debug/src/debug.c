@@ -343,7 +343,7 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
                 continue;
             }
             dbg->step_left = n;
-            strcpy(dbg->last_command, "s");
+            strcpy(dbg->last_command, start);   // an empty line repeats `s 2` as `s 2`
             break;
         } else if (!strcmp(cmd, "n") || !strcmp(cmd, "next")) {
             strcpy(dbg->last_command, "n");

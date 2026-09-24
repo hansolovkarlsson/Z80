@@ -4,7 +4,7 @@ Command reference for the Z80 debugger built into all four machine CLIs:
 `bin/z80`, `bin/abc80`, `bin/abc802` and `bin/abc806`. For how it is built
 and why, see `CLAUDE.md`'s Debugger section; for what is planned next, see
 `cpm/docs/ROADMAP.md`'s Phase 4. This document describes the debugger as it
-exists today.
+exists today. [`TOOLCHAIN.md`](TOOLCHAIN.md) has a worked session.
 
 ## Starting it
 
@@ -42,7 +42,8 @@ prompt. Without a debug option, Ctrl-C behaves as it always has.
 ## Commands
 
 Addresses and values are hex (`1234`, `0x1234`, `$1234` and `1234h` are
-all accepted). Counts are decimal. An empty line repeats `s` or `n`.
+all accepted). Counts are decimal. An empty line repeats the last `s`,
+with its count, or `n`.
 
 | Command | Effect |
 |---|---|
