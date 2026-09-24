@@ -72,9 +72,13 @@ independently and need *opposite* settings.
 
 <https://www.abc80.net/archive/luxor/> — the same archive the committed
 ROMs come from. Disk images live under `sw/disk_images/ABC800/` in `160k/`
-and `640k/`, and **each directory has an `index.txt` that transcribes the
-physical disk labels**, so a system disk can be found without downloading
+and `640k/`, and each directory has an `index.txt` that transcribes the
+physical disk labels, so a system disk can be found without downloading
 anything: `grep -i ufd index.txt`.
+
+**Do not trust `160k/index.txt`.** It labels `disk001`-`003` as CP/M
+disks, but `disk001` boots ORD 800 Version 2.4 and `disk003` boots PROMMIS
+Ver 6.2 (checked 2026-09-24). When a label matters, boot the image.
 
 Three 640K UFD-DOS system disks are worth having, because they are the
 only media here that exercises the DOS layer properly — the 160K system
@@ -182,9 +186,23 @@ on-disk layout.
 
 ## The regression suite
 
-`abc802/tests/run_tests.sh` reads `ABC802_TEST_DISKS` — a directory, not a
-file — and skips its floppy checks loudly without it. It wants
-`disk001.img`, `mf001.img` and `mf002.img` from abc80.net's ABC800
-archive, which are `.img` dumps in **physical** order and therefore work
-at the default interleave. Point it here only if you put images with those
-names in this directory.
+`abc802/tests/run_tests.sh` reads its media from this directory, or from
+`ABC802_TEST_DISKS` if that is set (a directory, not a file). Its five
+ABC800 floppy checks want three images **under local names**, which is why
+they cannot be found on the site by name:
+
+| Local name | Download | Boots |
+|---|---|---|
+| `disk001.img` | `ABC800/160k/disk001.img` | ORD 800 Version 2.4 |
+| `mf001.img` | `ABC800/640k/disk001.img` | ADMINISTRATION 800 |
+| `mf002.img` | `ABC800/640k/disk002.img` | a plain BASIC prompt |
+
+The paths are under
+<https://www.abc80.net/archive/luxor/sw/disk_images/>. All three are
+`.img` dumps in **physical** order, so they work at the default
+interleave. The three `DOSGEN` checks need `sys832-ufd.img` from the table
+above and gate on it separately. With all four present the suite runs
+every check and skips none (verified 2026-09-24, 28 passed).
+
+The ABC80 suite also wants a `disk001.img`. It is a different file, from
+the `ABC80/` directory; see `abc80/resources/disks/`.

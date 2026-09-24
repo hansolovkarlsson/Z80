@@ -115,6 +115,20 @@ loses the known gap. One practical consequence is written into
 `abc806/emu/src/main.c`: a high byte is not a harmless no-op on either
 machine, so no key may be mapped there to mean "do nothing".
 
+Last, the ABC802 floppy media, after the user reported not being able to
+tell which abc80.net files they were. There were two reasons, and neither
+was theirs. `mf001.img` and `mf002.img` are local renames of `640k/disk001`
+and `640k/disk002`, which nothing in the repo recorded. And the archive's
+`160k/index.txt` labels `disk001` as a CP/M disk, when it boots ORD 800
+Version 2.4 exactly as this repo's records say. The identification was by
+booting rather than by label: all 35 images in two other 160K directories
+first, none of which boots ORD 800, and then the top-level ones. Pointing
+the suite at the three found 28 of 28 ABC802 checks passing, and with them
+copied into `abc802/resources/disks/` (gitignored) `make test` gives 107
+passed and nothing skipped, the first complete run on this machine. The
+disks README now has the mapping and the warning, and the roadmap's gap
+entry, which counted four gated checks where there are five, points at it.
+
 Earlier the same session, three items went onto Phase 4 of
 `cpm/docs/ROADMAP.md` at the user's request: a Z80 debugger (confirmed
 absent: no target has a trace, breakpoint or register-dump option),

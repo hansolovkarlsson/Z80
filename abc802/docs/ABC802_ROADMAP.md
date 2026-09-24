@@ -49,13 +49,14 @@ Real, understood, and deliberately not solved yet — not oversights.
   launch and BASIC's `SAVE`/`LOAD` work against them, but there is no
   in-window way to swap a disk; the amber phosphor is fixed at the
   machine's real value. See `../gtk/README.md`.
-- **Three ABC800 disk images are missing here**, so four checks
+- **Five floppy checks need three uncommitted disk images**
   (`disk-mo-160k`, `disk-mf-640k`, `disk-drive-independence`,
-  `disk-cross-drive-load`) skip on this machine. They want `disk001.img`,
-  `mf001.img` and `mf002.img` in [`../resources/disks/`](../resources/disks/)
-  — abc80.net's ABC800 160K and 640K archives. The suite names the first
-  missing one in its skip message. Nothing is wrong; the files simply are
-  not here.
+  `disk-cross-drive-load`, `abcdisk-list-real-media`), and skip loudly on
+  a fresh clone. They want `disk001.img`, `mf001.img` and `mf002.img` in
+  [`../resources/disks/`](../resources/disks/), whose README says which
+  abc80.net files those are: two are local renames, and the archive's
+  `160k/index.txt` mislabels the third, so none of them can be found on
+  the site by name or label.
 - **The line editor has no cursor movement, and that is the hardware.**
   Left arrow maps to backspace and Right does nothing, because a full
   sweep of every control code (Milestone 8) established the editor's whole
@@ -117,11 +118,12 @@ no boot screen exercises, the same mosaic row asserted in the *terminal*
 render, and the character-ROM invariant that lets the terminal walk read
 one scanline where the pixel walk reads them all. Two more drive
 `bin/abc802-gtk` headlessly through its own `--screenshot`, and skip
-loudly when that opt-in binary is absent. Four floppy checks — 160K and 640K
-media booting real applications, drive independence, and a cross-drive
-load with its negative control — need `ABC802_TEST_DISKS` pointed at a
-directory holding `disk001.img`, `mf001.img` and `mf002.img`, and skip
-loudly without it.
+loudly when that opt-in binary is absent. Five floppy checks (160K and
+640K media booting real applications, drive independence, a cross-drive
+load with its negative control, and `abcdisk` listing real media) need
+`disk001.img`, `mf001.img` and `mf002.img` in `../resources/disks/` or in
+`ABC802_TEST_DISKS`, and skip loudly without them. That directory's README
+names the archive file behind each.
 
 Three more run `DOSGEN`, the DOS's own disk generator, end to end: it
 completes with the correct usable-sector count, the free-list bitmap it
