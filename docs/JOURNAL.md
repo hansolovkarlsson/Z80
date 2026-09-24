@@ -21,6 +21,57 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-24 — `make test` builds the GTK apps it tests
+
+The first session in sixteen days. It opened by reading the standup, and
+`make test` reproduced its baseline exactly: 98 passed, 0 failed, 9
+skipped. Four of those skips were `bin/abc80-gtk` and `bin/abc802-gtk`,
+and the question was simply "so we're missing them?" Both libraries were
+installed; the binaries had just never been built on this machine. A hand
+build compiled cleanly and the count went to 102.
+
+That was the standup's top item showing up as a symptom rather than an
+argument, so it was done next. The Makefile now asks `pkg-config
+--exists` for each app's own package list and, when the answer is yes,
+makes that app a prerequisite of its suite's test target: `abc80-gtk` of
+`test-abc80`, and so on, with `bin/z80-gtk` under `test-cpm`, where
+building it is its only coverage since it has no checks. The package lists
+are the same variables the link lines already use, so there is no second
+list to drift. Where the packages are absent nothing changes: the checks
+skip loudly, and their message now says `make test` would have built the
+app, so a skip under `make test` reads as "packages missing" rather than
+"someone forgot".
+
+Checked three ways, each the one that could fail. A deliberately broken
+line in `abc802/gtk/src/main.c` now stops `make test-abc802` with exit 2,
+where it previously would have run the old binary and passed. `make clean
+&& make test`, the exact run that silently skipped all seven checks on
+2026-09-04, built all four apps and gave 102 passed, 0 failed, 5 skipped
+(the ABC802 floppy media). And with `PKG_CONFIG_LIBDIR` pointed at nothing
+and the binaries moved aside, the run still exited 0 with the seven GTK
+checks skipping under the new message.
+
+Closing the item meant removing it from four roadmaps (planned step 3 in
+ABC802's, a known gap in ABC80's and ABC806's, a Phase 4 bullet in
+CP/M's) and correcting every sentence that said `make test` never builds
+these apps: `CLAUDE.md` in three places, the Makefile's own comments, the
+three suite headers and the three GTK READMEs. The ABC802 roadmap's suite
+row was also still at 27 checks with 7 needing media; it is 28 and 5.
+The ABC80 README said that app needs only `gtk4`, which the Makefile has
+never agreed with; it needs `sdl2` too.
+
+No `*_COMPLETED.md` entry, on the 2026-09-04 and 2026-09-08 precedent:
+this is test infrastructure, not a milestone.
+
+Earlier the same session, three items went onto Phase 4 of
+`cpm/docs/ROADMAP.md` at the user's request: a Z80 debugger (confirmed
+absent: no target has a trace, breakpoint or register-dump option),
+further machine targets such as the ZX Spectrum, and Linux and Windows
+ports. They sit there rather than on a machine's roadmap because each one
+is repo-wide.
+
+---
+
 ## 2026-09-08 — the day the counting found what the reading had not
 
 No emulator work at all. A project-setup pass, then an audit, and between

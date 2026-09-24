@@ -1,8 +1,8 @@
 # bin/abc806-gtk
 
 A GTK4 window for the Luxor ABC806, built with `make abc806-gtk`. Opt-in:
-never part of `make` or `make test`, on the same terms as the other two
-GTK apps here.
+never part of `make`, on the same terms as the other GTK apps here, and
+built by `make test` whenever `pkg-config` finds `gtk4`.
 
 ```
 make abc806-gtk

@@ -543,7 +543,8 @@ make clean         # remove object files and every binary above
 ```
 
 `make test` covers every target that builds without external dependencies,
-which is all of them except the four GTK apps. Each machine target has its
+and each of the four GTK apps too whenever `pkg-config` finds that app's
+packages, so a GTK build break fails the run rather than going unnoticed. Each machine target has its
 own suite (`abc80/tests/`, `abc802/tests/`, `abc806/tests/`) driving the
 real ROMs and asserting on what the machine produced — the screen it
 rendered, the file it wrote, the port it answered — with shared reporting
@@ -1100,8 +1101,8 @@ future gap).
 
 ## GTK terminal (`cpm/gtk/src/`, work in progress)
 
-`bin/z80-gtk` (built via the opt-in `make gtk`, never part of
-`make`/`make test`) is a thin GTK4 launcher, not a terminal emulator of
+`bin/z80-gtk` (built via the opt-in `make gtk`, never part of `make`,
+and built by `make test` only when `gtk4` and VTE are installed) is a thin GTK4 launcher, not a terminal emulator of
 its own: it spawns the real, unmodified `bin/z80` attached to a pty and
 hands that pty to a `VteTerminal` widget, which does the actual
 VT100/ANSI interpretation — `z80.c`/`cpm.c`/`cpm/emu/src/main.c` needed zero
@@ -1153,9 +1154,11 @@ the wrong address. **All three GTK windows now have such checks** - two
 each for `abc80`/`abc802`, three for `abc806`, whose extra one asserts
 that three pen lines render as three *distinct colours* in equal numbers,
 which no pixel count can see and for which a collapsed palette is the
-injection. What none of them cover is a *build* break, since each skips
-when its opt-in binary is absent; `bin/abc80-gtk` stopped compiling for
-part of a day for exactly that reason, found only by building it by hand.
+injection. `make test` builds each app first whenever `pkg-config` finds
+its packages, so a *build* break fails the run too; before that, each check
+simply skipped when its binary was absent, and `bin/abc80-gtk` stopped
+compiling for part of a day for exactly that reason, found only by
+building it by hand.
 See
 `abc80/gtk/README.md` and `abc80/docs/ABC80_ROADMAP.md`'s Milestone 11
 for the full write-up (that milestone now has no open items).

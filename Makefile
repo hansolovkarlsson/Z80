@@ -56,10 +56,8 @@ ABC80_SRC_DIR := abc80/emu/src
 # bin/abc80: reuses z80core/z80.o and alu.o directly rather than
 # recompiling them under a different name - both are already
 # machine-agnostic (z80_execute(), not the CP/M-specific z80_step()) and
-# built with identical flags, so there's nothing to duplicate. Opt-in only
-# (never part of `all`/`test`), same as `gtk` below - with no keyboard
-# emulated yet, there's nothing test-suite-verifiable about it yet beyond
-# a one-shot end-of-run render. Links render.o/charset.o/video_timing.o
+# built with identical flags, so there's nothing to duplicate. Not part of
+# `all`; `make test` builds it for its own suite. Links render.o/charset.o/video_timing.o
 # for that final render - not chargen.o, since render.c's terminal backend
 # prints whole Unicode glyphs per cell rather than reconstructing pixels
 # from the chargen ROM (see render.c's own top comment).
@@ -94,7 +92,8 @@ ABC806_CHARGEN_DUMP_OBJS := $(ABC806_SRC_DIR)/chargen_dump.o $(ABC806_SRC_DIR)/c
 ABC806_CHARGEN_DUMP_TARGET := $(BIN_DIR)/abc806-chargen-dump
 
 # bin/abc806-gtk: a GTK4 window for the ABC806. Opt-in (`make abc806-gtk`),
-# never part of `make`/`make test`, on the same terms as the other two.
+# never part of `make`, on the same terms as the other two; `make test`
+# builds it when pkg-config finds gtk4 (see the test targets below).
 #
 # Shorter than either predecessor for a reason worth keeping: the pixel
 # decode is already a pure function verified by bin/abc806-chargen-dump, and
@@ -161,8 +160,8 @@ ABC80_SOUND_DEMO_TARGET := $(BIN_DIR)/abc80-sound-demo
 # reimplementation.
 EMU_TEST_INTERRUPTS_TARGET := $(BIN_DIR)/z80-test-interrupts
 
-# Opt-in only (never part of `all`/`test`) - the only build target with an
-# external dependency beyond a bare C compiler. A thin GTK4+VTE launcher
+# Opt-in only (never part of `all`; `make test` builds it when pkg-config
+# finds gtk4 and VTE, see the test targets below). A thin GTK4+VTE launcher
 # for the real bin/z80, not a separate emulator - see cpm/gtk/src/main.c's
 # own comment for why.
 GTK_SRC_DIR := cpm/gtk/src
@@ -177,7 +176,8 @@ GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 # abc80/docs/ABC80_ROADMAP.md) - a genuine Cairo pixel framebuffer, not a
 # VTE-terminal thin launcher like cpm/gtk/ above (ABC80 has real bitmap
 # GRAPHICS-mode graphics a terminal widget can't address). Opt-in only,
-# same as `gtk`/`abc80` - never part of `all`/`test`. Needs `gtk4` (no
+# same as `gtk` - never part of `all`, and built by `make test` only when
+# pkg-config finds both packages. Needs `gtk4` (no
 # VTE - this target never spawns a child process) and `sdl2` (Milestone
 # 11's live-audio callback - the only real dependency reason, `bin/abc80`
 # itself stays SDL2-free and keeps its own batch `--wav` renderer as-is).
@@ -197,7 +197,7 @@ GTK_LIBS := $(shell pkg-config --libs $(GTK_PKGS) 2>/dev/null)
 # pixel decode (the same pure function --screenshot and
 # abc802-chargen-dump verify), render.o for the charset/cursor helpers,
 # and step.o for the shared per-instruction logic. Opt-in only, never part
-# of `all`/`test`.
+# of `all`; `make test` builds it when pkg-config finds gtk4.
 ABC802_GTK_SRC_DIR := abc802/gtk/src
 ABC802_GTK_SRCS := $(wildcard $(ABC802_GTK_SRC_DIR)/*.c)
 ABC802_GTK_OBJS := $(ABC802_GTK_SRCS:.c=.o) $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/cassette.o $(ABC802_SRC_DIR)/render.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
@@ -327,23 +327,34 @@ $(ABC802_GTK_SRC_DIR)/%.o: $(ABC802_GTK_SRC_DIR)/%.c
 run: emulator
 	./$(EMU_TARGET) cpm/emu/zexall/ZEXALL-main/zexall.com | less
 
-# `make test` covers every target that builds with no external
-# dependencies - which is all of them except the two GTK apps. The machine
-# targets' suites drive the real ROMs; their floppy checks need real disk
-# images this repo does not commit, and skip loudly without them (see each
-# script's own header for the environment variable to set).
+# `make test` builds every target with no external dependencies, and each
+# GTK app too whenever pkg-config finds that app's own packages. Without
+# that, a GTK app was only ever built by hand, so a compile break went
+# unnoticed (bin/abc80-gtk, 2026-08-31) and its headless checks ran or
+# skipped depending on what someone had happened to build. Where the
+# packages are absent the app is left out and its checks skip loudly, as
+# before. bin/z80-gtk has no checks, so building it is its whole coverage.
+# The machine targets' suites drive the real ROMs; their floppy checks need
+# real disk images this repo does not commit, and skip loudly without them
+# (see each script's own header for the environment variable to set).
+have_pkgs = $(shell pkg-config --exists $(1) 2>/dev/null && echo yes)
+TEST_CPM_GTK := $(if $(call have_pkgs,$(GTK_PKGS)),gtk)
+TEST_ABC80_GTK := $(if $(call have_pkgs,$(ABC80_GTK_PKGS)),abc80-gtk)
+TEST_ABC802_GTK := $(if $(call have_pkgs,$(ABC802_GTK_PKGS)),abc802-gtk)
+TEST_ABC806_GTK := $(if $(call have_pkgs,$(ABC806_GTK_PKGS)),abc806-gtk)
+
 test: test-cpm test-abc80 test-abc802 test-abc806
 
-test-cpm: emulator assembler disassembler $(EMU_TEST_INTERRUPTS_TARGET)
+test-cpm: emulator assembler disassembler $(EMU_TEST_INTERRUPTS_TARGET) $(TEST_CPM_GTK)
 	./cpm/tests/run_tests.sh
 
-test-abc80: abc80 abc80-video-timing-dump abc80-chargen-dump abc80-sound-demo abcdisk
+test-abc80: abc80 abc80-video-timing-dump abc80-chargen-dump abc80-sound-demo abcdisk $(TEST_ABC80_GTK)
 	./abc80/tests/run_tests.sh
 
-test-abc806: abc806 abc806-chargen-dump
+test-abc806: abc806 abc806-chargen-dump $(TEST_ABC806_GTK)
 	./abc806/tests/run_tests.sh
 
-test-abc802: abc802 abc802-chargen-dump abcdisk
+test-abc802: abc802 abc802-chargen-dump abcdisk $(TEST_ABC802_GTK)
 	./abc802/tests/run_tests.sh
 
 # Every .d generated by -MMD above, so the -include below never has to

@@ -20,13 +20,6 @@ investigations that drove most of the BDOS/BIOS work — live in
 
 Aspirational, not yet scoped:
 
-- **`make test` builds none of the GTK apps**, this one included, so a
-  build break in any of them goes unnoticed until someone compiles by
-  hand — which is how `bin/abc80-gtk` was found broken on 2026-08-31.
-  The three ABC windows at least have headless checks that run when their
-  binary exists; this one has none at all. Tracked as a planned next step
-  in [`../../abc802/docs/ABC802_ROADMAP.md`](../../abc802/docs/ABC802_ROADMAP.md).
-
 - **A GTK-based UI, in progress but currently blocked** (`gtk/`) — a real
   standalone app, not depending on the host terminal, useful for handing
   someone a double-clickable program rather than a CLI incantation. No
@@ -39,9 +32,10 @@ Aspirational, not yet scoped:
   `bin/z80` attached to a pty and hands that pty to a `VteTerminal`
   widget (the same widget GNOME Terminal uses), so `z80.c`/`cpm.c`/
   `cpm/emu/src/main.c` needed zero changes. Kept as a separate opt-in binary
-  (`bin/z80-gtk`, built via `make gtk`, never part of `make`/`make
-  test`) specifically so the default build stays free of the GTK4+VTE
-  dependency. **Working, but still intermittently blocked**: terminal
+  (`bin/z80-gtk`, built via `make gtk`, never part of `make`)
+  specifically so the default build stays free of the GTK4+VTE
+  dependency. `make test` builds it when pkg-config finds both, which is
+  its only coverage: it has no checks. **Working, but still intermittently blocked**: terminal
   rendering itself is now confirmed correct (real `bin/z80` output shows
   up in the `VteTerminal` widget). One real crash cause found and fixed
   in `main.c` (`lower_fd_limit()`, working around a `fdwalk()` stack

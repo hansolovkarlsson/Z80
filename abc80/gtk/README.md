@@ -21,9 +21,10 @@ real-time-paced batch of instructions (the same wall-clock-vs-emulated-time
 pacing `--interactive` already uses), and queues a redraw at ~30fps.
 
 Kept as its own binary (`bin/abc80-gtk`, built via `make abc80-gtk`,
-**opt-in** — not part of `make`/`make all`/`make test`) so the default
-build stays free of the GTK4 dependency. Only needs `gtk4` (Homebrew) —
-no VTE, since this target never spawns a child process.
+**opt-in**, not part of `make`/`make all`) so the default build stays
+free of the GTK4 dependency; `make test` builds it whenever `pkg-config`
+finds its packages. Needs `gtk4` and `sdl2` (Homebrew), the second for
+live audio. No VTE, since this target never spawns a child process.
 
 ## Usage
 
@@ -458,8 +459,9 @@ the lesson recorded at length below. The app verifies *itself* instead.
 
 `abc80/tests/run_tests.sh` now carries two checks built on it,
 `gtk-headless-boot` and `gtk-headless-type`. They skip loudly when
-`bin/abc80-gtk` is absent, since it is opt-in and `make test` does not
-build it.
+`bin/abc80-gtk` is absent. `make test` builds it first whenever
+`pkg-config` finds `gtk4` and `sdl2`, so under `make test` a skip means
+those packages are missing.
 
 They assert on a **count of non-background pixels** (`tests/litpix.py`)
 rather than comparing images: a committed reference PNG would be hostage

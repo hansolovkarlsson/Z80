@@ -400,8 +400,9 @@ fi
 
 # --- bin/abc80-gtk, headlessly -----------------------------------------
 #
-# The GTK window is opt-in (`make abc80-gtk`) and is not built by
-# `make test`, so these skip loudly when it is absent rather than failing.
+# The GTK window is opt-in (`make abc80-gtk`); `make test` builds it when
+# pkg-config finds gtk4 and sdl2, and these skip loudly when it is absent
+# rather than failing.
 #
 # They exist because that app had no automated coverage at all, and it is
 # the one target here carrying its *own* pixel decode - the CLI renders
@@ -418,8 +419,8 @@ fi
 # and the *relative* check below is the stronger half.
 GTK_BIN="$ROOT/bin/abc80-gtk"
 if [ ! -x "$GTK_BIN" ]; then
-    tl_skip "gtk-headless-boot" "bin/abc80-gtk not built (run 'make abc80-gtk')"
-    tl_skip "gtk-headless-type" "bin/abc80-gtk not built (run 'make abc80-gtk')"
+    tl_skip "gtk-headless-boot" "bin/abc80-gtk not built ('make test' builds it when pkg-config finds gtk4 and sdl2)"
+    tl_skip "gtk-headless-type" "bin/abc80-gtk not built ('make test' builds it when pkg-config finds gtk4 and sdl2)"
 else
     GTK_TMP="$(mktemp -d)"
     trap 'rm -rf "$GTK_TMP"' EXIT

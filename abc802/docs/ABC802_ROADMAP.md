@@ -36,7 +36,7 @@ found the hard way — live in [`ABC802_COMPLETED.md`](ABC802_COMPLETED.md).
 | 7 | A second drive | `--disk` repeats for drives 0, 1, …; `MO1:`/`MF1:` work and are independent |
 | 8 | The line editor's vocabulary | swept every control code; Left arrow works, Right correctly does nothing — the machine has no cursor movement |
 | 9 | A real Z80 SIO | registers, commands and the two DIP switches that reach the ROM through channel B's modem-status inputs |
-| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 27 checks — 20 need no disk images (2 of those need the opt-in GTK build), 7 need media — part of `make test` |
+| 10 | An automated regression suite | `abc802/tests/run_tests.sh`, 28 checks: 23 need no disk images (2 of those need the GTK app, which `make test` builds when `gtk4` is installed), 5 need media. Part of `make test` |
 | 11 | Row attributes in the terminal render | `--screen` and `--interactive` run the pixel renderer's own attribute walk and draw Row Graphic as Unicode sextants |
 | 12 | Cassette | `--cassette` gives a real `SAVE`/`LOAD` round trip on SIO channel B, with a genuine receive interrupt and bisync hunt |
 
@@ -56,13 +56,6 @@ Real, understood, and deliberately not solved yet — not oversights.
   — abc80.net's ABC800 160K and 640K archives. The suite names the first
   missing one in its skip message. Nothing is wrong; the files simply are
   not here.
-- **The GTK app is still not *built* by `make test`.** It needs `gtk4`,
-  which the default build deliberately does not depend on. It now has two
-  headless checks (`gtk-headless-boot`, `gtk-headless-type`) that run when
-  the binary exists and skip loudly when it does not — so a broken render
-  or keyboard path is caught, but a build break is not. That gap is real:
-  `bin/abc80-gtk` stopped compiling for part of a day in August 2026
-  because nothing built it.
 - **The line editor has no cursor movement, and that is the hardware.**
   Left arrow maps to backspace and Right does nothing, because a full
   sweep of every control code (Milestone 8) established the editor's whole
@@ -181,25 +174,9 @@ of how much they would add:
    table is shaped to take. Blocked on verified geometry and test media —
    and note that interleave cannot be inferred from the working drives,
    which need opposite settings.
-3. **Have `make test` build the opt-in GTK apps when `gtk4` is present.**
-   This is the one item on any of these roadmaps that closes a real hole
-   rather than adding a feature: all three windows now have headless
-   checks, but every one of them *skips* when its binary is absent, so
-   nothing notices a build break. `bin/abc80-gtk` stopped compiling for
-   part of 2026-08-31 for exactly that reason and was found by building it
-   by hand. Repo-wide rather than this target's alone — `cpm/gtk/` has the
-   same exposure.
-
-   A second data point, 2026-09-04: a `make clean && make test` run
-   skipped **all seven** headless GTK checks without comment, which is the
-   normal outcome rather than the exceptional one — `make clean` removes
-   those binaries and nothing rebuilds them. All four apps did compile
-   without warnings when built by hand that day, so the exposure is the
-   only thing standing between a break and nobody noticing; it is not that
-   anything is broken now.
-4. **A GTK disk dialog and colour picker**, which `bin/abc80-gtk` has an
+3. **A GTK disk dialog and colour picker**, which `bin/abc80-gtk` has an
    equivalent of and this window does not. Purely front-end work.
-5. **Real tape audio.** The cassette (Milestone 12) models the SIO's byte
+4. **Real tape audio.** The cassette (Milestone 12) models the SIO's byte
    stream, which is the protocol boundary and enough for this machine's
    own `SAVE`/`LOAD`. Loading a `.wav` recorded from real hardware would
    need the analogue layer underneath it — FSK modulation and frequency

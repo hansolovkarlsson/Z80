@@ -529,8 +529,9 @@ done
 
 # --- bin/abc802-gtk, headlessly ------------------------------------------
 #
-# The GTK window is opt-in (`make abc802-gtk`) and is not built by
-# `make test`, so these skip loudly when it is absent rather than failing.
+# The GTK window is opt-in (`make abc802-gtk`); `make test` builds it when
+# pkg-config finds gtk4, and these skip loudly when it is absent rather
+# than failing.
 #
 # `--screenshot` opens no window, which is what makes this runnable at
 # all: automating a capture against the user's real desktop steals focus
@@ -544,7 +545,7 @@ done
 GTK_BIN="$ROOT/bin/abc802-gtk"
 if [ ! -x "$GTK_BIN" ]; then
     for c in gtk-headless-boot gtk-headless-type; do
-        tl_skip "$c" "bin/abc802-gtk not built (run 'make abc802-gtk')"
+        tl_skip "$c" "bin/abc802-gtk not built ('make test' builds it when pkg-config finds gtk4)"
     done
 else
     GTK_TMP="$(mktemp -d)"

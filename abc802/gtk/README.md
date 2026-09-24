@@ -1,7 +1,8 @@
 # bin/abc802-gtk — a GTK4 window for the ABC802
 
-Built by the opt-in `make abc802-gtk`; never part of `make` or `make test`,
-so the default build stays free of the GTK4 dependency. Needs `gtk4`
+Built by the opt-in `make abc802-gtk`; never part of `make`, so the default
+build stays free of the GTK4 dependency. `make test` builds it whenever
+`pkg-config` finds `gtk4`. Needs `gtk4`
 (via `pkg-config`) and nothing else — see "No SDL2" below.
 
 ```
