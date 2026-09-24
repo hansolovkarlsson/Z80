@@ -104,13 +104,6 @@ check — are all done, and their write-ups have moved to
   can raise one against itself, which is why
   `cpm/tests/test_interrupts.c` drives it at the C level instead. The
   ABC80 and ABC802 targets do raise real interrupts.
-- **`z80dasm` reads a leading zero as octal.** Its `-o`/`-l` arguments go
-  through C's `strtol(..., 0)`, so `-o 0100`, the usual way to write the
-  CP/M origin, loads the file at `0040h` with no warning. The debugger reads
-  a bare number as hex, so the two tools disagree. Documented in
-  [`../../docs/DISASSEMBLER.md`](../../docs/DISASSEMBLER.md) rather than
-  changed, since making bare numbers hex would silently change what `-l 52`
-  means to anyone already using it; a decision, not a fix.
 - **A non-`RST` `IM 0` vector** returns `-1` (the "unimplemented" signal),
   deliberately: dispatching a general instruction fetched from the device
   rather than from memory would need a bus model this does not have. Real

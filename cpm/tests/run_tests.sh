@@ -172,6 +172,25 @@ check_disasm_example() {
         diff <(echo "$expected") <(echo "$actual") | sed 's/^/    /'
         overall_status=1
     fi
+
+    # Bare numbers are hex, as in the debugger. `-o 0100` used to be read
+    # as octal and load the file at 0040h; `-l 34` is 0x34 bytes, which
+    # ends on the JP 0000h at 0131.
+    local org last reasons=""
+    org=$("$Z80DASM" "$com" -o 0100 2>&1 | head -1)
+    last=$("$Z80DASM" "$com" -l 34 2>&1 | tail -1)
+    case "$org" in *"org 0100h"*) ;; *) reasons="${reasons}    -o 0100 gave '$org', expected org 0100h"$'\n' ;; esac
+    case "$last" in *"; 0131:"*) ;; *) reasons="${reasons}    -l 34 ended on '$last', expected the instruction at 0131"$'\n' ;; esac
+    if "$Z80DASM" "$com" -o 12G > /dev/null 2>&1; then
+        reasons="${reasons}    -o 12G was accepted, expected an error"$'\n'
+    fi
+    if [ -z "$reasons" ]; then
+        echo "PASS: z80dasm/hex-arguments"
+    else
+        echo "FAIL: z80dasm/hex-arguments"
+        printf '%s' "$reasons"
+        overall_status=1
+    fi
 }
 
 check_c_unit_test() {

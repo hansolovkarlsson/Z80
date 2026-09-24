@@ -143,10 +143,9 @@ text comes out one `DB` per byte: the disassembler decodes only what it
 can reach by following the code from `0100h`, and nothing jumps into a
 string.
 
-To stop before the data, give a length: `z80dasm hello.com -l 34h` ends at
-the `JP 0000h` at `0131`. Write lengths and origins with `h` or `0x`: a
-leading zero means octal here, so `-o 0100` would load the file at
-`0040h`.
+To stop before the data, give a length: `z80dasm hello.com -l 34` ends at
+the `JP 0000h` at `0131`. Numbers are hex here, as they are in the
+debugger, so `34` is 0x34 bytes.
 
 The listing is itself `z80asm` source, and assembling it gives the same
 bytes back:

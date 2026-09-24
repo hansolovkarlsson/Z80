@@ -21,12 +21,11 @@ Loads the file at `origin` and prints a listing on standard output.
 **`-o` is not the assembler's `-o`.** In `z80asm` it names the output file;
 here it is the load address.
 
-**Numbers follow C's rules, not the rest of the toolchain's.** `0x100`,
-`100h` and `256` all mean 0x100, but **a leading zero means octal**: `-o
-0100`, the way a Z80 programmer writes the CP/M origin, is octal 100 and
-loads the file at `0040h`, with no warning. The listing's own first line
-(`org 0040h`) is the only sign. Write `100h` or `0x100`. (The debugger
-reads a bare number as hex, so the two tools differ here too.)
+**Numbers are hex**, as in the debugger: `0100`, `100`, `100h`, `0x100`
+and `$100` all mean 0x100, and `-l 34` is 0x34 bytes. Anything else, or an
+origin above `FFFF` or a length above `10000`, is an error rather than a
+guess. (Until 2026-09-24 a bare number followed C's rules, so `-o 0100`
+was octal and loaded the file at `0040h`.)
 
 ## What it prints
 

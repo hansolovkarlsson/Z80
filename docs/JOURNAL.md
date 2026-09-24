@@ -181,6 +181,14 @@ clock. The guide states that as an inference, which is what it is. The
 README and `CLAUDE.md` both listed "two" reference documents; there are
 now five, and both lists are corrected.
 
+The octal trap did not stay a roadmap item for long: at the user's
+request `z80dasm` now reads every bare number as hex, the debugger's rule,
+and rejects anything it cannot read whole instead of half-parsing it. The
+cost named when it was deferred, that `-l 52` changes meaning, was checked
+first: no script or test in the repo passes `-o` or `-l`, and the README's
+own example already wrote `-l 0x34`. `z80dasm/hex-arguments` pins it, and
+with C's base detection put back it fails on both `-o 0100` and `-l 34`.
+
 Earlier the same session, three items went onto Phase 4 of
 `cpm/docs/ROADMAP.md` at the user's request: a Z80 debugger (confirmed
 absent: no target has a trace, breakpoint or register-dump option),

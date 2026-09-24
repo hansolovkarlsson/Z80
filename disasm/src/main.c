@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,16 +43,28 @@ static int label_cmp(const void *a, const void *b) {
     return ((const Label *)a)->addr - ((const Label *)b)->addr;
 }
 
-// Parses a CLI numeric argument accepting the same conventions as the
-// rest of this toolchain (0xNN, NNh) in addition to plain C literal forms
-// (0x200 hex, 0777 octal, 512 decimal) that strtol(...,0) already
-// understands on its own.
-static long parse_number_arg(const char *s) {
+// Parses a CLI number as hex, the way the debugger does: "100", "0x100",
+// "$100" and "100h" all mean 0x100. Bare numbers used to go through
+// strtol(..., 0), which read "-o 0100" - the usual way to write the CP/M
+// origin - as octal and loaded the file at 0040h without a word. Anything
+// that is not a whole hex number up to `max` is rejected rather than
+// half-parsed.
+static bool parse_number_arg(const char *s, unsigned long max, unsigned long *out) {
+    char buf[32];
     size_t len = strlen(s);
-    if (len > 0 && (s[len - 1] == 'h' || s[len - 1] == 'H')) {
-        return strtol(s, NULL, 16);
-    }
-    return strtol(s, NULL, 0);
+    if (len == 0 || len >= sizeof buf) return false;
+    memcpy(buf, s, len + 1);
+    char *p = buf;
+    if (*p == '$') p++;
+    else if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) p += 2;
+    len = strlen(p);
+    if (len > 1 && (p[len - 1] == 'h' || p[len - 1] == 'H')) p[--len] = '\0';
+    if (len == 0) return false;
+    char *end;
+    unsigned long v = strtoul(p, &end, 16);
+    if (*end != '\0' || v > max) return false;
+    *out = v;
+    return true;
 }
 
 static void label_name(char *buf, size_t n, uint16_t addr, int is_code) {
@@ -110,7 +123,7 @@ static void push_worklist(uint16_t addr, uint16_t origin, uint16_t end_addr) {
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        fprintf(stderr, "usage: %s <input.com> [-o origin] [-l length]\n", argv[0]);
+        fprintf(stderr, "usage: %s <input.com> [-o origin] [-l length]   (numbers in hex)\n", argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -120,15 +133,25 @@ int main(int argc, char *argv[]) {
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
-            origin = (uint16_t)parse_number_arg(argv[++i]);
+            unsigned long v;
+            if (!parse_number_arg(argv[++i], 0xFFFF, &v)) {
+                fprintf(stderr, "z80dasm: -o '%s' is not an address (hex, 0000-FFFF)\n", argv[i]);
+                return EXIT_FAILURE;
+            }
+            origin = (uint16_t)v;
         } else if (strcmp(argv[i], "-l") == 0 && i + 1 < argc) {
-            limit = parse_number_arg(argv[++i]);
+            unsigned long v;
+            if (!parse_number_arg(argv[++i], 0x10000, &v)) {
+                fprintf(stderr, "z80dasm: -l '%s' is not a length (hex, up to 10000)\n", argv[i]);
+                return EXIT_FAILURE;
+            }
+            limit = (long)v;
         } else if (!input_path) {
             input_path = argv[i];
         }
     }
     if (!input_path) {
-        fprintf(stderr, "usage: %s <input.com> [-o origin] [-l length]\n", argv[0]);
+        fprintf(stderr, "usage: %s <input.com> [-o origin] [-l length]   (numbers in hex)\n", argv[0]);
         return EXIT_FAILURE;
     }
 
