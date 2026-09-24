@@ -193,6 +193,68 @@ check_c_unit_test() {
     fi
 }
 
+# The debugger (docs/DEBUGGER.md), driven by a script the way a person
+# would type it. Each check asserts on what the debugger printed *and* on
+# what the program then did, since a debugger that stops correctly but
+# leaves the machine broken is worse than none.
+debugger_run() {
+    local com="$1" script="$2"
+    printf '%s' "$script" > "$WORKDIR/dbg.txt"
+    (cd "$WORKDIR" && "$Z80" --debug --debug-script "$WORKDIR/dbg.txt" "$com" < /dev/null 2>&1)
+}
+
+report() {
+    local name="$1" reasons="$2" out="$3"
+    if [ -z "$reasons" ]; then
+        echo "PASS: $name"
+    else
+        echo "FAIL: $name"
+        printf '%s' "$reasons"
+        echo "$out" | tail -20 | sed 's/^/      | /'
+        overall_status=1
+    fi
+}
+
+want() {
+    case "$1" in *"$2"*) ;; *) printf '    expected %s\n' "$3" ;; esac
+}
+
+check_debugger() {
+    local hello="$WORKDIR/dbg-hello.com" strutil="$WORKDIR/dbg-strutil.com"
+    "$Z80ASM" "$ROOT/asm/examples/hello.asm" -o "$hello" > /dev/null 2>&1
+    "$Z80ASM" "$ROOT/asm/examples/strutil.asm" -o "$strutil" > /dev/null 2>&1
+
+    # Breakpoint, disassembly, and `n` over a BDOS call. CP/M's z80_step()
+    # runs an intercepted BDOS call and the instruction after it in one
+    # step, which is exactly what `n` has to survive.
+    local out reasons
+    out=$(debugger_run "$hello" $'b 0105\nc\nn\nc\n')
+    reasons="$(want "$out" "[breakpoint] 0105  CD 05 00     CALL 0005h" "the stop at 0105, with its instruction")
+$(want "$out" "[returned] 010A" "n stopping right after the BDOS call")
+$(want "$out" "Hello from z80asm!" "the program's own output")
+$(want "$out" "terminated normally" "the program running to its end afterwards")"
+    report "debugger-break-and-next" "$(printf '%s' "$reasons" | grep .)" "$out"
+
+    # Setting a register changes the machine: hello.asm checks its own loop
+    # counter, so corrupting HL mid-loop makes it report the failure.
+    out=$(debugger_run "$hello" $'b 010D\nc\nr hl=1234\nd all\nc\n')
+    reasons="$(want "$out" "HL=1234" "the register shown with its new value")
+$(want "$out" "loop counter wrong" "the program noticing the changed register")"
+    report "debugger-register-set" "$(printf '%s' "$reasons" | grep .)" "$out"
+
+    # A watchpoint names the instruction that wrote. The expected addresses
+    # come from z80dasm, not from the debugger, so the two cannot agree by
+    # sharing a mistake.
+    local store var line
+    line=$("$Z80DASM" "$strutil" 2>/dev/null | grep -m1 -E 'LD \(D[0-9A-F]{4}\),HL')
+    var=$(printf '%s' "$line" | sed -E 's/.*LD \(D([0-9A-F]{4})\).*/\1/')
+    store=$(printf '%s' "$line" | sed -E 's/.*; ([0-9A-F]{4}):.*/\1/')
+    out=$(debugger_run "$strutil" "w $var 2"$'\nc\nc\n')
+    reasons="$(want "$out" "[watch] $var:" "the watch on $var firing")
+$(want "$out" "written by the instruction at $store" "the store at $store named as the writer")"
+    report "debugger-watch" "$(printf '%s' "$reasons" | grep .)" "$out"
+}
+
 TEST_INTERRUPTS="$ROOT/bin/z80-test-interrupts"
 
 if [ ! -x "$Z80" ] || [ ! -x "$Z80ASM" ] || [ ! -x "$Z80DASM" ] || [ ! -x "$TEST_INTERRUPTS" ]; then
@@ -218,5 +280,6 @@ for src in "$ROOT"/asm/examples/*.asm; do
 done
 
 check_term_test
+check_debugger
 
 exit "$overall_status"

@@ -6,6 +6,7 @@
 #include <ctype.h>
 
 #include "common.h"
+#include "../../../debug/src/debug.h"
 
 static u_int8_t ram[RAM_SIZE];
 
@@ -38,6 +39,10 @@ static void print_usage(const char *prog) {
     printf("  %s <program.com> [args...]   Run a CP/M .com file (loaded at 0x0100)\n", prog);
     printf("  %s --ccp [ccp.com]           Boot a CP/M CCP shell (default: cpm_disk/ccp.com)\n", prog);
     printf("  %s -h | --help               Show this message\n", prog);
+    printf("\n");
+    printf("Debugger options go before the program, since everything after it\n");
+    printf("is the program's own command line:\n");
+    z80dbg_print_usage(stdout);
     printf("\n");
     printf("Examples (run from inside cpm/ - see CLAUDE.md's top-level layout):\n");
     printf("  %s cpm_disk/hello.com\n", prog);
@@ -130,6 +135,16 @@ static void write_default_fcb(uint8_t *ram, uint16_t fcb_addr, const char *arg) 
 }
 
 int main(int argc, char *argv[]) {
+    // Debugger options first, then drop them so argv[1] is the program (or
+    // --ccp) exactly as before: everything after the program is its own
+    // command line and must reach it untouched.
+    Z80Debugger *dbg = NULL;
+    int first = 1;
+    while (first < argc && z80dbg_parse_option(&dbg, argc, argv, &first)) first++;
+    argv[first - 1] = argv[0];
+    argv += first - 1;
+    argc -= first - 1;
+
     if (argc < 2 || strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
         print_usage(argv[0]);
         return EXIT_SUCCESS;
@@ -209,6 +224,7 @@ int main(int argc, char *argv[]) {
     ram[0x0007] = (uint8_t)(BDOS_ENTRY >> 8);
 
     printf("Starting Z80 Execution Loop...\n\n");
+    if (dbg && !z80dbg_start(dbg)) return EXIT_FAILURE;
 
     // 4. Main Execution Loop
     bool running = true;
@@ -230,7 +246,9 @@ int main(int argc, char *argv[]) {
         }
 
         // Run one instruction step
+        if (dbg && z80dbg_before_step(dbg, &cpu) == Z80DBG_QUIT) break;
         int cycles = z80_step(&cpu, ram);
+        if (dbg) z80dbg_after_step(dbg, &cpu);
         total_cycles += cycles;
 
         // Debug fallback: stop if CPU hits a loop or fatal unhandled opcode

@@ -1102,6 +1102,29 @@ since `IN`/`OUT`, `IM`, `RETI`/`RETN`, `LD A,I` etc. are implemented on the
 emulator side too, but that wasn't always true and isn't a given for any
 future gap).
 
+## Debugger (`debug/src/`)
+
+`debug.c`/`debug.h`, linked into all four machine CLIs (`DEBUG_OBJS` in the
+Makefile, which also pulls in `disasm/src/decode.o`). It lives beside
+`asm/` and `disasm/` rather than in `z80core/` because it disassembles
+through `decode_instruction()`, and the core should not depend on the
+disassembler. Each CLI's run loop calls `z80dbg_before_step()` and
+`z80dbg_after_step()` around its own step function; the step wrappers are
+untouched, and a run without `--debug`/`--break`/`--debug-script` costs
+one NULL test per instruction. `docs/DEBUGGER.md` is the command reference.
+
+Three facts to know before changing it. **Memory is read from the flat
+array (`cpu->memory`), never through `z80_read_byte()`**: the ABC806's
+`bus_read` latches an attribute byte on every character-RAM read, so going
+through the hook would change the machine being inspected. **`n` stops on
+stack depth, not on the return address**, because CP/M's `z80_step()` runs
+an intercepted BDOS call and the instruction after it in one step, so PC is
+never seen at the return address. And **commands come from `/dev/tty`**,
+not stdin, which a CP/M program reads as its console; the prompt puts the
+terminal in cooked mode while it reads and restores the machine's raw mode
+after. `--interactive` is refused with a debug option for now, since that
+mode owns the terminal.
+
 ## GTK terminal (`cpm/gtk/src/`, work in progress)
 
 `bin/z80-gtk` (built via the opt-in `make gtk`, never part of `make`,

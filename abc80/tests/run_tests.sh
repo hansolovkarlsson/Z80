@@ -82,8 +82,11 @@ tl_want "$out" "ABC80" "the ROM's own prompt"
 tl_want_not "$out" "Unimplemented opcode"
 tl_end "$out"
 
+# Through basic_numbers, not a substring search: this run's instruction
+# trace prints "[    42] PC=...", so " 42" was in the output whatever
+# BASIC answered, and PRINT 6*8 passed this check until 2026-09-24.
 tl_begin "basic-arithmetic"
-tl_want "$out" " 42" "PRINT 6*7 evaluating to 42"
+tl_want_eq "$(basic_numbers "$out")" "42" "the one number BASIC printed"
 tl_end "$out"
 
 # Every run prints the detected RAM floor, so the base machine's memory
@@ -440,5 +443,21 @@ if tl_gate "$gtk_skip_reason" gtk-headless-boot gtk-headless-type; then
     tl_end "$out"
     tl_gate_end
 fi
+
+# --- The debugger -----------------------------------------------------
+#
+# docs/DEBUGGER.md. A breakpoint the boot reaches late - 00A7 is the 99th
+# instruction, inside the RAM test - then `d all` and `c`. Stopping exactly
+# once proves the delete; BASIC answering afterwards proves the debugger
+# let go of a machine that still works.
+DBG_SCRIPT="$WORKDIR/debug.txt"
+printf 'r\nd all\nc\n' > "$DBG_SCRIPT"
+out=$(run_basic $CAP $'PRINT 6*7\r' --break 00A7 --debug-script "$DBG_SCRIPT")
+tl_begin "debugger-break"
+tl_want "$out" "[breakpoint] 00A7" "the stop at 00A7"
+tl_want "$out" "PC=00A7" "the registers shown at the stop"
+tl_want_eq "$(printf '%s\n' "$out" | grep -c '^\[breakpoint\]')" "1" "the number of stops after d all"
+tl_want_eq "$(basic_numbers "$out")" "42" "BASIC answering PRINT 6*7 afterwards"
+tl_end "$out"
 
 tl_summary "abc80"

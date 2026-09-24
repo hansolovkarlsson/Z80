@@ -30,6 +30,7 @@
 #include "render.h"
 #include "rtc.h"
 #include "step.h"
+#include "../../../debug/src/debug.h"
 
 #define DEFAULT_ROM_DIR "abc806/resources/rom"
 #define DEFAULT_DOS_ROM "ABC806-dos.66-31.bin"
@@ -215,6 +216,8 @@ static void usage(const char *argv0) {
     printf("                         are instruction operand fetches, not data\n");
     printf("  ABC806_PROFILE_ALL=1   with --profile, dump every executed address\n");
     printf("                         and its count, for a differential profile\n");
+    printf("\nDebugger:\n");
+    z80dbg_print_usage(stdout);
 }
 
 int main(int argc, char **argv) {
@@ -231,6 +234,7 @@ int main(int argc, char **argv) {
     const char *disk_paths[8];
     int disk_count = 0;
 
+    Z80Debugger *dbg = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             usage(argv[0]);
@@ -249,6 +253,8 @@ int main(int argc, char **argv) {
             type_text = argv[++i];
         } else if (!strcmp(argv[i], "--type-at") && i + 1 < argc) {
             type_at = atoll(argv[++i]);
+        } else if (z80dbg_parse_option(&dbg, argc, argv, &i)) {
+            // --debug, --break, --debug-script
         } else if (!strcmp(argv[i], "--interactive")) {
             interactive = true;
             if (!cycles_given) max_cycles = 0;   // 0 = run until quit
@@ -341,6 +347,15 @@ int main(int argc, char **argv) {
         clock_gettime(CLOCK_MONOTONIC, &run_start);
     }
 
+    if (dbg) {
+        // --interactive owns the terminal for the keyboard and screen, so
+        // the prompt has nowhere to live yet (docs/DEBUGGER.md).
+        if (interactive) {
+            fprintf(stderr, "The debugger does not work with --interactive yet\n");
+            return EXIT_FAILURE;
+        }
+        if (!z80dbg_start(dbg)) return EXIT_FAILURE;
+    }
     while (!quit_requested && (max_cycles == 0 || cycles < max_cycles)) {
         if (!type_gate_open && type_pos < type_len && abc806_crtc_programmed()) {
             const uint8_t *cram = abc806_char_ram();
@@ -378,7 +393,9 @@ int main(int argc, char **argv) {
         }
 
         if (profile) hits[cpu.pc]++;
+        if (dbg && z80dbg_before_step(dbg, &cpu) == Z80DBG_QUIT) break;
         int taken = abc806_step(&cpu, ram, &cycles);
+        if (dbg) z80dbg_after_step(dbg, &cpu);
         if (taken < 0) {
             printf("Unimplemented opcode at PC=%04X; stopping\n", cpu.pc);
             halted = true;

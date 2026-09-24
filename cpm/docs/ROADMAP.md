@@ -59,15 +59,15 @@ Aspirational, not yet scoped:
   projects would never actually share code. See that project's own
   `docs/GAMEBOY_ROADMAP.md` (in its new repo) for the full phase plan
   and status if relevant here.
-- **A Z80 debugger.** None exists today: no target has a trace,
-  breakpoint or register-dump option, and every hardware investigation so
-  far has been done with ad hoc instrumentation or by sweeping inputs from
-  BASIC. The natural home is `z80core/`, since all four targets call
-  `z80_execute()` and a debugger built there would serve each of them
-  rather than one. Scope still open: at minimum breakpoints, single-step,
-  register and memory inspection, and disassembly at PC through
-  `disasm/`'s `decode_instruction()`; watchpoints could come from the
-  existing `bus_read_hook`/`bus_write_hook`.
+- **The debugger: milestone 1 done**, next steps open. All four CLIs have
+  `--debug`/`--break`/`--debug-script` (see
+  [`../../docs/DEBUGGER.md`](../../docs/DEBUGGER.md) and the write-up in
+  [`COMPLETED.md`](COMPLETED.md)). What it does not do yet, roughly in order
+  of use: work under `--interactive`, which owns the terminal today; a
+  data view of memory the machines divert (ABC802/806 character RAM, the
+  ABC806 plane), which needs a side-effect-free peek per machine because
+  the ABC806's read hook latches attribute bytes; symbols, e.g. from a
+  `z80asm` listing; memory writes from the prompt; and the GTK apps.
 - **More machine targets, such as the ZX Spectrum.** It is Z80-based, so it
   would link `z80core/` the way the three ABC targets do rather than
   bringing a core of its own, which is what keeps it in this repo, unlike

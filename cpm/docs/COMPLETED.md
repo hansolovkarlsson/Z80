@@ -1165,3 +1165,60 @@ survived until an ABC802 ROM drove them — see
   masking and priority, `IFF1`/`IFF2` semantics (including `RETN`'s
   restore), the `EI`-delay window, `HALT` interaction, and
   `z80_clear_int()`.
+
+## Phase 4, the debugger: milestone 1 done
+
+Repo-wide rather than CP/M's, but recorded here because Phase 4 is where
+this roadmap keeps work that belongs to no one machine. All four CLIs
+(`bin/z80`, `bin/abc80`, `bin/abc802`, `bin/abc806`) take `--debug`,
+`--break ADDR` and `--debug-script FILE`; the commands are step, step-over,
+continue, breakpoints, write watchpoints, registers (show and set), memory
+dump and disassembly. [`../../docs/DEBUGGER.md`](../../docs/DEBUGGER.md) is
+the reference.
+
+**Where it lives, and why not in the core.** `debug/src/debug.c`, beside
+`asm/` and `disasm/`. The roadmap had guessed `z80core/`, but the debugger
+shows instructions through `disasm/src/decode.c`, and the core should not
+depend on the disassembler. Each CLI calls `z80dbg_before_step()` and
+`z80dbg_after_step()` around its own step function and nothing else, so the
+step wrappers are untouched and a run without a debug option pays one NULL
+test per instruction.
+
+**Found the hard way, three things.**
+
+- **Memory must be read from the flat array, never through
+  `z80_read_byte()`.** The ABC806's `bus_read` latches the attribute byte
+  whenever character RAM is read, so a debugger that dumped memory through
+  the hook would change the machine it was inspecting. The flat array is
+  what instruction fetch sees anyway (`fetch_byte()` bypasses the hook), so
+  disassembly is faithful; what `m` and `w` cannot see is memory the
+  machines divert, which is stated rather than silently wrong.
+- **`n` cannot wait for the return address.** The first version set a
+  temporary breakpoint there, and `n` over `CALL 0005h` ran the program to
+  its end: CP/M's `z80_step()` runs an intercepted BDOS call and the
+  instruction it returns to in one step, so PC is never seen at the return
+  address. `n` now stops at the first instruction where SP is back to its
+  depth before the call, compared signed so a stack wrapping past `0000`
+  still counts as deeper. That is also right for recursion and for a
+  conditional `CALL` that is not taken.
+- **Commands come from `/dev/tty`, not stdin**, because a CP/M program
+  reads stdin as its console; and the prompt switches the terminal to
+  cooked mode while it reads, since `cpm.c` holds it raw. Checked through a
+  pty with `script`: a typed session, and Ctrl-C breaking into ZEXDOC mid-
+  exercise at `1BFD`, then `q` ending the run with the terminal restored.
+
+**Tests.** Three in the CP/M suite (`debugger-break-and-next`,
+`debugger-register-set`, `debugger-watch`) and one per ABC suite
+(`debugger-break`). The watch check takes its expected addresses from
+`bin/z80dasm` rather than from the debugger, so the two cannot agree by
+sharing a mistake; each ABC check stops at a ROM address the boot reaches
+hundreds of instructions in, deletes the breakpoint, continues, and
+asserts BASIC then answers `PRINT 6*7`. Every check was broken on purpose
+and failed: the watch compare disabled, `n` never arming, register writes
+dropped, breakpoints never firing, and `d all` deleting nothing.
+
+That last sweep found a defect elsewhere: the ABC80 suite's
+`basic-arithmetic` searched the whole output for ` 42`, and that run's
+instruction trace prints `[    42] PC=...`, so `PRINT 6*8` passed it. It now
+reads the answer through the suite's own `basic_numbers`, and fails with
+`expected '42', got '48'` under the same mutation.

@@ -129,6 +129,27 @@ passed and nothing skipped, the first complete run on this machine. The
 disks README now has the mapping and the warning, and the roadmap's gap
 entry, which counted four gated checks where there are five, points at it.
 
+Then the first of those new items: a debugger, milestone 1, planned and
+approved before any code. It lives in `debug/src/`, not `z80core/` as the
+roadmap entry guessed, because it disassembles through `decode.o` and the
+core should not depend on the disassembler. Each CLI calls two hooks around
+its own step function and nothing else changes. Three things went wrong
+first, and the write-up in `cpm/docs/COMPLETED.md` has them: memory has to
+come from the flat array because the ABC806's read hook has a side effect;
+`n` ran `hello.com` to its end because CP/M's BDOS emulation steps past the
+return address, so it now watches the stack instead; and the first output
+put the stop line ahead of the program's own buffered text.
+
+Two process notes. The first mutation run for the debugger's checks died
+part-way when the session's scratch directory vanished, leaving an injected
+`continue;` in `debug.c`; the next run backed up the broken file, and its
+"restored" comparison agreed with it. The failing `debugger-watch` check is
+what showed it. Mutation scripts now back up to a fresh `mktemp` directory
+and restore in a `finally` block. And the ABC80 half of the sweep found
+`basic-arithmetic` passing with `PRINT 6*8`, because that run's trace
+prints `[    42]`: the second check in one day found asserting on text that
+was present whatever the subject did.
+
 Earlier the same session, three items went onto Phase 4 of
 `cpm/docs/ROADMAP.md` at the user's request: a Z80 debugger (confirmed
 absent: no target has a trace, breakpoint or register-dump option),

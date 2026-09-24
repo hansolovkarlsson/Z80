@@ -46,6 +46,7 @@
 #include "abcbus.h"
 #include "../../../abcbus/disk.h"
 #include "step.h"
+#include "../../../debug/src/debug.h"
 
 // Real ABC80 Z80 clock (11.9808 MHz crystal / 2 / 2 - see MAME's
 // abc80_state::abc80_common(): `Z80(config, m_maincpu,
@@ -510,6 +511,8 @@ static void print_usage(const char *prog) {
     printf("  --dos-rom FILE     Use FILE in rom_dir as the DOS ROM instead of the\n");
     printf("                     default %s (the other real image is\n", ABC80_DEFAULT_DOS_ROM);
     printf("                     UFD80V20.bin, a different DOS driving the same card).\n");
+    printf("\nDebugger:\n");
+    z80dbg_print_usage(stdout);
 }
 
 int main(int argc, char *argv[]) {
@@ -522,6 +525,7 @@ int main(int argc, char *argv[]) {
     int disk_count = 0;
     const char *dos_rom = NULL;
 
+    Z80Debugger *dbg = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
@@ -534,6 +538,8 @@ int main(int argc, char *argv[]) {
             wav_path = argv[++i];
         } else if (strcmp(argv[i], "--ram32k") == 0) {
             abc80_ram32k_enabled = true;
+        } else if (z80dbg_parse_option(&dbg, argc, argv, &i)) {
+            // --debug, --break, --debug-script
         } else if (strcmp(argv[i], "--interactive") == 0) {
             interactive_mode = true;
         } else if (strcmp(argv[i], "--disk") == 0 && i + 1 < argc) {
@@ -676,6 +682,15 @@ int main(int argc, char *argv[]) {
         clock_gettime(CLOCK_MONOTONIC, &run_start_time);
     }
 
+    if (dbg) {
+        // --interactive owns the terminal for the keyboard and screen, so
+        // the prompt has nowhere to live yet (docs/DEBUGGER.md).
+        if (interactive_mode) {
+            fprintf(stderr, "The debugger does not work with --interactive yet\n");
+            return EXIT_FAILURE;
+        }
+        if (!z80dbg_start(dbg)) return EXIT_FAILURE;
+    }
     while (!abc80_quit_requested && instructions < max_instructions) {
         uint16_t pc_before = cpu.pc;
 
@@ -704,7 +719,9 @@ int main(int argc, char *argv[]) {
         // 11's shared-step extraction - see step.h's own comment for why
         // this moved out of this loop and into a function bin/abc80-gtk
         // shares too).
+        if (dbg && z80dbg_before_step(dbg, &cpu) == Z80DBG_QUIT) break;
         int cycles = abc80_step(&cpu, ram, &sound_log, &total_cycles, &next_pio_interrupt_at);
+        if (dbg) z80dbg_after_step(dbg, &cpu);
         instructions++;
 
         if (cycles < 0) {

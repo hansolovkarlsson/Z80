@@ -25,6 +25,7 @@
 #include "ports.h"
 #include "render.h"
 #include "step.h"
+#include "../../../debug/src/debug.h"
 
 #define DEFAULT_ROM_DIR "abc802/resources/rom"
 #define DEFAULT_DOS_ROM "ABC802-dos.32-31.bin"
@@ -265,6 +266,8 @@ static void usage(const char *argv0) {
     printf("  -h, --help       this message\n");
     printf("\nEnvironment:\n");
     printf("  ABC802_TRACE_IO=1   log every I/O port access to stderr\n");
+    printf("\nDebugger:\n");
+    z80dbg_print_usage(stdout);
 }
 
 int main(int argc, char **argv) {
@@ -284,6 +287,7 @@ int main(int argc, char **argv) {
     bool interactive = false;
     bool cycles_given = false;
 
+    Z80Debugger *dbg = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             usage(argv[0]);
@@ -310,6 +314,8 @@ int main(int argc, char **argv) {
             show_profile = 1;
         } else if (!strcmp(argv[i], "--type") && i + 1 < argc) {
             type_text = argv[++i];
+        } else if (z80dbg_parse_option(&dbg, argc, argv, &i)) {
+            // --debug, --break, --debug-script
         } else if (!strcmp(argv[i], "--interactive")) {
             interactive = true;
         } else if (!strcmp(argv[i], "--interleave") && i + 1 < argc) {
@@ -436,9 +442,20 @@ int main(int argc, char **argv) {
     long long cycles = 0;
     long long instructions = 0;
     bool halted = false;
+    if (dbg) {
+        // --interactive owns the terminal for the keyboard and screen, so
+        // the prompt has nowhere to live yet (docs/DEBUGGER.md).
+        if (interactive) {
+            fprintf(stderr, "The debugger does not work with --interactive yet\n");
+            return EXIT_FAILURE;
+        }
+        if (!z80dbg_start(dbg)) return EXIT_FAILURE;
+    }
     while (!abc802_quit_requested && cycles < max_cycles) {
         if (show_profile) pc_hits[cpu.pc]++;
+        if (dbg && z80dbg_before_step(dbg, &cpu) == Z80DBG_QUIT) break;
         int taken = abc802_step(&cpu, ram, &cycles);
+        if (dbg) z80dbg_after_step(dbg, &cpu);
         if (taken < 0) {
             fprintf(stderr, "Halted: unimplemented opcode at PC=%04X\n", cpu.pc);
             halted = true;

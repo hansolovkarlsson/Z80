@@ -29,9 +29,16 @@ Z80CORE_OBJS := $(Z80CORE_SRCS:.c=.o)
 ABCBUS_SRC_DIR := abcbus
 ABCBUS_OBJS := $(ABCBUS_SRC_DIR)/disk.o
 
+# The debugger (--debug/--break/--debug-script, docs/DEBUGGER.md), linked
+# into all four machine CLIs. Defined before EMU_OBJS, which expands it
+# immediately (:=). Its own directory rather than z80core/, since
+# it shows instructions through the disassembler's decode.o and the core
+# should not depend on that.
+DEBUG_OBJS := debug/src/debug.o disasm/src/decode.o
+
 EMU_SRC_DIR := cpm/emu/src
 EMU_SRCS := $(wildcard $(EMU_SRC_DIR)/*.c)
-EMU_OBJS := $(EMU_SRCS:.c=.o) $(Z80CORE_OBJS)
+EMU_OBJS := $(EMU_SRCS:.c=.o) $(Z80CORE_OBJS) $(DEBUG_OBJS)
 EMU_TARGET := $(BIN_DIR)/z80
 
 ASM_SRC_DIR := asm/src
@@ -61,7 +68,7 @@ ABC80_SRC_DIR := abc80/emu/src
 # for that final render - not chargen.o, since render.c's terminal backend
 # prints whole Unicode glyphs per cell rather than reconstructing pixels
 # from the chargen ROM (see render.c's own top comment).
-ABC80_OBJS := $(ABC80_SRC_DIR)/main.o $(ABC80_SRC_DIR)/render.o $(ABC80_SRC_DIR)/charset.o $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/cassette.o $(ABC80_SRC_DIR)/sound.o $(ABC80_SRC_DIR)/abcbus.o $(ABC80_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC80_OBJS := $(ABC80_SRC_DIR)/main.o $(ABC80_SRC_DIR)/render.o $(ABC80_SRC_DIR)/charset.o $(ABC80_SRC_DIR)/video_timing.o $(ABC80_SRC_DIR)/keyboard.o $(ABC80_SRC_DIR)/cassette.o $(ABC80_SRC_DIR)/sound.o $(ABC80_SRC_DIR)/abcbus.o $(ABC80_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o $(DEBUG_OBJS)
 ABC80_TARGET := $(BIN_DIR)/abc80
 
 # bin/abc802: the Luxor ABC802 machine target (abc802/docs/ABC802_ROADMAP.md).
@@ -69,7 +76,7 @@ ABC80_TARGET := $(BIN_DIR)/abc80
 # bin/abc80 above - z80core/z80.o and alu.o are linked directly rather than
 # rebuilt. Opt-in only (never part of `all`), same as `abc80`.
 ABC802_SRC_DIR := abc802/emu/src
-ABC802_OBJS := $(ABC802_SRC_DIR)/main.o $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/cassette.o $(ABC802_SRC_DIR)/render.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/png.o $(ABC802_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC802_OBJS := $(ABC802_SRC_DIR)/main.o $(ABC802_SRC_DIR)/memory.o $(ABC802_SRC_DIR)/ports.o $(ABC802_SRC_DIR)/cassette.o $(ABC802_SRC_DIR)/render.o $(ABC802_SRC_DIR)/chargen.o $(ABC802_SRC_DIR)/png.o $(ABC802_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o $(DEBUG_OBJS)
 ABC802_TARGET := $(BIN_DIR)/abc802
 
 # bin/abc806: the Luxor ABC806 machine target, with no milestone
@@ -78,7 +85,7 @@ ABC802_TARGET := $(BIN_DIR)/abc802
 # abc802 established. Opt-in, never part of `all`, same as the other
 # machine targets.
 ABC806_SRC_DIR := abc806/emu/src
-ABC806_OBJS := $(ABC806_SRC_DIR)/main.o $(ABC806_SRC_DIR)/memory.o $(ABC806_SRC_DIR)/ports.o $(ABC806_SRC_DIR)/chargen.o $(ABC806_SRC_DIR)/png.o $(ABC806_SRC_DIR)/render.o $(ABC806_SRC_DIR)/text.o $(ABC806_SRC_DIR)/rtc.o $(ABC806_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o
+ABC806_OBJS := $(ABC806_SRC_DIR)/main.o $(ABC806_SRC_DIR)/memory.o $(ABC806_SRC_DIR)/ports.o $(ABC806_SRC_DIR)/chargen.o $(ABC806_SRC_DIR)/png.o $(ABC806_SRC_DIR)/render.o $(ABC806_SRC_DIR)/text.o $(ABC806_SRC_DIR)/rtc.o $(ABC806_SRC_DIR)/step.o $(ABCBUS_OBJS) $(Z80CORE_SRC_DIR)/z80.o $(Z80CORE_SRC_DIR)/alu.o $(DEBUG_OBJS)
 ABC806_TARGET := $(BIN_DIR)/abc806
 
 # bin/abc806-chargen-dump: the verification tool for chargen.c *and*

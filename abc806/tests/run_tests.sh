@@ -513,4 +513,24 @@ PY
     tl_gate_end
 fi
 
+# --- The debugger -----------------------------------------------------
+#
+# docs/DEBUGGER.md. A breakpoint the boot reaches late (3A6A runs about
+# 600 times before the prompt), then `d all` and `c`. Stopping exactly
+# once proves the delete; BASIC answering afterwards proves the debugger
+# let go of a machine that still works. The answer is matched as a whole
+# screen row, since the debugger's own output can hold " 42" in an
+# instruction's bytes.
+DBG_SCRIPT="$(mktemp)"
+printf 'r\nd all\nc\n' > "$DBG_SCRIPT"
+out=$("$ABC806" --screen --cycles 160000000 --type $'PRINT 6*7\r' \
+      --break 3A6A --debug-script "$DBG_SCRIPT" 2>&1)
+rm -f "$DBG_SCRIPT"
+tl_begin "debugger-break"
+tl_want "$out" "[breakpoint] 3A6A" "the stop at 3A6A"
+tl_want "$out" "PC=3A6A" "the registers shown at the stop"
+tl_want_eq "$(printf '%s\n' "$out" | grep -c '^\[breakpoint\]')" "1" "the number of stops after d all"
+tl_want_eq "$(printf '%s\n' "$out" | grep -cE '^\| 42 +\|$')" "1" "BASIC answering PRINT 6*7 afterwards"
+tl_end "$out"
+
 tl_summary "abc806"
