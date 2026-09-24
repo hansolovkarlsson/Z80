@@ -500,8 +500,12 @@ pass/fail oracle that hid its own premises, naming a source without
 consulting it, a roadmap's own "why" lines being the least-tested prose
 here (five stated reasons proved false in one day, including one written
 into a commit message by the session that had just written that
-postmortem), and "too fast is a correctness bug" - for a device the guest
-services by interrupt, the gap *between* events is part of the contract. Each machine target's *finished* work now lives in its
+postmortem), "too fast is a correctness bug" - for a device the guest
+services by interrupt, the gap *between* events is part of the contract -,
+"a list beside the thing it lists" (a hand-written copy of a set the tree
+defines will drift), and "the command ran, but not the program" (running a
+command proves only that *a* program by that name ran; `scripts/config.sh`
+let Homebrew's `z80asm` stand in for this repo's). Each machine target's *finished* work now lives in its
 own `*_COMPLETED.md` (`cpm/docs/COMPLETED.md`,
 `abc80/docs/ABC80_COMPLETED.md`, `abc802/docs/ABC802_COMPLETED.md`,
 `abc806/docs/ABC806_COMPLETED.md`) rather than in its roadmap, so each `ROADMAP.md` answers only "what works, what

@@ -21,7 +21,231 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
-## 2026-09-24 — `make test` builds the GTK apps it tests
+## 2026-09-24 (10) — a VS Code extension
+
+VS Code support, asked for by the user: an extension in `asm/vscode/`
+for colouring and completion. There is no Node on this machine, but VS
+Code's Electron runs as Node and ships `vscode-textmate` and Oniguruma, so
+the grammar is tested by the engine that colours the editor. The test that
+earned its place first was the dullest one: comparing the keyword lists
+with the assembler's own table found `SL1` missing on its first run, and
+comparing the scanner with `z80asm -s` found macros from `INCLUDE`d files
+being read as labels. Both are copies of something the assembler already
+defines, and both had drifted before they were ever committed. A symlink
+into `~/.vscode/extensions` turned out to do nothing, since VS Code loads
+only what its registry lists, so `install.sh` builds a real `.vsix`.
+
+The extension then gained go-to-definition, from the same scan. Its first
+test run failed loudly rather than silently: the test's stand-in for VS
+Code had no `registerDefinitionProvider`, so activation threw and the
+runner reported it, which is the behaviour wanted from a harness.
+
+Then error markers: the extension runs the real assembler on save. One
+of five injected faults, writing the `.com` beside the source, passed the
+first version of the check, because the assembler writes nothing when there
+are errors and the check looked only after the broken save. Moved after
+the clean save, it fails as it should. The assembler is never taken from
+`PATH`, for the reason the morning's postmortem gives.
+
+Last for the extension, hover: a name's defining line, or a number's value
+in every base. The number reading is checked against `z80asm` itself, by
+assembling each literal with `DW`, which matters because a bare number is
+decimal in the assembler and hex in the debugger: the same `100` means two
+different things in two tools of the same repo, and the hover has to follow
+the one whose source it is reading.
+
+---
+
+## 2026-09-24 (9) — debugger symbols, memory writes, and ROM symbol files
+
+Debugger symbols, the first piece of milestone 2: `z80asm -s` writes
+them, `--symbols` reads them, and names work in every command, in
+`--break`, and in the listing (`DJNZ count_loop`). The assembler had never
+recorded whether a symbol was a label or an `EQU`, and that turned out to
+be the decision that mattered: `BDOS equ 5` is an address, but an `EQU` in
+general may be a count, so only labels name addresses in output. Four
+injected faults, four failures of `debugger-symbols`, whose expected
+addresses come from the symbol file rather than from the debugger.
+
+Then `e`, memory writes from the prompt, the second piece of milestone 2
+and a small one. The only design question was watchpoints: a write to a
+watched byte would have been reported, one step later, as a change the
+program made. `e` updates the snapshot as it writes.
+
+Then symbol files for the ABC ROMs. The rule was that every name comes
+from an address a document already states, so three search agents
+collected the claims with their sources, and each claim was then checked
+in the machine with the debugger itself (`u` and `m` at the address). That
+second step is what the files are worth. It settled three document
+disagreements on the ABC802, found its reference calling a stretch of code
+a "select table" (`61DA`, code in both DOS images, now corrected), and kept
+out two descriptions the bytes contradicted and two table starts the bytes
+could not confirm. The first draft of the loader would also have misread
+any hand-written comment containing "equ"; only the comment's first word
+decides now.
+
+---
+
+## 2026-09-24 (8) — the guide ran the wrong assembler
+
+Starting the debugger-symbols work showed the toolchain guide had been
+verified partly against the wrong assembler. `scripts/config.sh` appended
+`bin/` to `PATH`, so in the guide's own setup `z80asm` meant Homebrew's
+unrelated `z80asm`, which produced the same bytes and no status line; the
+guide said the assembler "prints nothing when it succeeds". Fixed by
+putting `bin/` first, re-capturing the guide with the right binaries (only
+the assembler's own lines changed), and a postmortem,
+[the command ran, but not the program](postmortems/2026-09-24-the-command-ran-but-not-the-program.md).
+
+---
+
+## 2026-09-24 (7) — a disassembler reference and a toolchain guide
+
+The documentation item, the same afternoon it was added:
+`docs/DISASSEMBLER.md`, the reference `z80dasm` never had, and
+`docs/TOOLCHAIN.md`, a guide that takes `hello.asm` through all three
+tools. Every command in the guide was run and its output pasted, and
+running them was not a formality. It found four things.
+
+- **`z80dasm -o 0100` means octal.** The origin goes through C's
+  `strtol(..., 0)`, so the way a Z80 programmer writes the CP/M origin
+  loads the file at `0040h` with no warning. Documented and put on the
+  roadmap as a decision rather than changed, since making bare numbers hex
+  would silently change what `-l 52` means.
+- **The debugger's empty line dropped the count**: `s 2` then Return took
+  one step. It now repeats `s 2`; `debugger-step-repeat` pins it and fails
+  with the old behaviour restored.
+- **`--type` without `\r` never runs the line**, so `CLAUDE.md`'s own
+  example of the ABC802 answering `PRINT 6*7` was wrong as written: BASIC
+  echoes the line and waits. Corrected there and written correctly in the
+  guide.
+- **The disassemble-reassemble round trip is exact for eleven of the
+  twelve examples.** `gaps_test.asm` holds the undocumented `IM` encodings
+  `ED 66/76/7E`, which disassemble by name and reassemble as the
+  documented form. Same instruction, different bytes; the reference says
+  so rather than claiming a round trip it does not have.
+
+The guide's ABC802 section stops the ROM at `3A76` and reads the registers:
+`DI`, `IM 2`, and an `INC (HL)` on `FFF5`, an interrupt handler counting
+ticks at about 90 a second of emulated time, consistent with the 93.75 Hz
+clock. The guide states that as an inference, which is what it is. The
+README and `CLAUDE.md` both listed "two" reference documents; there are
+now five, and both lists are corrected.
+
+The octal trap did not stay a roadmap item for long: at the user's
+request `z80dasm` now reads every bare number as hex, the debugger's rule,
+and rejects anything it cannot read whole instead of half-parsing it. The
+cost named when it was deferred, that `-l 52` changes meaning, was checked
+first: no script or test in the repo passes `-o` or `-l`, and the README's
+own example already wrote `-l 0x34`. `z80dasm/hex-arguments` pins it, and
+with C's base detection put back it fails on both `-o 0100` and `-l 34`.
+
+---
+
+## 2026-09-24 (6) — a debugger, milestone 1
+
+The first of the morning's new items: a debugger, milestone 1, planned and
+approved before any code. It lives in `debug/src/`, not `z80core/` as the
+roadmap entry guessed, because it disassembles through `decode.o` and the
+core should not depend on the disassembler. Each CLI calls two hooks around
+its own step function and nothing else changes. Three things went wrong
+first, and the write-up in `cpm/docs/COMPLETED.md` has them: memory has to
+come from the flat array because the ABC806's read hook has a side effect;
+`n` ran `hello.com` to its end because CP/M's BDOS emulation steps past the
+return address, so it now watches the stack instead; and the first output
+put the stop line ahead of the program's own buffered text.
+
+Two process notes. The first mutation run for the debugger's checks died
+part-way when the session's scratch directory vanished, leaving an injected
+`continue;` in `debug.c`; the next run backed up the broken file, and its
+"restored" comparison agreed with it. The failing `debugger-watch` check is
+what showed it. Mutation scripts now back up to a fresh `mktemp` directory
+and restore in a `finally` block. And the ABC80 half of the sweep found
+`basic-arithmetic` passing with `PRINT 6*8`, because that run's trace
+prints `[    42]`: the second check in one day found asserting on text that
+was present whatever the subject did.
+
+---
+
+## 2026-09-24 (5) — which abc80.net files the disk images are
+
+The ABC802 floppy media, after the user reported not being able to
+tell which abc80.net files they were. There were two reasons, and neither
+was theirs. `mf001.img` and `mf002.img` are local renames of `640k/disk001`
+and `640k/disk002`, which nothing in the repo recorded. And the archive's
+`160k/index.txt` labels `disk001` as a CP/M disk, when it boots ORD 800
+Version 2.4 exactly as this repo's records say. The identification was by
+booting rather than by label: all 35 images in two other 160K directories
+first, none of which boots ORD 800, and then the top-level ones. Pointing
+the suite at the three found 28 of 28 ABC802 checks passing, and with them
+copied into `abc802/resources/disks/` (gitignored) `make test` gives 107
+passed and nothing skipped, the first complete run on this machine. The
+disks README now has the mapping and the warning, and the roadmap's gap
+entry, which counted four gated checks where there are five, points at it.
+
+---
+
+## 2026-09-24 (4) — the line editor swept, and a record corrected
+
+The ABC806's Right arrow, dropped since that target's Milestone 3 on
+inference from the ABC802. The sweep typed `10 REM ABCDE<code>X` and
+`LIST` for every byte `0x01`-`0x1F` through `--type`, and `0x00`, `0x0A`
+and a sample of high bytes through `--interactive`, which is the only path
+that hands the DART a byte unaltered. No byte moves the cursor, so Right
+stays dropped, now on evidence. The editor is the ABC802's: break,
+backspace, clear, Return and discard.
+
+Two results did not match the ABC802's record, and checking them corrected
+that record rather than distinguishing the machines. `0x0A` is ignored,
+where Milestone 8 lists it as a terminator, and every high byte ends the
+line, where Milestone 8 says they behave like their low equivalents. The
+high-byte result was suspect first, because the DART model passes all
+eight bits whatever the receive width; a trace shows the ROM programs the
+keyboard channel for 8 bits (`WR3 = C1`), so real hardware passes bit 7
+too. Then the same bytes on the ABC802 gave the same answers. `--type`
+turns `0x0A` into `0x0D` and drops a raw high byte, which would produce
+exactly the `0x0A` row first recorded; the commit does not say which path
+it used, so that is the likely cause rather than a proven one: an input
+path that rewrote the stimulus before the subject saw it.
+
+The ABC802's reference, BASIC reference, code comments and `CLAUDE.md`
+now carry the corrected table, and its Milestone 8 write-up gains a dated
+note rather than an edit. The ABC806 gains a Line editing section in its
+reference and a COMPLETED entry, since this closed an investigation, and
+loses the known gap. One practical consequence is written into
+`abc806/emu/src/main.c`: a high byte is not a harmless no-op on either
+machine, so no key may be mapped there to mean "do nothing".
+
+---
+
+## 2026-09-24 (3) — gated checks measured against their lists
+
+The standup's second item: the ABC80 suite's hand-written skip
+lists, described as "the last instance" of the class and "roughly a
+two-line change to the `DISK_CHECKS` shape". Both halves were wrong.
+Reading the blocks showed seven gated blocks across three suites, every
+one hand-writing its names, and showed that `DISK_CHECKS` never removed
+the second list: the block under it still names each check in its own
+`tl_begin`. Copying that shape into ABC80 would have spread the mistake
+while looking like the fix.
+
+A shell block's membership cannot be derived without running it, so the
+list stays and is now measured instead. `tl_gate` in `scripts/testlib.sh`
+takes the skip reason and the names; `tl_gate_end` compares the checks the
+block actually began against them and fails the suite on a difference.
+All seven blocks use it. `make test` gave the same 102 passed and 5
+skipped afterwards, and both failure shapes were injected and caught: a
+new check inside a gate but not in its list (the 2026-08-29 defect), and a
+gate never closed. The postmortem gains a dated follow-up rather than a
+rewrite, since its body records what was believed on the day.
+
+One stray found on the way: `abc802/tests/run_tests.sh` closed its GTK
+block with ` fi`, indented by one space. Harmless to the shell, but it is
+why a pattern that matched the other six blocks missed this one.
+
+---
+
+## 2026-09-24 (2) — `make test` builds the GTK apps it tests
 
 The first session in sixteen days. It opened by reading the standup, and
 `make test` reproduced its baseline exactly: 98 passed, 0 failed, 9
@@ -63,199 +287,12 @@ never agreed with; it needs `sdl2` too.
 No `*_COMPLETED.md` entry, on the 2026-09-04 and 2026-09-08 precedent:
 this is test infrastructure, not a milestone.
 
-Then the standup's second item: the ABC80 suite's hand-written skip
-lists, described as "the last instance" of the class and "roughly a
-two-line change to the `DISK_CHECKS` shape". Both halves were wrong.
-Reading the blocks showed seven gated blocks across three suites, every
-one hand-writing its names, and showed that `DISK_CHECKS` never removed
-the second list: the block under it still names each check in its own
-`tl_begin`. Copying that shape into ABC80 would have spread the mistake
-while looking like the fix.
+---
 
-A shell block's membership cannot be derived without running it, so the
-list stays and is now measured instead. `tl_gate` in `scripts/testlib.sh`
-takes the skip reason and the names; `tl_gate_end` compares the checks the
-block actually began against them and fails the suite on a difference.
-All seven blocks use it. `make test` gave the same 102 passed and 5
-skipped afterwards, and both failure shapes were injected and caught: a
-new check inside a gate but not in its list (the 2026-08-29 defect), and a
-gate never closed. The postmortem gains a dated follow-up rather than a
-rewrite, since its body records what was believed on the day.
+## 2026-09-24 (1) — three items for Phase 4
 
-One stray found on the way: `abc802/tests/run_tests.sh` closed its GTK
-block with ` fi`, indented by one space. Harmless to the shell, but it is
-why a pattern that matched the other six blocks missed this one.
-
-Then the ABC806's Right arrow, dropped since that target's Milestone 3 on
-inference from the ABC802. The sweep typed `10 REM ABCDE<code>X` and
-`LIST` for every byte `0x01`-`0x1F` through `--type`, and `0x00`, `0x0A`
-and a sample of high bytes through `--interactive`, which is the only path
-that hands the DART a byte unaltered. No byte moves the cursor, so Right
-stays dropped, now on evidence. The editor is the ABC802's: break,
-backspace, clear, Return and discard.
-
-Two results did not match the ABC802's record, and checking them corrected
-that record rather than distinguishing the machines. `0x0A` is ignored,
-where Milestone 8 lists it as a terminator, and every high byte ends the
-line, where Milestone 8 says they behave like their low equivalents. The
-high-byte result was suspect first, because the DART model passes all
-eight bits whatever the receive width; a trace shows the ROM programs the
-keyboard channel for 8 bits (`WR3 = C1`), so real hardware passes bit 7
-too. Then the same bytes on the ABC802 gave the same answers. `--type`
-turns `0x0A` into `0x0D` and drops a raw high byte, which would produce
-exactly the `0x0A` row first recorded; the commit does not say which path
-it used, so that is the likely cause rather than a proven one: an input
-path that rewrote the stimulus before the subject saw it.
-
-The ABC802's reference, BASIC reference, code comments and `CLAUDE.md`
-now carry the corrected table, and its Milestone 8 write-up gains a dated
-note rather than an edit. The ABC806 gains a Line editing section in its
-reference and a COMPLETED entry, since this closed an investigation, and
-loses the known gap. One practical consequence is written into
-`abc806/emu/src/main.c`: a high byte is not a harmless no-op on either
-machine, so no key may be mapped there to mean "do nothing".
-
-Last, the ABC802 floppy media, after the user reported not being able to
-tell which abc80.net files they were. There were two reasons, and neither
-was theirs. `mf001.img` and `mf002.img` are local renames of `640k/disk001`
-and `640k/disk002`, which nothing in the repo recorded. And the archive's
-`160k/index.txt` labels `disk001` as a CP/M disk, when it boots ORD 800
-Version 2.4 exactly as this repo's records say. The identification was by
-booting rather than by label: all 35 images in two other 160K directories
-first, none of which boots ORD 800, and then the top-level ones. Pointing
-the suite at the three found 28 of 28 ABC802 checks passing, and with them
-copied into `abc802/resources/disks/` (gitignored) `make test` gives 107
-passed and nothing skipped, the first complete run on this machine. The
-disks README now has the mapping and the warning, and the roadmap's gap
-entry, which counted four gated checks where there are five, points at it.
-
-Then the first of those new items: a debugger, milestone 1, planned and
-approved before any code. It lives in `debug/src/`, not `z80core/` as the
-roadmap entry guessed, because it disassembles through `decode.o` and the
-core should not depend on the disassembler. Each CLI calls two hooks around
-its own step function and nothing else changes. Three things went wrong
-first, and the write-up in `cpm/docs/COMPLETED.md` has them: memory has to
-come from the flat array because the ABC806's read hook has a side effect;
-`n` ran `hello.com` to its end because CP/M's BDOS emulation steps past the
-return address, so it now watches the stack instead; and the first output
-put the stop line ahead of the program's own buffered text.
-
-Two process notes. The first mutation run for the debugger's checks died
-part-way when the session's scratch directory vanished, leaving an injected
-`continue;` in `debug.c`; the next run backed up the broken file, and its
-"restored" comparison agreed with it. The failing `debugger-watch` check is
-what showed it. Mutation scripts now back up to a fresh `mktemp` directory
-and restore in a `finally` block. And the ABC80 half of the sweep found
-`basic-arithmetic` passing with `PRINT 6*8`, because that run's trace
-prints `[    42]`: the second check in one day found asserting on text that
-was present whatever the subject did.
-
-Then the documentation item, the same afternoon it was added:
-`docs/DISASSEMBLER.md`, the reference `z80dasm` never had, and
-`docs/TOOLCHAIN.md`, a guide that takes `hello.asm` through all three
-tools. Every command in the guide was run and its output pasted, and
-running them was not a formality. It found four things.
-
-- **`z80dasm -o 0100` means octal.** The origin goes through C's
-  `strtol(..., 0)`, so the way a Z80 programmer writes the CP/M origin
-  loads the file at `0040h` with no warning. Documented and put on the
-  roadmap as a decision rather than changed, since making bare numbers hex
-  would silently change what `-l 52` means.
-- **The debugger's empty line dropped the count**: `s 2` then Return took
-  one step. It now repeats `s 2`; `debugger-step-repeat` pins it and fails
-  with the old behaviour restored.
-- **`--type` without `\r` never runs the line**, so `CLAUDE.md`'s own
-  example of the ABC802 answering `PRINT 6*7` was wrong as written: BASIC
-  echoes the line and waits. Corrected there and written correctly in the
-  guide.
-- **The disassemble-reassemble round trip is exact for eleven of the
-  twelve examples.** `gaps_test.asm` holds the undocumented `IM` encodings
-  `ED 66/76/7E`, which disassemble by name and reassemble as the
-  documented form. Same instruction, different bytes; the reference says
-  so rather than claiming a round trip it does not have.
-
-The guide's ABC802 section stops the ROM at `3A76` and reads the registers:
-`DI`, `IM 2`, and an `INC (HL)` on `FFF5`, an interrupt handler counting
-ticks at about 90 a second of emulated time, consistent with the 93.75 Hz
-clock. The guide states that as an inference, which is what it is. The
-README and `CLAUDE.md` both listed "two" reference documents; there are
-now five, and both lists are corrected.
-
-The octal trap did not stay a roadmap item for long: at the user's
-request `z80dasm` now reads every bare number as hex, the debugger's rule,
-and rejects anything it cannot read whole instead of half-parsing it. The
-cost named when it was deferred, that `-l 52` changes meaning, was checked
-first: no script or test in the repo passes `-o` or `-l`, and the README's
-own example already wrote `-l 0x34`. `z80dasm/hex-arguments` pins it, and
-with C's base detection put back it fails on both `-o 0100` and `-l 34`.
-
-Then VS Code support, asked for by the user: an extension in `asm/vscode/`
-for colouring and completion. There is no Node on this machine, but VS
-Code's Electron runs as Node and ships `vscode-textmate` and Oniguruma, so
-the grammar is tested by the engine that colours the editor. The test that
-earned its place first was the dullest one: comparing the keyword lists
-with the assembler's own table found `SL1` missing on its first run, and
-comparing the scanner with `z80asm -s` found macros from `INCLUDE`d files
-being read as labels. Both are copies of something the assembler already
-defines, and both had drifted before they were ever committed. A symlink
-into `~/.vscode/extensions` turned out to do nothing, since VS Code loads
-only what its registry lists, so `install.sh` builds a real `.vsix`.
-
-The extension then gained go-to-definition, from the same scan. Its first
-test run failed loudly rather than silently: the test's stand-in for VS
-Code had no `registerDefinitionProvider`, so activation threw and the
-runner reported it, which is the behaviour wanted from a harness.
-
-Then error markers: the extension runs the real assembler on save. One
-of five injected faults, writing the `.com` beside the source, passed the
-first version of the check, because the assembler writes nothing when there
-are errors and the check looked only after the broken save. Moved after
-the clean save, it fails as it should. The assembler is never taken from
-`PATH`, for the reason the morning's postmortem gives.
-
-Last for the extension, hover: a name's defining line, or a number's value
-in every base. The number reading is checked against `z80asm` itself, by
-assembling each literal with `DW`, which matters because a bare number is
-decimal in the assembler and hex in the debugger: the same `100` means two
-different things in two tools of the same repo, and the hover has to follow
-the one whose source it is reading.
-
-Then symbol files for the ABC ROMs. The rule was that every name comes
-from an address a document already states, so three search agents
-collected the claims with their sources, and each claim was then checked
-in the machine with the debugger itself (`u` and `m` at the address). That
-second step is what the files are worth. It settled three document
-disagreements on the ABC802, found its reference calling a stretch of code
-a "select table" (`61DA`, code in both DOS images, now corrected), and kept
-out two descriptions the bytes contradicted and two table starts the bytes
-could not confirm. The first draft of the loader would also have misread
-any hand-written comment containing "equ"; only the comment's first word
-decides now.
-
-Then `e`, memory writes from the prompt, the second piece of milestone 2
-and a small one. The only design question was watchpoints: a write to a
-watched byte would have been reported, one step later, as a change the
-program made. `e` updates the snapshot as it writes.
-
-Then debugger symbols, the first piece of milestone 2: `z80asm -s` writes
-them, `--symbols` reads them, and names work in every command, in
-`--break`, and in the listing (`DJNZ count_loop`). The assembler had never
-recorded whether a symbol was a label or an `EQU`, and that turned out to
-be the decision that mattered: `BDOS equ 5` is an address, but an `EQU` in
-general may be a count, so only labels name addresses in output. Four
-injected faults, four failures of `debugger-symbols`, whose expected
-addresses come from the symbol file rather than from the debugger.
-
-Starting the debugger-symbols work showed the toolchain guide had been
-verified partly against the wrong assembler. `scripts/config.sh` appended
-`bin/` to `PATH`, so in the guide's own setup `z80asm` meant Homebrew's
-unrelated `z80asm`, which produced the same bytes and no status line; the
-guide said the assembler "prints nothing when it succeeds". Fixed by
-putting `bin/` first, re-capturing the guide with the right binaries (only
-the assembler's own lines changed), and a postmortem,
-[the command ran, but not the program](postmortems/2026-09-24-the-command-ran-but-not-the-program.md).
-
-Earlier the same session, three items went onto Phase 4 of
+The session opened on the 2026-09-08 standup, and before any of its
+items three new ones went onto Phase 4 of
 `cpm/docs/ROADMAP.md` at the user's request: a Z80 debugger (confirmed
 absent: no target has a trace, breakpoint or register-dump option),
 further machine targets such as the ZX Spectrum, and Linux and Windows
