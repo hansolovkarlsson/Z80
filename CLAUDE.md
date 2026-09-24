@@ -1115,6 +1115,10 @@ disassembler. Each CLI's run loop calls `z80dbg_before_step()` and
 `z80dbg_after_step()` around its own step function; the step wrappers are
 untouched, and a run without `--debug`/`--break`/`--debug-script` costs
 one NULL test per instruction. `docs/DEBUGGER.md` is the command reference.
+Symbols come from `z80asm -s` (every symbol, marked label or equ) through
+`--symbols`; only labels name addresses in output, since an `EQU` may be a
+plain number, which is why `Symbol` in `asm/src/symtab.h` carries
+`is_equ`.
 
 Three facts to know before changing it. **Memory is read from the flat
 array (`cpu->memory`), never through `z80_read_byte()`**: the ABC806's

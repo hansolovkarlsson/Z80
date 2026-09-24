@@ -189,6 +189,15 @@ first: no script or test in the repo passes `-o` or `-l`, and the README's
 own example already wrote `-l 0x34`. `z80dasm/hex-arguments` pins it, and
 with C's base detection put back it fails on both `-o 0100` and `-l 34`.
 
+Then debugger symbols, the first piece of milestone 2: `z80asm -s` writes
+them, `--symbols` reads them, and names work in every command, in
+`--break`, and in the listing (`DJNZ count_loop`). The assembler had never
+recorded whether a symbol was a label or an `EQU`, and that turned out to
+be the decision that mattered: `BDOS equ 5` is an address, but an `EQU` in
+general may be a count, so only labels name addresses in output. Four
+injected faults, four failures of `debugger-symbols`, whose expected
+addresses come from the symbol file rather than from the debugger.
+
 Starting the debugger-symbols work showed the toolchain guide had been
 verified partly against the wrong assembler. `scripts/config.sh` appended
 `bin/` to `PATH`, so in the guide's own setup `z80asm` meant Homebrew's

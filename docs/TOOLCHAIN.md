@@ -258,6 +258,47 @@ Three more things worth knowing:
   so the output reads like the session above. When the file runs out, the
   program carries on to its end.
 
+## With symbols
+
+Addresses such as `010D` are what the machine sees; the source says
+`count_loop`. `z80asm -s` writes the source's names to a file, and
+`--symbols` hands them to the debugger:
+
+```
+$ z80asm hello.asm -o hello.com -s hello.sym
+z80asm: wrote 99 bytes to 'hello.com' (origin 0x0100)
+$ z80 --symbols hello.sym --break count_loop hello.com
+[z80dbg: 7 symbols from hello.sym]
+Loaded 'hello.com' (99 bytes) at 0x0100
+Starting Z80 Execution Loop...
+
+Hello from z80asm![breakpoint] count_loop:
+010D  23           INC HL
+(z80dbg) u count_loop 5
+count_loop:
+010D  23           INC HL
+010E  10 FD        DJNZ count_loop
+0110  7D           LD A,L
+0111  FE 05        CP 05h
+0113  C2 29 01     JP NZ,fail
+(z80dbg) d count_loop
+breakpoint 010D deleted
+(z80dbg) b fail
+breakpoint 0129 fail
+(z80dbg) r hl=4
+AF=0000 BC=0509 DE=0134 HL=0004 IX=0000 IY=0000 SP=F000 PC=010D  ........  IM0 DI
+(z80dbg) c
+[breakpoint] fail:
+0129  11 4A 01     LD DE,014Ah
+```
+
+The same session as before, in the source's own words. Names work
+anywhere an address does, including `--break` and offsets such as
+`count_loop+3`, and the listing names jump targets (`DJNZ count_loop`,
+`JP NZ,fail`). `BDOS` is in the file too, but as an `equ`, so the
+debugger accepts it as input and never prints it in place of `0005h`:
+an `equ` can be a plain number that only happens to match an address.
+
 ## The same tools on a ROM
 
 The ABC machines run real ROMs, and the same two tools read them. A ROM

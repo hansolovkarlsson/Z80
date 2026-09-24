@@ -9,7 +9,7 @@ using it with the disassembler and the debugger.
 ## Usage
 
 ```
-z80asm <input.asm> [-o output.com]
+z80asm <input.asm> [-o output.com] [-s symbols.sym]
 ```
 
 Assembles `input.asm` and writes a raw binary covering only the address
@@ -17,6 +17,20 @@ range something was actually assembled into (i.e. from the lowest to the
 highest byte written, trimmed to whatever `ORG` the source used — not a
 fixed 64KB image). Without `-o`, the output path defaults to the input's
 basename with a `.com` extension (`hello.asm` → `hello.com`).
+
+`-s FILE` also writes every symbol, sorted by value, one per line:
+
+```
+; symbols from hello.asm, written by z80asm -s
+BDOS                     equ 0005h    ; equ
+start                    equ 0100h    ; label
+count_loop               equ 010Dh    ; label
+```
+
+Each line is valid `z80asm` source, so the file can be `INCLUDE`d by
+another program. The comment says whether the name is a label (an
+address) or an `EQU` (possibly just a number); the debugger's `--symbols`
+reads the file and names addresses only from labels.
 
 Two passes run over the source: pass 1 resolves labels (forward
 references are fine — a label doesn't need to be defined before it's

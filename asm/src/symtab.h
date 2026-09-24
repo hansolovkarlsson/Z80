@@ -7,6 +7,7 @@ typedef struct Symbol {
     char name[SYM_NAME_MAX];
     long value;
     int defined;
+    int is_equ;   // set by EQU; a label is an address, an EQU may be any number
     struct Symbol *next;
 } Symbol;
 

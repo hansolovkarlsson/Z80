@@ -66,8 +66,11 @@ Aspirational, not yet scoped:
   of use: work under `--interactive`, which owns the terminal today; a
   data view of memory the machines divert (ABC802/806 character RAM, the
   ABC806 plane), which needs a side-effect-free peek per machine because
-  the ABC806's read hook latches attribute bytes; symbols, e.g. from a
-  `z80asm` listing; memory writes from the prompt; and the GTK apps.
+  the ABC806's read hook latches attribute bytes; memory writes from the
+  prompt; and the GTK apps. Symbols are done (`z80asm -s`, `--symbols`).
+  A ROM has no source, so no symbol file: one written by hand works, since
+  the reader treats uncommented lines as labels, but none exists yet for
+  any of the ABC ROMs.
 - **More machine targets, such as the ZX Spectrum.** It is Z80-based, so it
   would link `z80core/` the way the three ABC targets do rather than
   bringing a core of its own, which is what keeps it in this repo, unlike

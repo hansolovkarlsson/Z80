@@ -37,6 +37,7 @@ int symtab_define(SymTab *t, const char *name, long value) {
     s->name[SYM_NAME_MAX - 1] = '\0';
     s->value = value;
     s->defined = 1;
+    s->is_equ = 0;
     s->next = t->head;
     t->head = s;
     return 1;

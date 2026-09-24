@@ -13,8 +13,9 @@ Three options, the same on every CLI:
 | Option | Effect |
 |---|---|
 | `--debug` | stop before the first instruction |
-| `--break ADDR` | stop when PC reaches ADDR (hex); repeatable, and implies the debugger |
+| `--break ADDR` | stop when PC reaches ADDR (hex, or a symbol); repeatable, and implies the debugger |
 | `--debug-script FILE` | read commands from FILE instead of the terminal |
+| `--symbols FILE` | name addresses from FILE, as written by `z80asm -s`; repeatable |
 
 ```
 bin/z80 --debug cpm/cpm_disk/hello.com
@@ -77,6 +78,47 @@ and the address of the instruction that wrote it.
 The flags read `SZYHXPNC`, with a dot for each clear bit. `Y` and `X` are
 the undocumented bits 5 and 3.
 
+## Symbols
+
+`z80asm -s hello.sym` writes a program's symbols, and `--symbols
+hello.sym` gives them to the debugger. Then:
+
+- **Any address can be a name**, or a name plus or minus a hex offset:
+  `b count_loop`, `u fail`, `m msg 20`, `u count_loop+3`, `r pc=start`,
+  and `--break count_loop` on the command line.
+- **A labelled address is shown by name**: a `count_loop:` line above it
+  in `u` and step output, `[breakpoint] count_loop:` at a stop, and
+  `breakpoint 010D count_loop` from `b`.
+- **Jump, call and `(nn)` targets are named in the instruction**, as
+  `DJNZ count_loop` or `JP NZ,fail`. Immediate values stay numbers, as in
+  `z80dasm`: nothing in `LD DE,0134h` says `0134h` is an address.
+
+Only **labels** name addresses in output. An `EQU` can be typed as an
+address (`b BDOS`), but is never shown in place of a number, since it may
+be a count or a character that only happens to equal some address. A file
+written by hand without the `; label`/`; equ` comments is read as labels.
+
+A name wins over a number spelled the same way: with a label called
+`beef`, `b beef` means the label. `$BEEF`, `0xBEEF` and `0BEEFh` always
+mean the number, since no name starts with `$` or a digit.
+
+```
+$ z80asm hello.asm -o hello.com -s hello.sym
+$ z80 --symbols hello.sym --break count_loop hello.com
+[z80dbg: 7 symbols from hello.sym]
+Loaded 'hello.com' (99 bytes) at 0x0100
+Starting Z80 Execution Loop...
+
+Hello from z80asm![breakpoint] count_loop:
+010D  23           INC HL
+(z80dbg) u count_loop 2
+count_loop:
+010D  23           INC HL
+010E  10 FD        DJNZ count_loop
+(z80dbg) b fail
+breakpoint 0129 fail
+```
+
 ## What it sees
 
 **Memory is the flat 64K array**, the bytes instruction fetch reads, never
@@ -100,5 +142,4 @@ after it; `n` over the `CALL 0005h` is the natural way past one.
 - `--interactive` is refused with a debug option: that mode owns the
   terminal for the keyboard and the screen.
 - The GTK apps have no debugger.
-- No symbols: addresses only.
 - No memory writes from the prompt; registers only.

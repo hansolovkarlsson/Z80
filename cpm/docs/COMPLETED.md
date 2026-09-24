@@ -1222,3 +1222,26 @@ That last sweep found a defect elsewhere: the ABC80 suite's
 instruction trace prints `[    42] PC=...`, so `PRINT 6*8` passed it. It now
 reads the answer through the suite's own `basic_numbers`, and fails with
 `expected '42', got '48'` under the same mutation.
+
+### Symbols, the first of milestone 2
+
+`z80asm -s FILE` writes every symbol as `name equ value ; label|equ`, which
+is also valid source to `INCLUDE`; `--symbols FILE` (repeatable) loads it
+into the debugger on all four CLIs. Names work wherever an address does,
+with a hex offset (`count_loop+3`), and in `--break`, whose names are
+resolved at start-up because the symbol files are read after the options.
+Output names labelled addresses (`count_loop:` above the instruction,
+`[breakpoint] fail:`) and jump, call and `(nn)` targets in the text
+(`DJNZ count_loop`), with the same hex-literal substitution `z80dasm`
+uses for its own labels.
+
+The one design decision worth keeping: **only labels name addresses in
+output.** An `EQU` is accepted as input (`b BDOS`) but never displayed,
+because it may be a count or a character that happens to equal an
+address. That needed the assembler's symbol table to record which is
+which, which it had never done.
+
+`debugger-symbols` takes every expected address from the symbol file, so
+the debugger is checked against the assembler rather than itself. It was
+broken four ways and failed each time: every symbol treated as a label,
+names ignored, operand naming off, and the assembler not marking `EQU`s.

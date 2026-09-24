@@ -228,7 +228,7 @@ report() {
         echo "PASS: $name"
     else
         echo "FAIL: $name"
-        printf '%s' "$reasons"
+        printf '%s\n' "$reasons"
         echo "$out" | tail -20 | sed 's/^/      | /'
         overall_status=1
     fi
@@ -267,6 +267,26 @@ $(want "$out" "loop counter wrong" "the program noticing the changed register")"
     out=$(debugger_run "$hello" $'b 010D\nc\ns 2\n\nq\n')
     reasons="$(want "$out" "BC=0309" "the fourth step, from an empty line repeating s 2")"
     report "debugger-step-repeat" "$(printf '%s' "$reasons" | grep .)" "$out"
+
+    # Symbols: z80asm -s writes them, the debugger reads them. Addresses are
+    # taken from the symbol file, so the debugger is checked against the
+    # assembler rather than against itself.
+    local sym="$WORKDIR/dbg-hello.sym" fail_addr
+    "$Z80ASM" "$ROOT/asm/examples/hello.asm" -o "$WORKDIR/dbg-hello-sym.com" -s "$sym" > /dev/null 2>&1
+    fail_addr=$(awk '$1 == "fail" { sub(/h$/, "", $3); print $3 }' "$sym")
+    reasons="$(want "$(cat "$sym")" "equ 0005h    ; equ" "BDOS recorded as an equ, not a label")
+$(want "$(cat "$sym")" "count_loop               equ 010Dh    ; label" "count_loop recorded as a label")"
+    printf 'u count_loop 2\nu start 3\nb fail\nm msg 5\nu count_loop+3 1\nd count_loop\nr hl=4\nc\nq\n' > "$WORKDIR/dbg.txt"
+    out=$(cd "$WORKDIR" && "$Z80" --symbols "$sym" --break count_loop --debug-script "$WORKDIR/dbg.txt" "$WORKDIR/dbg-hello-sym.com" < /dev/null 2>&1)
+    reasons="$reasons
+$(want "$out" "[breakpoint] count_loop:" "--break by name, and the stop named")
+$(want "$out" "DJNZ count_loop" "a jump target named in the instruction")
+$(want "$out" "breakpoint $fail_addr fail" "b by name, at the address z80asm gave fail")
+$(want "$out" "Hello" "m msg dumping the message the symbol points at")
+$(want "$out" "0110  7D" "count_loop+3 resolving to 0110")
+$(want "$out" "CALL 0005h" "an equ (BDOS) never used to name an address")
+$(want "$out" "[breakpoint] fail:" "the run stopping at fail after the counter is corrupted")"
+    report "debugger-symbols" "$(printf '%s' "$reasons" | grep .)" "$out"
 
     # A watchpoint names the instruction that wrote. The expected addresses
     # come from z80dasm, not from the debugger, so the two cannot agree by

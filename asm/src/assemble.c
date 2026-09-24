@@ -309,6 +309,7 @@ int assemble_line(AsmCtx *ctx, const char *line_in, LineResult *r) {
             r->err = "label redefined with a different value";
             return -1;
         }
+        symtab_find(ctx->symtab, label)->is_equ = 1;
         return 0;
     }
 

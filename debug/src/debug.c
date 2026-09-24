@@ -17,12 +17,24 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <termios.h>
 #include <unistd.h>
 
 #include "../../disasm/src/decode.h"
 
 #define MAX_WATCHES 16
+#define MAX_SYMBOL_FILES 8
+#define MAX_BREAK_NAMES 32
+
+// One line of a symbol file (z80asm -s). Only labels name addresses in the
+// output: an EQU may be a plain number that happens to equal an address.
+// Both kinds are accepted wherever an address is typed.
+typedef struct {
+    char name[64];
+    uint16_t value;
+    bool is_label;
+} DbgSymbol;
 
 typedef struct {
     uint16_t addr;
@@ -46,6 +58,14 @@ struct Z80Debugger {
     struct termios saved_termios;
     bool termios_saved;
     char last_command[256];
+
+    DbgSymbol *symbols;
+    int symbol_count;
+    int *label_at;           // 64K: the label naming each address, or -1
+    const char *symbol_paths[MAX_SYMBOL_FILES];
+    int symbol_path_count;
+    const char *break_names[MAX_BREAK_NAMES];   // --break, resolved at start
+    int break_name_count;
 };
 
 static volatile sig_atomic_t interrupted;
@@ -94,6 +114,81 @@ static bool parse_count(const char *text, long *out) {
     return true;
 }
 
+static const DbgSymbol *find_symbol(const Z80Debugger *dbg, const char *name) {
+    for (int k = 0; k < dbg->symbol_count; k++)
+        if (strcmp(dbg->symbols[k].name, name) == 0) return &dbg->symbols[k];
+    return NULL;
+}
+
+// An address as typed: a symbol, a symbol plus or minus a hex offset, or a
+// hex number. A symbol wins over a number spelled the same way ("add",
+// "beef"); $BEEF, 0xBEEF and 0BEEFh can only be numbers, since no name
+// starts with $ or a digit.
+static bool resolve_addr(const Z80Debugger *dbg, const char *text, unsigned long max, unsigned long *out) {
+    if (!*text) return false;
+    const char *op = strpbrk(text + 1, "+-");
+    size_t n = op ? (size_t)(op - text) : strlen(text);
+    char base[64];
+    if (n >= sizeof base) return false;
+    memcpy(base, text, n);
+    base[n] = '\0';
+
+    unsigned long v;
+    const DbgSymbol *sym = find_symbol(dbg, base);
+    if (sym) v = sym->value;
+    else if (!parse_hex(base, 0xFFFF, &v)) return false;
+    if (op) {
+        unsigned long off;
+        if (!parse_hex(op + 1, 0xFFFF, &off)) return false;
+        v = ((*op == '+') ? v + off : v - off) & 0xFFFF;   // wraps as the Z80 does
+    }
+    if (v > max) return false;
+    *out = v;
+    return true;
+}
+
+// Reads z80asm -s output: `name equ value ; label|equ`. A line without the
+// comment counts as a label, so a hand-written file works too. Values that
+// are not 16-bit addresses (negative, too large) are skipped.
+static bool load_symbols(Z80Debugger *dbg, const char *path) {
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        fprintf(stderr, "z80dbg: cannot open symbols '%s'\n", path);
+        return false;
+    }
+    char line[256];
+    int loaded = 0;
+    while (fgets(line, sizeof line, f)) {
+        bool is_label = true;
+        char *semi = strchr(line, ';');
+        if (semi) {
+            is_label = strstr(semi, "equ") == NULL;
+            *semi = '\0';
+        }
+        char name[64], equ[8], value[32];
+        unsigned long v;
+        if (sscanf(line, "%63s %7s %31s", name, equ, value) != 3) continue;
+        if (strcasecmp(equ, "equ") != 0 || !parse_hex(value, 0xFFFF, &v)) continue;
+
+        DbgSymbol *grown = realloc(dbg->symbols, (size_t)(dbg->symbol_count + 1) * sizeof *grown);
+        if (!grown) break;
+        dbg->symbols = grown;
+        DbgSymbol *sym = &dbg->symbols[dbg->symbol_count++];
+        snprintf(sym->name, sizeof sym->name, "%s", name);
+        sym->value = (uint16_t)v;
+        sym->is_label = is_label;
+        loaded++;
+    }
+    fclose(f);
+    fprintf(stderr, "[z80dbg: %d symbols from %s]\n", loaded, path);
+    return true;
+}
+
+static const char *label_for(const Z80Debugger *dbg, uint16_t addr) {
+    if (!dbg->label_at || dbg->label_at[addr] < 0) return NULL;
+    return dbg->symbols[dbg->label_at[addr]].name;
+}
+
 bool z80dbg_parse_option(Z80Debugger **dbg, int argc, char **argv, int *i) {
     const char *arg = argv[*i];
     if (strcmp(arg, "--debug") == 0) {
@@ -101,20 +196,28 @@ bool z80dbg_parse_option(Z80Debugger **dbg, int argc, char **argv, int *i) {
         (*dbg)->stop_next = true;
         return true;
     }
-    if (strcmp(arg, "--break") == 0 || strcmp(arg, "--debug-script") == 0) {
+    if (strcmp(arg, "--break") == 0 || strcmp(arg, "--debug-script") == 0 ||
+        strcmp(arg, "--symbols") == 0) {
         if (*i + 1 >= argc) {
             fprintf(stderr, "%s needs a value\n", arg);
             exit(EXIT_FAILURE);
         }
         const char *value = argv[++*i];
         if (!*dbg) *dbg = debugger_new();
+        // --break may name a symbol, and the symbol files are not read
+        // until z80dbg_start(), so both are kept and dealt with there.
         if (arg[2] == 'b') {
-            unsigned long addr;
-            if (!parse_hex(value, 0xFFFF, &addr)) {
-                fprintf(stderr, "--break: '%s' is not an address (hex, 0000-FFFF)\n", value);
+            if ((*dbg)->break_name_count == MAX_BREAK_NAMES) {
+                fprintf(stderr, "--break: at most %d\n", MAX_BREAK_NAMES);
                 exit(EXIT_FAILURE);
             }
-            (*dbg)->breakpoints[addr >> 3] |= (uint8_t)(1u << (addr & 7));
+            (*dbg)->break_names[(*dbg)->break_name_count++] = value;
+        } else if (arg[2] == 's') {
+            if ((*dbg)->symbol_path_count == MAX_SYMBOL_FILES) {
+                fprintf(stderr, "--symbols: at most %d files\n", MAX_SYMBOL_FILES);
+                exit(EXIT_FAILURE);
+            }
+            (*dbg)->symbol_paths[(*dbg)->symbol_path_count++] = value;
         } else {
             (*dbg)->script_path = value;
         }
@@ -125,7 +228,9 @@ bool z80dbg_parse_option(Z80Debugger **dbg, int argc, char **argv, int *i) {
 
 void z80dbg_print_usage(FILE *out) {
     fprintf(out, "  --debug          stop in the debugger before the first instruction\n");
-    fprintf(out, "  --break ADDR     stop in the debugger when PC reaches ADDR (hex);\n");
+    fprintf(out, "  --break ADDR     stop in the debugger when PC reaches ADDR (hex, or a\n");
+    fprintf(out, "                   symbol); repeatable\n");
+    fprintf(out, "  --symbols F      name addresses from F, as written by z80asm -s;\n");
     fprintf(out, "                   repeatable\n");
     fprintf(out, "  --debug-script F read debugger commands from F instead of the\n");
     fprintf(out, "                   terminal; at its end the run continues undisturbed.\n");
@@ -133,6 +238,25 @@ void z80dbg_print_usage(FILE *out) {
 }
 
 bool z80dbg_start(Z80Debugger *dbg) {
+    for (int k = 0; k < dbg->symbol_path_count; k++)
+        if (!load_symbols(dbg, dbg->symbol_paths[k])) return false;
+    if (dbg->symbol_count) {
+        dbg->label_at = malloc(65536 * sizeof *dbg->label_at);
+        if (!dbg->label_at) return false;
+        for (int a = 0; a < 65536; a++) dbg->label_at[a] = -1;
+        for (int k = 0; k < dbg->symbol_count; k++)   // the first label wins
+            if (dbg->symbols[k].is_label && dbg->label_at[dbg->symbols[k].value] < 0)
+                dbg->label_at[dbg->symbols[k].value] = k;
+    }
+    for (int k = 0; k < dbg->break_name_count; k++) {
+        unsigned long a;
+        if (!resolve_addr(dbg, dbg->break_names[k], 0xFFFF, &a)) {
+            fprintf(stderr, "--break: '%s' is neither a symbol nor an address\n", dbg->break_names[k]);
+            return false;
+        }
+        dbg->breakpoints[a >> 3] |= (uint8_t)(1u << (a & 7));
+    }
+
     if (dbg->script_path) {
         dbg->in = fopen(dbg->script_path, "r");
         if (!dbg->in) {
@@ -160,7 +284,11 @@ bool z80dbg_start(Z80Debugger *dbg) {
 
 // ------------------------------------------------------------------ output
 
-static void print_insn(FILE *out, const Z80 *cpu, uint16_t pc) {
+// With symbols loaded, a labelled address gets a `name:` line above it and
+// a jump, call or (nn) target is named in the text, the way z80dasm names
+// its own labels. Immediate values stay numbers, as they do there: nothing
+// in `LD DE,0134h` says 0134h is an address.
+static void print_insn(const Z80Debugger *dbg, FILE *out, const Z80 *cpu, uint16_t pc) {
     DecodedInsn d = decode_instruction(cpu->memory, pc);
     char bytes[16] = "";
     for (int k = 0; k < d.length && k < 4; k++) {
@@ -168,7 +296,24 @@ static void print_insn(FILE *out, const Z80 *cpu, uint16_t pc) {
         snprintf(b, sizeof b, k ? " %02X" : "%02X", cpu->memory[(uint16_t)(pc + k)]);
         strcat(bytes, b);
     }
-    fprintf(out, "%04X  %-12s %s\n", pc, bytes, d.text);
+
+    const char *here = label_for(dbg, pc);
+    if (here) fprintf(out, "%s:\n", here);
+
+    char text[128];
+    snprintf(text, sizeof text, "%s", d.text);
+    const char *target = d.has_ref ? label_for(dbg, d.ref_addr) : NULL;
+    if (target) {
+        char hex[8];   // as decode.c writes it: a leading 0 before A-F
+        snprintf(hex, sizeof hex, (d.ref_addr >> 12) >= 0xA ? "0%04Xh" : "%04Xh", d.ref_addr);
+        char *pos = strstr(text, hex);
+        if (pos) {
+            char rest[128];
+            snprintf(rest, sizeof rest, "%s", pos + strlen(hex));
+            snprintf(pos, sizeof text - (size_t)(pos - text), "%s%s", target, rest);
+        }
+    }
+    fprintf(out, "%04X  %-12s %s\n", pc, bytes, text);
 }
 
 static void flags_text(uint8_t f, char out[9]) {
@@ -360,7 +505,8 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
                 int listed = 0;
                 for (unsigned a = 0; a < 0x10000; a++) {
                     if (dbg->breakpoints[a >> 3] & (1u << (a & 7))) {
-                        fprintf(out, "breakpoint %04X\n", a);
+                        const char *name = label_for(dbg, (uint16_t)a);
+                        fprintf(out, "breakpoint %04X%s%s\n", a, name ? " " : "", name ? name : "");
                         listed++;
                     }
                 }
@@ -368,12 +514,13 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
             }
             for (int k = 1; k < argc; k++) {
                 unsigned long a;
-                if (!parse_hex(argv[k], 0xFFFF, &a)) {
-                    fprintf(out, "b: '%s' is not an address\n", argv[k]);
+                if (!resolve_addr(dbg, argv[k], 0xFFFF, &a)) {
+                    fprintf(out, "b: '%s' is neither a symbol nor an address\n", argv[k]);
                     continue;
                 }
                 dbg->breakpoints[a >> 3] |= (uint8_t)(1u << (a & 7));
-                fprintf(out, "breakpoint %04lX\n", a);
+                const char *name = label_for(dbg, (uint16_t)a);
+                fprintf(out, "breakpoint %04lX%s%s\n", a, name ? " " : "", name ? name : "");
             }
         } else if (!strcmp(cmd, "d") || !strcmp(cmd, "delete")) {
             if (argc > 1 && !strcmp(argv[1], "all")) {
@@ -381,7 +528,7 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
                 fprintf(out, "all breakpoints deleted\n");
             } else {
                 unsigned long a;
-                if (argc < 2 || !parse_hex(argv[1], 0xFFFF, &a)) {
+                if (argc < 2 || !resolve_addr(dbg, argv[1], 0xFFFF, &a)) {
                     fprintf(out, "d: give an address, or 'all'\n");
                     continue;
                 }
@@ -398,7 +545,7 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
             }
             unsigned long a;
             long len = 1;
-            if (!parse_hex(argv[1], 0xFFFF, &a) || (argc > 2 && !parse_count(argv[2], &len))) {
+            if (!resolve_addr(dbg, argv[1], 0xFFFF, &a) || (argc > 2 && !parse_count(argv[2], &len))) {
                 fprintf(out, "w: usage is w addr [len]\n");
                 continue;
             }
@@ -410,7 +557,7 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
             }
             char *eq = strchr(argv[1], '=');
             unsigned long v;
-            if (!eq || (*eq = '\0', !parse_hex(eq + 1, 0xFFFF, &v)) || !set_register(cpu, argv[1], v)) {
+            if (!eq || (*eq = '\0', !resolve_addr(dbg, eq + 1, 0xFFFF, &v)) || !set_register(cpu, argv[1], v)) {
                 fprintf(out, "r: usage is r reg=value, e.g. r hl=1234 or r a=0f\n");
                 continue;
             }
@@ -418,7 +565,7 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
         } else if (!strcmp(cmd, "m") || !strcmp(cmd, "mem")) {
             unsigned long a;
             long len = 64;
-            if (argc < 2 || !parse_hex(argv[1], 0xFFFF, &a) || (argc > 2 && !parse_count(argv[2], &len))) {
+            if (argc < 2 || !resolve_addr(dbg, argv[1], 0xFFFF, &a) || (argc > 2 && !parse_count(argv[2], &len))) {
                 fprintf(out, "m: usage is m addr [len]\n");
                 continue;
             }
@@ -426,13 +573,13 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
         } else if (!strcmp(cmd, "u") || !strcmp(cmd, "dis")) {
             unsigned long a = cpu->pc;
             long n = 8;
-            if ((argc > 1 && !parse_hex(argv[1], 0xFFFF, &a)) || (argc > 2 && !parse_count(argv[2], &n))) {
+            if ((argc > 1 && !resolve_addr(dbg, argv[1], 0xFFFF, &a)) || (argc > 2 && !parse_count(argv[2], &n))) {
                 fprintf(out, "u: usage is u [addr] [n]\n");
                 continue;
             }
             uint16_t pc = (uint16_t)a;
             for (long k = 0; k < n; k++) {
-                print_insn(out, cpu, pc);
+                print_insn(dbg, out, cpu, pc);
                 pc = (uint16_t)(pc + decode_instruction(cpu->memory, pc).length);
             }
         } else if (!strcmp(cmd, "q") || !strcmp(cmd, "quit")) {
@@ -476,13 +623,13 @@ int z80dbg_before_step(Z80Debugger *dbg, Z80 *cpu) {
         dbg->next_sp = -1;
         fflush(stdout);   // the program's output so far lands before ours
         fprintf(stderr, "[%s] ", why);
-        print_insn(stderr, cpu, pc);
+        print_insn(dbg, stderr, cpu, pc);
         if (prompt(dbg, cpu) == Z80DBG_QUIT) return Z80DBG_QUIT;
         if (dbg->detached) return Z80DBG_RUN;
     }
 
     dbg->last_pc = cpu->pc;
-    if (dbg->step_left > 0) print_insn(stderr, cpu, cpu->pc);
+    if (dbg->step_left > 0) print_insn(dbg, stderr, cpu, cpu->pc);
     return Z80DBG_RUN;
 }
 

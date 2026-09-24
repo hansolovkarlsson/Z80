@@ -157,17 +157,62 @@ static int run_pass(PPResult *pp, AsmCtx *ctx, int pass) {
     return errors;
 }
 
+// -s FILE: every symbol, one per line, as z80asm source a program could
+// INCLUDE, with a comment saying whether it is a label or an EQU. The
+// debugger's --symbols reads it, and uses only the labels to name
+// addresses: an EQU may be a plain number (a count, a character) that only
+// happens to equal some address.
+static int symbol_cmp(const void *a, const void *b) {
+    const Symbol *x = *(Symbol *const *)a, *y = *(Symbol *const *)b;
+    if (x->value != y->value) return x->value < y->value ? -1 : 1;
+    return strcmp(x->name, y->name);
+}
+
+static int write_symbols(SymTab *t, const char *path, const char *source) {
+    size_t n = 0;
+    for (Symbol *sym = t->head; sym; sym = sym->next) if (sym->defined) n++;
+    Symbol **list = malloc((n ? n : 1) * sizeof *list);
+    if (!list) return 0;
+    n = 0;
+    for (Symbol *sym = t->head; sym; sym = sym->next) if (sym->defined) list[n++] = sym;
+    qsort(list, n, sizeof *list, symbol_cmp);
+
+    FILE *f = fopen(path, "w");
+    if (!f) {
+        free(list);
+        return 0;
+    }
+    fprintf(f, "; symbols from %s, written by z80asm -s\n", source);
+    for (size_t k = 0; k < n; k++) {
+        char value[24];
+        long v = list[k]->value;
+        if (v < 0) snprintf(value, sizeof value, "%ld", v);
+        else {
+            char hex[20];
+            snprintf(hex, sizeof hex, "%04lX", v);
+            snprintf(value, sizeof value, "%s%sh", (hex[0] >= 'A') ? "0" : "", hex);
+        }
+        fprintf(f, "%-24s equ %-8s ; %s\n", list[k]->name, value, list[k]->is_equ ? "equ" : "label");
+    }
+    fclose(f);
+    free(list);
+    return 1;
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        fprintf(stderr, "usage: %s <input.asm> [-o output.com]\n", argv[0]);
+        fprintf(stderr, "usage: %s <input.asm> [-o output.com] [-s symbols.sym]\n", argv[0]);
         return EXIT_FAILURE;
     }
 
     const char *input_path = argv[1];
     char *output_path = NULL;
+    const char *symbols_path = NULL;
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             output_path = argv[++i];
+        } else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
+            symbols_path = argv[++i];
         }
     }
     char *default_output = NULL;
@@ -210,6 +255,15 @@ int main(int argc, char *argv[]) {
         if (errors > 0 && ctx.pass == 2) {
             fprintf(stderr, "z80asm: %d error(s) in pass 2\n", errors);
         }
+        symtab_free(&symtab);
+        free(image);
+        free(default_output);
+        pp_free(&pp);
+        return EXIT_FAILURE;
+    }
+
+    if (symbols_path && !write_symbols(&symtab, symbols_path, input_path)) {
+        fprintf(stderr, "z80asm: cannot write '%s': %s\n", symbols_path, strerror(errno));
         symtab_free(&symtab);
         free(image);
         free(default_output);
