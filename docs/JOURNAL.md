@@ -213,6 +213,13 @@ are errors and the check looked only after the broken save. Moved after
 the clean save, it fails as it should. The assembler is never taken from
 `PATH`, for the reason the morning's postmortem gives.
 
+Last for the extension, hover: a name's defining line, or a number's value
+in every base. The number reading is checked against `z80asm` itself, by
+assembling each literal with `DW`, which matters because a bare number is
+decimal in the assembler and hex in the debugger: the same `100` means two
+different things in two tools of the same repo, and the hover has to follow
+the one whose source it is reading.
+
 Then symbol files for the ABC ROMs. The rule was that every name comes
 from an address a document already states, so three search agents
 collected the claims with their sources, and each claim was then checked

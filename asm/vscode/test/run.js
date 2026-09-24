@@ -149,15 +149,17 @@ let ext = null;
 function loadExtension() {
     if (ext) return ext;
     const Module = require('module');
-    ext = { provider: null, definer: null, onSave: null, config: {}, warnings: [], markers: new Map() };
+    ext = { provider: null, definer: null, hoverer: null, onSave: null, config: {}, warnings: [], markers: new Map() };
     class CompletionItem { constructor(label, kind) { this.label = label; this.kind = kind; } }
     class Position { constructor(line, character) { this.line = line; this.character = character; } }
     class Location { constructor(uri, pos) { this.file = uri.fsPath; this.line = pos.line; this.character = pos.character; } }
     class Range { constructor(l1, c1, l2, c2) { this.start = { line: l1, character: c1 }; this.end = { line: l2, character: c2 }; } }
     class Diagnostic { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; } }
+    class MarkdownString { constructor(value) { this.value = value; } }
+    class Hover { constructor(contents) { this.contents = contents; } }
     const event = (key) => (cb) => { if (key) ext[key] = cb; return { dispose() {} }; };
     const fake = {
-        CompletionItem, Position, Location, Range, Diagnostic,
+        CompletionItem, Position, Location, Range, Diagnostic, MarkdownString, Hover,
         DiagnosticSeverity: { Error: 'Error' },
         Uri: { file: (f) => ({ fsPath: f, toString: () => f }) },
         CompletionItemKind: { Keyword: 'Keyword', Function: 'Function', Field: 'Field', Constant: 'Constant',
@@ -172,6 +174,7 @@ function loadExtension() {
         languages: {
             registerCompletionItemProvider: (lang, p) => { ext.provider = p; return { dispose() {} }; },
             registerDefinitionProvider: (lang, p) => { ext.definer = p; return { dispose() {} }; },
+            registerHoverProvider: (lang, p) => { ext.hoverer = p; return { dispose() {} }; },
             createDiagnosticCollection: () => ({
                 set: (uri, list) => ext.markers.set(uri.fsPath, list),
                 delete: (uri) => ext.markers.delete(uri.fsPath),
@@ -284,10 +287,56 @@ async function diagnosticsChecks() {
     report('error-markers', problems);
 }
 
+// Hover. Numbers are checked against the assembler itself: each literal is
+// assembled with DW and the two bytes it produced must be the value shown.
+// Names are checked against the defining line found by a text search.
+function hoverChecks() {
+    const e = loadExtension();
+    const problems = [];
+    const hoverAt = (file, lineText, at) => {
+        const text = fs.readFileSync(file, 'utf8');
+        const doc = { getText: () => text, uri: { fsPath: file }, lineAt: () => ({ text: lineText }) };
+        const h = e.hoverer.provideHover(doc, { line: 0, character: lineText.indexOf(at) + 1 });
+        return h ? h.contents.value : null;
+    };
+    const hello = path.join(ROOT, 'asm/examples/hello.asm');
+
+    const literals = ['0FFh', '0xFF', '$FF', '1100b', '100', '41h', '0', '65535', '$1234', '0ABCDh', '101b', '7Fh'];
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'z80asm-hover-'));
+    fs.writeFileSync(path.join(tmp, 'n.asm'), '        org 0\n' + literals.map((l) => `        dw ${l}`).join('\n') + '\n');
+    execFileSync(path.join(ROOT, 'bin/z80asm'), [path.join(tmp, 'n.asm'), '-o', path.join(tmp, 'n.com')], { stdio: 'ignore' });
+    const bytes = fs.readFileSync(path.join(tmp, 'n.com'));
+    fs.rmSync(tmp, { recursive: true, force: true });
+    literals.forEach((lit, k) => {
+        const assembled = bytes[2 * k] | (bytes[2 * k + 1] << 8);
+        const shown = hoverAt(hello, `        dw ${lit}`, lit);
+        if (!shown || !shown.includes(`= ${assembled} =`)) problems.push(`${lit}: z80asm made ${assembled}; the hover says ${shown}`);
+    });
+    const a = hoverAt(hello, '        ld a, 41h', '41h');
+    if (!a || !a.includes("'A'")) problems.push(`41h does not show as 'A': ${a}`);
+
+    const helloLine = (re) => fs.readFileSync(hello, 'utf8').split(/\r?\n/).findIndex((l) => re.test(l));
+    const loop = hoverAt(hello, '        djnz count_loop', 'count_loop');
+    if (!loop || !loop.includes('label `count_loop`') || !loop.includes(`hello.asm:${helloLine(/^count_loop:/) + 1}`))
+        problems.push(`count_loop hover: ${loop}`);
+    const inc = path.join(ROOT, 'asm/examples/include_test.asm');
+    const defsText = fs.readFileSync(path.join(ROOT, 'asm/examples/include_defs.inc'), 'utf8').split(/\r?\n/);
+    const bdosLine = defsText.find((l) => /^BDOS\b/.test(l)).trim();
+    const bdos = hoverAt(inc, '        call BDOS', 'BDOS');
+    if (!bdos || !bdos.includes('constant `BDOS`') || !bdos.includes(bdosLine) || !bdos.includes('include_defs.inc'))
+        problems.push(`BDOS hover: ${bdos}`);
+    const mac = hoverAt(inc, '        PRINTMSG msg', 'PRINTMSG');
+    if (!mac || !mac.includes('macro `PRINTMSG`')) problems.push(`PRINTMSG hover: ${mac}`);
+    if (hoverAt(hello, '        djnz count_loop', 'djnz')) problems.push('a mnemonic has a hover');
+    if (hoverAt(hello, '        nop   ; 0FFh count_loop', '0FFh')) problems.push('a number inside a comment has a hover');
+    report('hover', problems);
+}
+
 (async () => {
     keywordChecks();
     scannerChecks();
     completionChecks();
+    hoverChecks();
     await diagnosticsChecks();
     await grammarChecks();
     process.exit(failed ? 1 : 0);

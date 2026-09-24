@@ -188,5 +188,51 @@ function findAssembler(startDir, exists = fs.existsSync) {
     }
 }
 
+// A numeric literal's value, read the way z80asm reads one
+// (docs/ASSEMBLER.md, "Numbers and literals"), or null. Note that a bare
+// number is decimal here, unlike in the debugger, where it is hex.
+function numberValue(token) {
+    let m;
+    if ((m = /^0x([0-9a-f]+)$/i.exec(token))) return parseInt(m[1], 16);
+    if ((m = /^\$([0-9a-f]+)$/i.exec(token))) return parseInt(m[1], 16);
+    if ((m = /^([0-9][0-9a-f]*)h$/i.exec(token))) return parseInt(m[1], 16);
+    if ((m = /^([01]+)b$/i.exec(token))) return parseInt(m[1], 2);
+    if (/^[0-9]+$/.test(token)) return parseInt(token, 10);
+    return null;
+}
+
+// The numeric literal under a cursor, or null.
+function numberAt(lineText, character) {
+    const re = /\$[0-9A-Fa-f]+|\b0[xX][0-9A-Fa-f]+|\b[0-9][0-9A-Fa-f]*[hH]\b|\b[0-9]+[bB]?\b/g;
+    for (const m of lineText.matchAll(re)) {
+        if (m.index <= character && character <= m.index + m[0].length && numberValue(m[0]) !== null) return m[0];
+    }
+    return null;
+}
+
+// Hover text, as Markdown, for a name or a number under the cursor; null
+// when there is nothing to say (a mnemonic, a register, a comment).
+function hoverText(syms, lineText, character, read = (f) => fs.readFileSync(f, 'utf8')) {
+    if (stripComment(lineText).length < character) return null;
+    const num = numberAt(lineText, character);
+    if (num !== null) {
+        const v = numberValue(num);
+        const hex = v.toString(16).toUpperCase();
+        const parts = [`${v}`, `${/^[A-F]/.test(hex) ? '0' : ''}${hex}h`, `${v.toString(2)}b`];
+        if (v >= 0x20 && v < 0x7F) parts.push(`'${String.fromCharCode(v)}'`);
+        return `\`${num}\` = ${parts.join(' = ')}`;
+    }
+    const name = wordAt(lineText, character);
+    if (!name) return null;
+    const defs = definitionsOf(syms, name);
+    if (!defs.length) return null;
+    return defs.map((d) => {
+        let source = '';
+        try { source = read(d.file).split(/\r?\n/)[d.line].trim(); } catch (e) { /* location still useful */ }
+        const kind = syms.macros.includes(d) ? 'macro' : syms.equs.includes(d) ? 'constant' : 'label';
+        return `${kind} \`${d.name}\`, ${path.basename(d.file)}:${d.line + 1}\n\n\`\`\`z80asm\n${source}\n\`\`\``;
+    }).join('\n\n---\n\n');
+}
+
 module.exports = { keywords, stripComment, scanText, scanFile, prefersLowercase, wordAt, definitionsOf,
-                   parseAssemblerErrors, findAssembler };
+                   parseAssemblerErrors, findAssembler, numberValue, numberAt, hoverText };

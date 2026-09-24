@@ -1,7 +1,7 @@
 # z80asm for VS Code
 
-Syntax colouring, completion, go-to-definition and error markers for
-source written for this repository's assembler, `bin/z80asm`
+Syntax colouring, completion, go-to-definition, hover and error markers
+for source written for this repository's assembler, `bin/z80asm`
 ([`docs/ASSEMBLER.md`](../../docs/ASSEMBLER.md)).
 It covers `.asm`, `.z80`, `.mac`, `.inc` and `.sym` files.
 
@@ -36,6 +36,11 @@ are offered in the case the file already uses.
 macro jumps to where it is defined, including into an `INCLUDE`d file.
 Names match exactly, since labels are case-sensitive in the assembler, and
 nothing inside a comment or a macro's `&name` has one.
+
+**Hover** over a label, constant or macro shows its defining line and where
+it is. Over a number it shows the value in decimal, hex and binary, and the
+character for a printable byte, read by the assembler's own rules: a bare
+`100` is decimal here, `0FFh`, `0xFF` and `$FF` are hex, `1100b` is binary.
 
 **Error markers** come from the assembler itself: on opening and on saving
 a `.asm`, `.z80` or `.mac` file, the extension runs `z80asm` on it and
@@ -75,10 +80,12 @@ install and tests the grammar with the code that will run it. It checks:
 - **the symbol scanner against `z80asm -s`** on every example and on
   `zexall.mac`: the same labels and constants, no more and no fewer.
 - **the grammar**, by tokenising real lines and asserting on their scopes.
-- **completion, go-to-definition and error markers**, by calling the
+- **completion, go-to-definition, hover and error markers**, by calling the
   extension's own code through a stand-in for VS Code's API. The marker
   check writes its own broken files, so the lines that must be marked are
-  known from the input. The places a definition should land
+  known from the input. The hover's number reading is checked against the
+  assembler: each literal is assembled with `DW`, and the two bytes must be
+  the value shown. The places a definition should land
   are found by a plain text search of the file, not by the scanner.
 
 The grammar and `keywords.json` are generated: edit `build_grammar.py` and

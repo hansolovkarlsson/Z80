@@ -1,5 +1,5 @@
-// asm/vscode/extension.js - completion, go-to-definition and error markers
-// for z80asm source. Colouring is the grammar's job (syntaxes/); the first
+// asm/vscode/extension.js - completion, go-to-definition, hover and error
+// markers for z80asm source. Colouring is the grammar's job (syntaxes/); the first
 // two come from lib.js's scan of the file and everything it INCLUDEs, and
 // the markers from running the real assembler.
 //
@@ -73,6 +73,15 @@ function define(document, position) {
     const syms = lib.scanFile(document.uri.fsPath, document.getText());
     return lib.definitionsOf(syms, name).map((d) =>
         new vscode.Location(vscode.Uri.file(d.file), new vscode.Position(d.line, d.column)));
+}
+
+// Hover: a name's defining line and where it is, or a number's value in
+// every base, from lib.js. Nothing for a mnemonic, a register or a comment.
+function hover(document, position) {
+    const line = document.lineAt(position.line).text;
+    const syms = lib.scanFile(document.uri.fsPath, document.getText());
+    const text = lib.hoverText(syms, line, position.character);
+    return text ? new vscode.Hover(new vscode.MarkdownString(text)) : null;
 }
 
 // --- error markers: the assembler's own verdict, on open and on save -----
@@ -153,6 +162,7 @@ function activate(context) {
         diagnostics,
         vscode.languages.registerCompletionItemProvider('z80asm', { provideCompletionItems: provide }),
         vscode.languages.registerDefinitionProvider('z80asm', { provideDefinition: define }),
+        vscode.languages.registerHoverProvider('z80asm', { provideHover: hover }),
         vscode.workspace.onDidSaveTextDocument(check),
         vscode.workspace.onDidOpenTextDocument(check),
         vscode.workspace.onDidCloseTextDocument((d) => clear(d.uri.fsPath)));

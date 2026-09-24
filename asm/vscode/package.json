@@ -1,8 +1,8 @@
 {
   "name": "z80asm",
   "displayName": "z80asm",
-  "description": "Syntax colouring, completion, go-to-definition and error markers for this repository's Z80 assembler (bin/z80asm)",
-  "version": "0.3.0",
+  "description": "Syntax colouring, completion, go-to-definition, hover and error markers for this repository's Z80 assembler (bin/z80asm)",
+  "version": "0.4.0",
   "publisher": "z80-project",
   "license": "SEE LICENSE IN ../../LICENSE",
   "engines": {

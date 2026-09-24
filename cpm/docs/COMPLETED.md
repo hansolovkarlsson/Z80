@@ -1340,3 +1340,15 @@ against them. It failed under five injected faults, but only after one
 test fix: writing the output beside the source first passed, because the
 assembler writes nothing when there are errors and the leftover-file check
 ran after the broken save. It now runs after the clean one, and fails.
+
+### Hover
+
+A name shows its defining line, its kind (label, constant or macro) and
+where it is; a number shows its value in decimal, hex and binary, and the
+character for a printable byte. Numbers are read by the assembler's rules,
+where a bare `100` is decimal (in the debugger it is hex), and the `hover`
+check proves it the strongest way available: twelve literals are
+assembled with `DW` and the hover must show the value in the two bytes
+`z80asm` produced. It failed under all four injected faults: bare numbers
+read as hex, binary read as decimal, the comment guard removed, and every
+name called a label.
