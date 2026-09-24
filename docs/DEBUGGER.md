@@ -99,6 +99,12 @@ address (`b BDOS`), but is never shown in place of a number, since it may
 be a count or a character that only happens to equal some address. A file
 written by hand without the `; label`/`; equ` comments is read as labels.
 
+**The ABC ROMs have symbol files too**, in each machine's
+`resources/rom/`: `abc80.sym` (with `abc80-abcdos.sym` for the DOS ROM),
+`abc802.sym` and `abc806.sym`. There is no source for a ROM, so these are
+written by hand, from addresses the repo's documents state and the ROM
+bytes confirm.
+
 A name wins over a number spelled the same way: with a label called
 `beef`, `b beef` means the label. `$BEEF`, `0xBEEF` and `0BEEFh` always
 mean the number, since no name starts with `$` or a digit.

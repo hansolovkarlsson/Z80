@@ -74,3 +74,19 @@ No redistribution license is claimed or granted; they are included as the
 real software this emulator is validated against, on exactly the same
 footing as the ABC80 ROM images already in this repository. See the
 repository's top-level `README.md` License section.
+
+## Symbol files
+
+`abc802.sym` name addresses in these ROMs for the debugger (`--symbols`, see
+[`docs/DEBUGGER.md`](../../../docs/DEBUGGER.md)). Every name is an address
+this repo's own documents state, checked against the ROM bytes before it
+went in, with its source in brackets on its line. Claims the bytes did not
+bear out were left out rather than guessed, so the files are short on
+purpose and grow as investigations pin down more.
+
+Its `0x6000`-`0x7FFF` names are for the default DOS ROM, `ABC802-dos.32-31.bin`
+(UFD-DOS v.20), not for v.19.
+
+```
+bin/abc802 --symbols abc802/resources/rom/abc802.sym --break ctc3_clock_isr
+```

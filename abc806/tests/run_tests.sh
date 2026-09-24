@@ -533,4 +533,18 @@ tl_want_eq "$(printf '%s\n' "$out" | grep -c '^\[breakpoint\]')" "1" "the number
 tl_want_eq "$(printf '%s\n' "$out" | grep -cE '^\| 42 +\|$')" "1" "BASIC answering PRINT 6*7 afterwards"
 tl_end "$out"
 
+# The ROM symbol files (resources/rom/*.sym) load whole and name what they
+# say. The expected count is taken from the file, not written here, and the
+# spot checks look for a name inside an operand, which needs both the loader
+# and the display to work.
+DBG_SYM_SCRIPT="$(mktemp)"
+printf 'u clear_hires_plane 4\nu fg_dispatch 1\nq\n' > "$DBG_SYM_SCRIPT"
+out=$("$ABC806" --symbols "$ROOT/abc806/resources/rom/abc806.sym" --debug --debug-script "$DBG_SYM_SCRIPT" < /dev/null 2>&1)
+rm -f "$DBG_SYM_SCRIPT"
+tl_begin "debugger-rom-symbols"
+tl_want "$out" "[z80dbg: $(grep -c '^[a-z]' "$ROOT/abc806/resources/rom/abc806.sym") symbols from" "every line of abc806.sym loading"
+tl_want "$out" "clear_hires_plane_ldir:" "the plane clear's LDIR labelled"
+tl_want "$out" "LD A,(fg_bank_count)" "the bank count named in the operand"
+tl_end "$out"
+
 tl_summary "abc806"

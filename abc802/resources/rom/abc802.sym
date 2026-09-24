@@ -1,0 +1,40 @@
+; ABC802 system ROM (basic.02/12/22-11 at 0000-5FFF, and the default DOS
+; ROM dos.32-31, UFD-DOS v.20, at 6000-7FFF) and the RAM cells it uses.
+; The 6000-7FFF names are for v.20 only, not the v.19 image dos.32-21.
+;
+; Every name below is an address this repo's own documents state, checked
+; against the ROM bytes on 2026-09-24 before it went in; the source is in
+; brackets. Loaded with --symbols (docs/DEBUGGER.md). Names that do not
+; correspond to a documented claim, or whose claim the bytes did not bear
+; out, were left out on purpose rather than guessed.
+reset                    equ 0000h   ; label JR to the boot code [ABC802_REFERENCE]
+wait_first_key           equ 03F5h   ; label loop polling bit 7 of FFE2 [ABC802_REFERENCE]
+basic_operator_table     equ 0625h   ; label operators in precedence order [ABC802_BASIC_REFERENCE]
+basic_statement_table    equ 08A5h   ; label statement keywords [ABC802_BASIC_REFERENCE]
+ctc3_clock_isr           equ 3A76h   ; label CTC channel 3 tick, 93.75 Hz [ABC802_REFERENCE]
+str_error                equ 3D6Eh   ; label the string 'Error' [ABC802_BASIC_REFERENCE]
+basic_command_table      equ 4057h   ; label command keywords, 17 entries [ABC802_BASIC_REFERENCE]
+basic_ext_table          equ 4BFAh   ; label extension table, WIDTH [ABC802_BASIC_REFERENCE]
+abcbus_cmd03             equ 6077h   ; label L6077, bus command 03 [ABC802_FLOPPY_SCOPING]
+abcbus_cmd03_load        equ 6080h   ; label L6080, LD C,03h [ABC802_FLOPPY_SCOPING]
+abcbus_cmd0c             equ 6084h   ; label L6084, bus command 0C [ABC802_FLOPPY_SCOPING]
+abcbus_cmd0c_load        equ 608Dh   ; label L608D, LD C,0Ch [ABC802_FLOPPY_SCOPING]
+abcbus_driver            equ 608Fh   ; label the generic ABC-bus driver [ABC802_FLOPPY_SCOPING]
+abcbus_idle_test         equ 6107h   ; label IN A,(01h) / BIT 7,A: idle [ABC802_REFERENCE]
+abcbus_bit2_test         equ 610Dh   ; label AND 05h / XOR 01h: bit 2 clear [ABC802_REFERENCE]
+abcbus_ini_loop          equ 612Dh   ; label waits on status bit 0 [ABC802_REFERENCE]
+abcbus_outi_loop         equ 6140h   ; label waits on status bit 0 [ABC802_REFERENCE]
+abcbus_aux_status        equ 6158h   ; label OR A on the auxiliary status [ABC802_REFERENCE]
+abcbus_wait_ready        equ 616Fh   ; label L616F, waits for status bit 7 [ABC802_COMPLETED]
+abcbus_select_mask       equ 6172h   ; label AND 3Fh before OUT (01h) [ABC802_FLOPPY_SCOPING]
+abcbus_poll_loop         equ 6196h   ; label aborts on status 00 or FF [ABC802_REFERENCE]
+dos_device_names         equ 6E37h   ; label device names, DR0 first [ABC802_BASIC_REFERENCE]
+dos_command_table        equ 6F87h   ; label BYE, KILL, NAME, AS [ABC802_BASIC_REFERENCE]
+cassette_rx_isr          equ 739Ah   ; label SIO receive ISR, software checksum [CLAUDE.md]
+kbd_input_routines       equ 7EB0h   ; label received-key routines, 7EB0-7F40 [ABC802_REFERENCE]
+dart_vector_table        equ 0FFB0h  ; label five vectors the ROM copies in [ABC802_REFERENCE]
+vec_dart_b_rx            equ 0FFB4h  ; label DART B receive (keyboard) [ABC802_REFERENCE]
+vec_ctc3                 equ 0FFD6h  ; label CTC channel 3, holds 3A76 [ABC802_REFERENCE]
+kbd_ready_flag           equ 0FFE2h  ; label bit 7 set by the keyboard handler [ABC802_REFERENCE]
+cassette_state_ptr       equ 0FFE4h  ; label record state handler [ABC802_COMPLETED]
+cassette_checksum        equ 0FFE6h  ; label 16-bit running checksum [ABC802_COMPLETED]

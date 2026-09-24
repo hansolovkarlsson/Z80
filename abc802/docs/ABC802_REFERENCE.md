@@ -295,8 +295,11 @@ pulse attention and reset. A transaction is a four-byte command header
 followed by a 256-byte sector transfer, with `INI`/`OUTI` block moves
 gated on the status byte.
 
-**Device-select codes**, from the ROM's own select table at
-`0x61DA`-`0x61FB`:
+**Device-select codes.** These were recorded as coming from a select table
+at `0x61DA`-`0x61FB`, but that range holds code in both DOS images
+(`LD HL,(FD12h)`, `LD A,(HL)`, `INC A`, `JR Z`, ...), checked on 2026-09-24
+while writing `resources/rom/abc802.sym`. The codes below are unaffected;
+where in the ROM they come from is not confirmed:
 
 | Select | Device |
 |---|---|

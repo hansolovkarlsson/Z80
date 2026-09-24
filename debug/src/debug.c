@@ -162,7 +162,11 @@ static bool load_symbols(Z80Debugger *dbg, const char *path) {
         bool is_label = true;
         char *semi = strchr(line, ';');
         if (semi) {
-            is_label = strstr(semi, "equ") == NULL;
+            // Only the comment's first word decides, so a hand-written
+            // comment that merely contains "equ" ("frequency") stays a label.
+            char kind[8] = "";
+            sscanf(semi + 1, "%7s", kind);
+            is_label = strcasecmp(kind, "equ") != 0;
             *semi = '\0';
         }
         char name[64], equ[8], value[32];

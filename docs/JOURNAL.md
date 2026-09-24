@@ -189,6 +189,18 @@ first: no script or test in the repo passes `-o` or `-l`, and the README's
 own example already wrote `-l 0x34`. `z80dasm/hex-arguments` pins it, and
 with C's base detection put back it fails on both `-o 0100` and `-l 34`.
 
+Then symbol files for the ABC ROMs. The rule was that every name comes
+from an address a document already states, so three search agents
+collected the claims with their sources, and each claim was then checked
+in the machine with the debugger itself (`u` and `m` at the address). That
+second step is what the files are worth. It settled three document
+disagreements on the ABC802, found its reference calling a stretch of code
+a "select table" (`61DA`, code in both DOS images, now corrected), and kept
+out two descriptions the bytes contradicted and two table starts the bytes
+could not confirm. The first draft of the loader would also have misread
+any hand-written comment containing "equ"; only the comment's first word
+decides now.
+
 Then `e`, memory writes from the prompt, the second piece of milestone 2
 and a small one. The only design question was watchpoints: a write to a
 watched byte would have been reported, one step later, as a change the

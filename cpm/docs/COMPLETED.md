@@ -1255,3 +1255,26 @@ data write and a code patch, `cp 5` to `cp 6`); every byte is validated
 before any is written, so `e 0135 58 zz` writes nothing; and a write to a
 watched byte updates the watch's snapshot, so the debugger's own write is
 not reported as the program's.
+
+### Symbol files for the ABC ROMs
+
+`abc80.sym`, `abc80-abcdos.sym`, `abc802.sym` and `abc806.sym`, in each
+machine's `resources/rom/`: 130 names between them. Three searches pulled
+every address the documents state with a meaning, and every one was then
+disassembled or dumped in the machine itself before it went in. Doing that
+settled three disagreements between documents (the ABC802's device-name
+table is at `6E37`, not `6E40`; its DOS command table at `6F87`, not
+`6F80`; `L6077` and `L6080` are an outer and an inner entry, not rival
+claims), and turned up one plain error: the ABC802 reference's "select
+table at `61DA`" is code in both DOS images, now corrected there. Claims
+the bytes did not bear out (`0819`, `7677`) and tables whose start could
+not be pinned (`0676`, `0810`) were left out.
+
+The loader's label/equ test changed on the way: it had looked for `equ`
+anywhere in a line's comment, which a hand-written comment mentioning
+"frequency" would have tripped. Only the first word counts now.
+
+`debugger-rom-symbols` in each ABC suite takes its expected symbol count
+from the file itself and checks a name inside an operand
+(`LD A,(kbd_ready_flag)`), which needs both the loader and the display.
+It failed on a malformed line and on a wrong address.

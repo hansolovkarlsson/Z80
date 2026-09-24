@@ -1,0 +1,39 @@
+; ABC80 DOS ROM ABCDOS80.bin at 6000-6FFF, mapped by --disk, and its RAM.
+; Not valid with --dos-rom UFD80V20.bin, which has a different layout.
+;
+; Every name below is an address this repo's own documents state, checked
+; against the ROM bytes on 2026-09-24 before it went in; the source is in
+; brackets. Loaded with --symbols (docs/DEBUGGER.md). Names that do not
+; correspond to a documented claim, or whose claim the bytes did not bear
+; out, were left out on purpose rather than guessed.
+dos_jt_read              equ 600Fh   ; label jump table: JP 6068 [ABC80_COMPLETED]
+dos_jt_write             equ 6012h   ; label jump table: JP 60A1 [ABC80_COMPLETED]
+dos_init_probe           equ 604Bh   ; label JP 6D24, the init the base ROM probes for [ABC80_COMPLETED]
+dos_read_sector          equ 6068h   ; label L6068, read [ABC80_COMPLETED]
+dos_read_body            equ 606Bh   ; label L606B, low-level read [ABC80_COMPLETED]
+dos_read_cmd             equ 6071h   ; label LD B,03h: bus command 03 [ABC80_REFERENCE]
+dos_read_retry           equ 608Fh   ; label L608F, read failure path [ABC80_COMPLETED]
+dos_write_sector         equ 60A1h   ; label L60A1, write [ABC80_COMPLETED]
+dos_write_body           equ 60A4h   ; label L60A4, low-level write [ABC80_COMPLETED]
+dos_write_cmd            equ 60AAh   ; label LD B,0Ch: bus command 0C [ABC80_REFERENCE]
+dos_send_loop            equ 60B4h   ; label L60B4, send loop [ABC80_COMPLETED]
+dos_write_ok             equ 60C1h   ; label RET Z on a successful write [ABC80_COMPLETED]
+dos_init_retry           equ 60D2h   ; label L60D2, retry counter := 5 [ABC80_COMPLETED]
+dos_status_bit3          equ 60E9h   ; label AND 08h: end-of-command bit 3 [ABC80_COMPLETED]
+dos_card_select          equ 60F1h   ; label LD A,2Dh / OUT (01h): select the ABC830 [ABC80_REFERENCE]
+dos_channel_decode       equ 6106h   ; label L6106, shared channel decode [ABC80_COMPLETED]
+dos_check_pending        equ 6118h   ; label BIT 3,A after a command header [ABC80_COMPLETED]
+dos_send_header          equ 612Bh   ; label L612B, the 4-byte command header [ABC80_COMPLETED]
+dos_recv_loop            equ 614Dh   ; label L614D, receive loop [ABC80_COMPLETED]
+dos_bufptr_low           equ 61C0h   ; label LD (FD12),A, low byte only [ABC80_COMPLETED]
+dos_init                 equ 6D24h   ; label L6D24, DOS card init [ABC80_COMPLETED]
+dos_device_handler       equ 6DAAh   ; label L6DAA, the shared DRn handler [ABC80_COMPLETED]
+dos_error_msg_lookup     equ 6E82h   ; label L6E82, message lookup [ABC80_COMPLETED]
+dos_device_names         equ 6EB5h   ; label DR0-DR6, 7-byte entries [ABC80_REFERENCE]
+dos_dr_entry             equ 6EE4h   ; label JP 6DAA, where every DRn entry points [ABC80_COMPLETED]
+dos_buffers              equ 0F500h  ; label eight 256-byte channel buffers [ABC80_COMPLETED]
+dos_drive                equ 0FD01h  ; label current drive, masked to 3 bits [ABC80_COMPLETED]
+dos_buf_ptr              equ 0FD12h  ; label buffer pointer [ABC80_COMPLETED]
+dos_status_cache         equ 0FD15h  ; label cached port-0 status [ABC80_COMPLETED]
+dos_retry_count          equ 0FD18h  ; label retry counter [ABC80_COMPLETED]
+dos_old_chain_head       equ 0FD35h  ; label saved original chain head [ABC80_COMPLETED]

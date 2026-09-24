@@ -67,10 +67,9 @@ Aspirational, not yet scoped:
   data view of memory the machines divert (ABC802/806 character RAM, the
   ABC806 plane), which needs a side-effect-free peek per machine because
   the ABC806's read hook latches attribute bytes; and the GTK apps.
-  Symbols (`z80asm -s`, `--symbols`) and memory writes (`e`) are done.
-  A ROM has no source, so no symbol file: one written by hand works, since
-  the reader treats uncommented lines as labels, but none exists yet for
-  any of the ABC ROMs.
+  Symbols (`z80asm -s`, `--symbols`) and memory writes (`e`) are done,
+  and each ABC machine has a hand-written ROM symbol file in its
+  `resources/rom/`, which grows as investigations pin down more addresses.
 - **More machine targets, such as the ZX Spectrum.** It is Z80-based, so it
   would link `z80core/` the way the three ABC targets do rather than
   bringing a core of its own, which is what keeps it in this repo, unlike

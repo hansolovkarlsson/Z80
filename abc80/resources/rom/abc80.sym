@@ -1,0 +1,55 @@
+; ABC80 base ROM (3506_3 a5/a3/a4/a2, 0000-3FFF) and the RAM cells it uses.
+; The DOS ROM's names are in abc80-abcdos.sym, since that ROM is only mapped
+; with --disk.
+;
+; Every name below is an address this repo's own documents state, checked
+; against the ROM bytes on 2026-09-24 before it went in; the source is in
+; brackets. Loaded with --symbols (docs/DEBUGGER.md). Names that do not
+; correspond to a documented claim, or whose claim the bytes did not bear
+; out, were left out on purpose rather than guessed.
+reset                    equ 0000h   ; label JR to boot_init [ABC80_COMPLETED]
+rst10_error              equ 0010h   ; label RST 10h inline error byte: POP HL / LD A,(HL) [ABC80_COMPLETED]
+im2_vector_entry         equ 0034h   ; label IM 2 vector entry, holds 031E [ABC80_REFERENCE]
+boot_init                equ 0068h   ; label boot init code [ABC80_COMPLETED]
+boot_im2                 equ 006Ah   ; label IM 2 [ABC80_REFERENCE]
+boot_ld_i                equ 008Ch   ; label LD I,A with A=0 [ABC80_REFERENCE]
+boot_sound_clear         equ 0098h   ; label the one boot write of 00 to port 6 [ABC80_COMPLETED]
+boot_ei                  equ 00C5h   ; label the ROM's EI [abc80/emu/src/step.c]
+reset_wait_loop          equ 00CCh   ; label BIT 5,(IY+15) wait loop [ABC80_COMPLETED]
+ready_loop_top           equ 00DEh   ; label top of the READY prompt loop [ABC80_COMPLETED]
+check_jp_opcode          equ 0184h   ; label L0184, requires a C3 (JP) byte [ABC80_COMPLETED]
+cassette_device_entry    equ 018Ch   ; label device-chain record: next, 'CAS', handler [ABC80_COMPLETED]
+kbd_ix_setup             equ 02A5h   ; label LD IX,FDF3 for the keyboard poll [ABC80_REFERENCE]
+read_line                equ 02AAh   ; label L02AA, the line-reading routine [abc80/emu/src/main.c]
+line_editor              equ 02BCh   ; label the line editor, 02BC-02CE [ABC80_COMPLETED]
+kbd_poll_loop            equ 02F1h   ; label steady-state keyboard poll, 02F1-0300 [ABC80_REFERENCE]
+kbd_key_ready            equ 0302h   ; label L0302, a key is ready [ABC80_COMPLETED]
+kbd_consume_key          equ 0316h   ; label debounce finishes consuming a key [ABC80_REFERENCE]
+pio_isr                  equ 031Eh   ; label periodic PIO interrupt handler [ABC80_REFERENCE]
+isr_latch_break          equ 0325h   ; label LD (FE07),A: latch break pending [ABC80_REFERENCE]
+isr_prelatch_key         equ 032Ch   ; label LD (FDF5),A: pre-latch port A [ABC80_REFERENCE]
+isr_reload_debounce      equ 0331h   ; label LD (FDF7),A: reload debounce [ABC80_REFERENCE]
+pio_isr_reti             equ 0336h   ; label the handler's RETI [ABC80_REFERENCE]
+check_clear_break        equ 033Eh   ; label check and clear the break flag [ABC80_COMPLETED]
+edit_cursor_right        equ 0348h   ; label L0348, non-destructive right (Tab) [ABC80_COMPLETED]
+edit_delete_left         equ 035Bh   ; label L035B, delete left [ABC80_COMPLETED]
+cassette_handler         equ 03A4h   ; label handler named by cassette_device_entry's record
+error_dispatch           equ 062Eh   ; label shared error dispatcher [ABC80_COMPLETED]
+resumable_error_table    equ 0659h   ; label 16 error codes that resume [ABC80_COMPLETED]
+device_name_match        equ 07F8h   ; label walks the device chain from FE0A [ABC80_COMPLETED]
+read_ptr_primitive       equ 08A5h   ; label L08A5, two bytes via a pointer [ABC80_COMPLETED]
+reset_program            equ 0A79h   ; label EOFA := BOFA, 0A79-0A9B [ABC80_COMPLETED]
+run_clear_direct_flag    equ 0D5Fh   ; label RUN clears (IY+14) [ABC80_COMPLETED]
+exec_line_0d6f           equ 0D6Fh   ; label L0D6F, once per executed line [ABC80_COMPLETED]
+exec_line_0d90           equ 0D90h   ; label L0D90, once per executed line [ABC80_COMPLETED]
+device_chain_next        equ 101Dh   ; label L101D, next device on a mismatch [ABC80_COMPLETED]
+break_handler            equ 2321h   ; label break handler [ABC80_COMPLETED]
+kbd_state                equ 0FDF3h  ; label keyboard poll IX base [ABC80_REFERENCE]
+kbd_latched_key          equ 0FDF5h  ; label pre-latched port A byte, IX+2 [ABC80_REFERENCE]
+kbd_debounce             equ 0FDF7h  ; label debounce counter, IX+4 [ABC80_REFERENCE]
+break_flag               equ 0FE07h  ; label break pending [ABC80_COMPLETED]
+device_chain_head        equ 0FE0Ah  ; label head of the device-handler chain [ABC80_COMPLETED]
+bofa                     equ 0FE1Ch  ; label start of the program [ABC80_REFERENCE]
+eofa                     equ 0FE1Eh  ; label end of the program, inclusive [ABC80_REFERENCE]
+head                     equ 0FE20h  ; label byte past EOFA [ABC80_REFERENCE]
+direct_mode_flag         equ 0FE24h  ; label (IY+14): 1 direct, 0 running [ABC80_COMPLETED]

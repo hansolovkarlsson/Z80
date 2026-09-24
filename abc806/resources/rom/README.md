@@ -162,3 +162,16 @@ redistribution license is claimed or granted; they are included as the real
 software this emulator is validated against, on exactly the same footing
 as the ABC80 and ABC802 ROM images already in this repository. See the
 repository's top-level `README.md` License section.
+
+## Symbol files
+
+`abc806.sym` name addresses in these ROMs for the debugger (`--symbols`, see
+[`docs/DEBUGGER.md`](../../../docs/DEBUGGER.md)). Every name is an address
+this repo's own documents state, checked against the ROM bytes before it
+went in, with its source in brackets on its line. Claims the bytes did not
+bear out were left out rather than guessed, so the files are short on
+purpose and grow as investigations pin down more.
+
+```
+bin/abc806 --symbols abc806/resources/rom/abc806.sym --break clear_hires_plane
+```

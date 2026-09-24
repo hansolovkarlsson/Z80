@@ -88,3 +88,18 @@ All three downloaded from abc80.net's archive
 `00index.txt` descriptions (`"ABCDOS80.bin ABC-DOS for ABC 80"`, `"FIO-V3.2-8d36.bin
 PROM on FIO board 2708"`).
 
+## Symbol files
+
+`abc80.sym` (the base ROM and its RAM cells) and `abc80-abcdos.sym` (`ABCDOS80.bin` at `0x6000`) name addresses in these ROMs for the debugger (`--symbols`, see
+[`docs/DEBUGGER.md`](../../../docs/DEBUGGER.md)). Every name is an address
+this repo's own documents state, checked against the ROM bytes before it
+went in, with its source in brackets on its line. Claims the bytes did not
+bear out were left out rather than guessed, so the files are short on
+purpose and grow as investigations pin down more.
+
+Load the second only with `--disk` and the default DOS ROM: `UFD80V20.bin`
+has a different layout, and without `--disk` nothing is mapped at `0x6000`.
+
+```
+bin/abc80 abc80/resources/rom --symbols abc80/resources/rom/abc80.sym --break pio_isr
+```

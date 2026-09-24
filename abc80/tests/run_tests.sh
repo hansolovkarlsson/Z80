@@ -460,4 +460,19 @@ tl_want_eq "$(printf '%s\n' "$out" | grep -c '^\[breakpoint\]')" "1" "the number
 tl_want_eq "$(basic_numbers "$out")" "42" "BASIC answering PRINT 6*7 afterwards"
 tl_end "$out"
 
+# The ROM symbol files (resources/rom/*.sym) load whole and name what they
+# say. The expected count is taken from the file, not written here, and the
+# spot checks look for a name inside an operand, which needs both the loader
+# and the display to work.
+DBG_SYM_SCRIPT="$(mktemp)"
+printf 'u reset 1\nu pio_isr 1\nq\n' > "$DBG_SYM_SCRIPT"
+out=$("$ABC80" "$ROMS" --symbols "$ROOT/abc80/resources/rom/abc80.sym" --symbols "$ROOT/abc80/resources/rom/abc80-abcdos.sym" --debug --debug-script "$DBG_SYM_SCRIPT" < /dev/null 2>&1)
+rm -f "$DBG_SYM_SCRIPT"
+tl_begin "debugger-rom-symbols"
+tl_want "$out" "[z80dbg: $(grep -c '^[a-z]' "$ROOT/abc80/resources/rom/abc80.sym") symbols from" "every line of abc80.sym loading"
+tl_want "$out" "[z80dbg: $(grep -c '^[a-z]' "$ROOT/abc80/resources/rom/abc80-abcdos.sym") symbols from" "every line of abc80-abcdos.sym loading"
+tl_want "$out" "JR boot_init" "reset's jump target named"
+tl_want "$out" "pio_isr:" "the interrupt handler's label"
+tl_end "$out"
+
 tl_summary "abc80"

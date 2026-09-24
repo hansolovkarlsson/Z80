@@ -579,4 +579,18 @@ tl_want_eq "$(printf '%s\n' "$out" | grep -c '^\[breakpoint\]')" "1" "the number
 tl_want_eq "$(printf '%s\n' "$out" | grep -cE '^\| 42 +\|$')" "1" "BASIC answering PRINT 6*7 afterwards"
 tl_end "$out"
 
+# The ROM symbol files (resources/rom/*.sym) load whole and name what they
+# say. The expected count is taken from the file, not written here, and the
+# spot checks look for a name inside an operand, which needs both the loader
+# and the display to work.
+DBG_SYM_SCRIPT="$(mktemp)"
+printf 'u wait_first_key 2\nq\n' > "$DBG_SYM_SCRIPT"
+out=$("$ABC802" --symbols "$ROOT/abc802/resources/rom/abc802.sym" --debug --debug-script "$DBG_SYM_SCRIPT" < /dev/null 2>&1)
+rm -f "$DBG_SYM_SCRIPT"
+tl_begin "debugger-rom-symbols"
+tl_want "$out" "[z80dbg: $(grep -c '^[a-z]' "$ROOT/abc802/resources/rom/abc802.sym") symbols from" "every line of abc802.sym loading"
+tl_want "$out" "wait_first_key:" "the first-key loop's label"
+tl_want "$out" "LD A,(kbd_ready_flag)" "the polled flag named in the operand"
+tl_end "$out"
+
 tl_summary "abc802"

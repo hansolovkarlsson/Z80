@@ -1,0 +1,30 @@
+; ABC806 system ROM (six BASIC PROMs at 0000-5FFF, the default DOS PROM
+; dos.66-31 at 6000, the option PROM at 7000) and the RAM cells it uses.
+;
+; Every name below is an address this repo's own documents state, checked
+; against the ROM bytes on 2026-09-24 before it went in; the source is in
+; brackets. Loaded with --symbols (docs/DEBUGGER.md). Names that do not
+; correspond to a documented claim, or whose claim the bytes did not bear
+; out, were left out on purpose rather than guessed.
+reset                    equ 0000h   ; label the Z80 reset vector: JR 0076h [ROM bytes]
+page_map_clear_loop      equ 00D2h   ; label writes all 256 map entries and hrc [JOURNAL]
+eme_enable               equ 00DCh   ; label LD A,80h / OUT (36h),A, the only EME enable [ABC806_REFERENCE]
+config_cts_to_port37     equ 0418h   ; label reads DART B CTS, writes port 37 [ABC806_REFERENCE]
+dos_card_select_mask     equ 6172h   ; label AND 3Fh on the card select [abc806/emu/src/ports.c]
+fgctl_tokenizer          equ 7502h   ; label FGCTL's tokenizer, not its executor [JOURNAL]
+latch_rra_idiom          equ 7543h   ; label LD A,08h / RRA [ABC806_REFERENCE]
+latch_write_1            equ 7546h   ; label option PROM latch write [ABC806_REFERENCE]
+latch_write_2            equ 754Dh   ; label option PROM latch write [ABC806_REFERENCE]
+frame_delay              equ 7617h   ; label spins until DART B RR0 bit 4 changes [ABC806_REFERENCE]
+frame_delay_poll         equ 7621h   ; label the loop inside frame_delay [ABC806_COMPLETED]
+vector_dispatcher        equ 762Fh   ; label target from (001E)+2 [JOURNAL]
+fg_dispatch              equ 763Bh   ; label gates the FG package on FEF4, then parses (CP 2Ch at 764A) [JOURNAL, ABC806_REFERENCE]
+clear_hires_plane        equ 7CACh   ; label the plane-clearing memset [ABC806_REFERENCE]
+clear_hires_plane_fill   equ 7CB2h   ; label LD (HL),00h [JOURNAL]
+clear_hires_plane_ldir   equ 7CB4h   ; label LDIR, 30,719 writes [JOURNAL]
+fgline_plot              equ 7E31h   ; label FGLINE's plot store, LD (HL),A [ABC806_REFERENCE]
+fgpicture                equ 7E39h   ; label FGPICTURE, writes HRS [ABC806_COMPLETED]
+fgpicture_set_hrs        equ 7E64h   ; label LD A,C / RLCA x4 / OR L / ... / OUT (06h),A [ABC806_REFERENCE]
+fg_bank_ceiling          equ 0FEF3h  ; label ceiling for the bank count, 16 [ABC806_REFERENCE]
+fg_bank_count            equ 0FEF4h  ; label picture banks allowed, 1 on a bare machine [ABC806_REFERENCE]
+fg_viewport_origin       equ 0FEF8h  ; label the +8 viewport origin [ABC806_REFERENCE]
