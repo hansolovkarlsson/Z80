@@ -1100,3 +1100,34 @@ notices if it stops compiling — which is not hypothetical:
 a shared function's signature changed and nothing built it. It was found
 by building it by hand. Closing that means having `make test` attempt the
 opt-in builds when `gtk4` is present, which is not done.
+
+## The operator table and the expression parser (2026-09-25)
+
+The operator row of `ABC802_BASIC_REFERENCE.md`'s table list was the last
+BASIC table whose start no ROM pointer had confirmed. The pointer turned
+out to sit just before the table: a block at `0x060A` of three-byte
+records, one per binary precedence level (the group's address and a flags
+byte), ending in `00 00 00`. Nothing loads `0x060A` itself, which is why a
+search for it found only coincidences: the parser at `0x3773` loads
+`IX` with `0x0607` and steps by three before its first read.
+
+- **The range is `0x0625`-`0x0660`**, ending on its `0xFF`. It had read
+  one byte further, into the next pointer block at `0x0661`.
+- **The documented precedence holds**, now confirmed rather than read off
+  the `0xFF` separators: each adjacent pair was run as an expression whose
+  value differs under the other order (`0 IMP 0 EQV 0` is 0, `-1 OR 0 IMP
+  0` is 0, `1 OR 1 AND 0` is 1, and so on). Operators on a level apply
+  left to right, `^` included, so `2^3^2` is 64.
+- **`NOT` has no record in the level block.** A flags byte with bit 7 set
+  makes the parser check for a prefix before that level: `NOT` at the
+  relational level (`LD DE,063Ch` at `0x375E`), unary `+`/`-` at the
+  additive one. So `NOT` binds below the comparisons and above `AND`,
+  `-2^2` is -4, and neither prefix may follow an operator that parses its
+  right side from a higher level: `2*-3`, `2- -3` and `2^-1` are
+  `Error 234`, `NOT NOT 5` and `5=NOT 0` are `Error 220`. Parentheses fix
+  all of them.
+
+`basic-operator-precedence` and `basic-unary-minus-after-operator` in the
+ABC802 suite type those expressions at the real ROM. `abc802.sym` names
+the level block, the `NOT` group, and the parser's entry, level climb and
+prefix check.

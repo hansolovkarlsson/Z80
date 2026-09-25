@@ -113,11 +113,11 @@ Real, understood, and deliberately not solved yet — not oversights.
   been found or tested. Also unread: the word table at `0x0A6C` that the
   statement pointer block names, the nameless `0x81` entry heading the
   secondary keywords at `0x0945`, and the `0x00` bytes inside the main
-  statement table (after `XSTM` and after `DEF FN`). Finally, the
-  operator range and every row below the statements in
-  `ABC802_BASIC_REFERENCE.md`'s table list have not been rechecked
-  against the ROM's own pointers, as the function, attribute and
-  statement ranges were on 2026-09-24.
+  statement table (after `XSTM` and after `DEF FN`). Finally, the rows
+  below the statements in `ABC802_BASIC_REFERENCE.md`'s table list
+  (commands, extension, device names, DOS commands) have not been
+  rechecked against the ROM's own pointers, as the operator, function,
+  attribute and statement ranges have been.
 - **Frame frequency is ambiguous** — MAME's DIP label and the code
   comment that consumes it disagree; see `ABC802_REFERENCE.md`. Nothing
   currently depends on it.

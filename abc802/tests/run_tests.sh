@@ -87,6 +87,21 @@ tl_want "$out" " 42" "PRINT 6*7 evaluating to 42"
 tl_want "$out" "$FRAME80" "an 80-column screen"
 tl_end "$out"
 
+# Operator precedence, as ABC802_BASIC_REFERENCE.md's table states it.
+# Each expression is chosen so the neighbouring order would give a
+# different answer: 0 IMP 0 EQV 0 is -1 with IMP below EQV, 1 OR 0 XOR 1
+# is 1 if XOR bound tighter, NOT 1=2 is 0 if NOT bound tighter than =,
+# -2^2 is 4 if unary minus bound tighter than ^, 2^3^2 is 512 if ^ were
+# right-associative. Unary minus after another operator is a syntax error.
+out=$(run802 $'PRINT 0 IMP 0 EQV 0;-1 OR 0 IMP 0;1 OR 0 XOR 1;1 XOR 1 OR 1;1 OR 1 AND 0;NOT 1=2;NOT 0 AND 0;1+1=2;-2^2;2^3^2;2*3^2;2+3*4\n')
+tl_begin "basic-operator-precedence"
+tl_want "$out" "| 0  0  0  1  1 -1  0 -1 -4  64  18  14 " "every level in the documented order"
+tl_end "$out"
+out=$(run802 $'PRINT 2*-3\n')
+tl_begin "basic-unary-minus-after-operator"
+tl_want "$out" "Error 234" "unary minus refused after *"
+tl_end "$out"
+
 # UTF-8 in on the keyboard, ABC802 charset bytes through the ROM's
 # tokenizer and string evaluation, and back out to UTF-8 for the render.
 # --type used to feed its argument as raw UTF-8 bytes, which reached

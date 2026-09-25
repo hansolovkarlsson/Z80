@@ -21,7 +21,32 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
-## 2026-09-25: The GTK windows by hand, and what that found
+## 2026-09-25 (2): The ABC802 operator table, from the parser
+
+The last BASIC table row not pinned by a ROM pointer was the operators.
+The pointer was right in front of the table, as a block of three-byte
+records at `0x060A`, and the first search for it missed it because nothing
+loads that address: the parser at `0x3773` starts `IX` at `0x0607` and
+steps by three before reading. It was found instead from the other end, a
+search for the `NOT` group's address, which turned up `LD DE,063Ch` at
+`0x375E` with `LD IX,0607h` a few bytes later. The one apparent
+reference to `0x060A` elsewhere, at `0x2440`, is the tail of a `JR`
+offset and a following `LD B,02h`.
+
+Reading the parser changed what the precedence table means rather than
+the order in it. The order was right. `NOT` and unary minus are not
+levels but prefixes the parser checks for as it enters the relational and
+additive levels, which predicted two things the reference had never said:
+unary minus binds below `^` (`-2^2` is -4), and neither prefix can follow
+an operator whose right side is parsed from higher up (`2*-3` is
+`Error 234`). Both held on the real ROM, as did one expression per level
+boundary chosen so the other order would print something else. The range
+also shrank by a byte, to end on its own `0xFF`. Details are in
+`abc802/docs/ABC802_COMPLETED.md`.
+
+---
+
+## 2026-09-25 (1): The GTK windows by hand, and what that found
 
 Yesterday's one debugger item with no automated check was the live
 windows, so the day began with the user running them. Ctrl-] stopped the

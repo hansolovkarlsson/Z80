@@ -3,13 +3,16 @@
 ; The 6000-7FFF names are for v.20 only, not the v.19 image dos.32-21.
 ;
 ; Every name below is an address this repo's own documents state, checked
-; against the ROM bytes on 2026-09-24 before it went in; the source is in
+; against the ROM bytes (2026-09-24, and 2026-09-25 for the expression
+; parser) before it went in; the source is in
 ; brackets. Loaded with --symbols (docs/DEBUGGER.md). Names that do not
 ; correspond to a documented claim, or whose claim the bytes did not bear
 ; out, were left out on purpose rather than guessed.
 reset                    equ 0000h   ; label JR to the boot code [ABC802_REFERENCE]
 wait_first_key           equ 03F5h   ; label loop polling bit 7 of FFE2 [ABC802_REFERENCE]
+basic_operator_levels    equ 060Ah   ; label (group, flags) per binary level [ABC802_BASIC_REFERENCE]
 basic_operator_table     equ 0625h   ; label operators in precedence order [ABC802_BASIC_REFERENCE]
+basic_operator_not       equ 063Ch   ; label the NOT group, looked up as a prefix [ABC802_BASIC_REFERENCE]
 basic_table_pointers     equ 0661h   ; label pointers to 0814, 0675, 079E [ABC802_BASIC_REFERENCE]
 basic_function_table     equ 0675h   ; label function names, XFN first [ABC802_BASIC_REFERENCE]
 basic_function_tokens    equ 079Eh   ; label function tokens, ABS first [ABC802_BASIC_REFERENCE]
@@ -18,6 +21,9 @@ basic_statement_pointers equ 088Bh   ; label pointers to 097E, 0A6C, 089F [ABC80
 basic_statement_table    equ 089Fh   ; label statement keywords, XSTM first [ABC802_BASIC_REFERENCE]
 basic_secondary_keywords equ 0945h   ; label ELSE, STEP, TO, THEN ... [ABC802_BASIC_REFERENCE]
 basic_prefixed_stmts     equ 097Eh   ; label statements behind XSTM, DIM first [ABC802_BASIC_REFERENCE]
+expr_prefix              equ 3759h   ; label unary +/- or NOT before a level [ABC802_BASIC_REFERENCE]
+expr_parse               equ 3773h   ; label LD IX,0607h: the expression parser [ABC802_BASIC_REFERENCE]
+expr_next_level          equ 3777h   ; label climb one precedence level [ABC802_BASIC_REFERENCE]
 ctc3_clock_isr           equ 3A76h   ; label CTC channel 3 tick, 93.75 Hz [ABC802_REFERENCE]
 str_error                equ 3D6Eh   ; label the string 'Error' [ABC802_BASIC_REFERENCE]
 basic_command_table      equ 4057h   ; label command keywords, 17 entries [ABC802_BASIC_REFERENCE]

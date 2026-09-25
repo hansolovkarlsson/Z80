@@ -396,9 +396,16 @@ function") — the valid arguments start at 2. Addresses come back as
 
 ## Operators and precedence
 
-The ROM's operator table at `0x0625`-`0x0661` is stored **in precedence
-order, with `0xFF` closing each level**, so the precedence below is read
-directly out of the ROM rather than inferred:
+The ROM's operator table at `0x0625`-`0x0660` is stored **in precedence
+order, with `0xFF` closing each group**, and the expression parser walks
+it through a block of its own at `0x060A`: one three-byte record per
+binary level, the group's address and a flags byte, ending in `00 00 00`.
+The parser at `0x3773` climbs that block one level per call (`0x3777`),
+and reaches the primary-expression code at `0x170E` when it runs out.
+**(verified)** Every order in this table was confirmed by an expression
+whose value differs under the neighbouring order, for example
+`0 IMP 0 EQV 0` is ` 0` (with `IMP` lower it would be `-1`) and
+`-1 OR 0 IMP 0` is ` 0`:
 
 | Level (lowest first) | Operators |
 |---|---|
@@ -406,11 +413,39 @@ directly out of the ROM rather than inferred:
 | 2 | `IMP` |
 | 3 | `OR`, `XOR` |
 | 4 | `AND` |
-| 5 | `NOT` |
+| 5 | `NOT` (prefix) |
 | 6 | `<=` `<>` `<` `>=` `>` `=` |
-| 7 | `+` `-` |
+| 7 | `+` `-`, and unary `+` `-` |
 | 8 | `*` `/` |
 | 9 | `^`, `**` |
+
+Operators on one level are applied **left to right**, `^` included:
+**(verified)** `1 OR 0 XOR 1` is ` 0`, `1 XOR 1 OR 1` is ` 1`, and
+`2^3^2` is ` 64`, not ` 512`.
+
+**`NOT` and unary minus are prefixes, and only where their own level
+starts.** The `NOT` group at `0x063C` has no record in the level block.
+Instead the relational level's flags byte (`0x82`, bit 7 set) makes the
+parser check for `NOT` first (`LD DE,063Ch` at `0x375E`), and parse its
+operand from the relational level up; the additive level's (`0x81`) does
+the same for a leading `+` or `-`. That puts `NOT` below the comparisons
+and above `AND`, and unary minus below `^`. It also means neither can
+follow an operator that parses its right-hand side from a higher level.
+**(verified)**
+
+| Expression | Result |
+|---|---|
+| `NOT 1=2` | `-1`, which is `NOT (1=2)` |
+| `NOT 0 AND 0` | ` 0`, which is `(NOT 0) AND 0` |
+| `NOT 3+4` | `-8`, which is `NOT 7` |
+| `-2^2`, and `-A^2` with `A=3` | `-4` and `-9` |
+| `1 AND NOT 0`, `NOT -1` | ` 1` and ` 0` |
+| `2*-3`, `2^-1`, `2- -3`, `2+-3` | `Error 234` |
+| `NOT NOT 5`, `5=NOT 0` | `Error 220` |
+| `2*(-3)`, `2^(-1)`, `NOT (NOT 5)` | `-6`, ` .5`, ` 5` |
+
+So a negative operand after `*`, `/`, `^` or a second `+`/`-` needs
+parentheses, and so does `NOT` after a comparison or another `NOT`.
 
 `^` and `**` share a token — they are the same operator spelled two ways.
 Remember that `^` displays as `Ü`.
@@ -1272,7 +1307,7 @@ token, which is how `NEW`/`SCR`, `RENUMBER`/`REN`, `LEFT`/`LEFT$` and
 
 | Table | Address | Contents |
 |---|---|---|
-| Operators | `0x0625`-`0x0661` | 18 entries, in nine precedence groups |
+| Operators | `0x0625`-`0x0660` | 18 entries in nine groups: eight binary levels and `NOT` |
 | Functions | `0x0675`-`0x079D` | 58 entries: 56 functions, `FN`, `XFN` |
 | Attributes | `0x0814`-`0x088A` | 25 entries |
 | Statements | `0x089F`-`0x0944` | 29 entries: 28 statements and the `XSTM` prefix |
@@ -1308,17 +1343,20 @@ keywords, most in a group of their own that code looks up alone:
 The first group (`0x0945`: an entry with token `0x81` and no name, then
 `?`, `:` and `ELSE`) has no pointer that has been found.
 
-The function, attribute and three statement-region ranges end on their
-table's closing `0xFF`. The operator row ends one byte past its own
-(`0x0660`), and it and the rows below the statements were not rechecked. (Until 2026-09-24 the functions read
+The operator, function, attribute and three statement-region ranges end
+on their table's closing `0xFF`, and every one of their starts is an
+address the ROM points at (the operators' is the first record of the
+level block at `0x060A`). The rows below the statements were not
+rechecked. (The operator row read `0x0625`-`0x0661` until 2026-09-25, one
+byte past its `0xFF`; `0x0661` is the next pointer block.) (Until 2026-09-24 the functions read
 `0x0676`-`0x079A`, the attributes `0x0810`-`0x088C`, and the statements
 `0x08A5`-`0x0A22` as one table of 62 entries. None of the three starts
 fell on an entry the ROM points at.)
 
 Two things fell out of that format for free. The operator table's `0xFF`
 separators are **precedence group boundaries**, which is where the
-precedence table in this document comes from — read out of the ROM, not
-inferred from testing. And the attribute words' tokens are exactly their
+precedence table in this document first came from; the parser's level
+block and an expression per boundary have since confirmed it. And the attribute words' tokens are exactly their
 character codes plus `0x80`, which is what made the attribute table
 derivable and then checkable with `PEEK`.
 
