@@ -167,7 +167,7 @@ which are synonyms sharing a token):
 | `SAVE` | `SAVE [device:]file[.ext]` | Save the program (tokenized, default extension `.BAC`) |
 | `UNSAVE` | `UNSAVE [device:]file[.ext]` | Delete a file |
 | `MERGE` | `MERGE [device:]file[.ext]` | Merge a program file into the one in memory |
-| `CON` | `CON` | Continue after `STOP` or Ctrl-C **(verified)** — `STOP` reports `Stop in line 20.` |
+| `CON` | `CON` | Continue after `STOP` or a break (Ctrl-C twice, see below) **(verified)**; both report `Stop in line 20.` |
 | `GOTO` | `GOTO line` | Resume execution at a line, keeping variables **(verified)** |
 | `RENUMBER` / `REN` | `REN [line[,interval[,from-to]]]` | Renumber (synonyms — same ROM token `0x87`) |
 | `ERASE` | `ERASE line [-line]` | Delete one or more program lines |
@@ -182,6 +182,37 @@ instruction, not the scratch command. Both share token `0x81` with `NEW`
 in the ROM, which is what settles it.
 
 **(verified)** `CON` with nothing to continue gives `Error 207`.
+
+### Stopping a running program
+
+**(verified)** One Ctrl-C does not stop a program; it pauses it. The keys
+at a pause:
+
+| Key | Effect |
+|---|---|
+| Ctrl-C | break: `Stop in line N.` and the prompt, from where `CON` resumes |
+| Ctrl-S | run one more line, then pause again, so repeated Ctrl-S single-steps |
+| any other | carry on at full speed |
+
+Nothing is printed at the pause, so a looping program that prints nothing
+looks exactly as if it were still running. Two Ctrl-Cs is the break.
+
+Read out of the ROM, then checked by typing. The DART's receive handler at
+`0x043E` stores each key at `0xFFE3`, and for `03h` sets bit 0 of the
+byte `0xFF85` points at, which is `0xFF23` while a program runs. Before
+each statement, the loop at `0x1CA0` tests that byte. With bit 0 set it
+waits for a key through `0xFF90` (`JP 03A0h`): `03h` calls the break at
+`0x3B8E`, and `13h` sets bit 3, which makes the loop pause again when it
+reaches a byte `87h`, the byte every stored program line starts with.
+Every key clears bit 3 first (`AND 0F6h` at `0x1CC4`), so stepping needs a
+Ctrl-S at each pause. With `10 PRINT 1;` / `20 GOTO 10`, one Ctrl-C leaves
+the screen part-filled and unchanging, and two print `Stop in line 20.`
+and answer `PRINT 5`. A three-line loop printing a digit on two of its
+lines gained one digit, or none on the `GOTO` line, per extra Ctrl-S.
+
+Both keys reach BASIC in `bin/abc802 --interactive`, whose raw mode turns
+off the terminal's flow control so Ctrl-S is not taken as XOFF, and in
+`bin/abc802-gtk`, which maps Ctrl and a letter to its control code.
 
 ## Statements
 

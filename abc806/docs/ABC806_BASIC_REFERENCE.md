@@ -275,6 +275,11 @@ command fills all 30,720 bytes of the plane.
   the text screen covers.
 - **Four coordinates to `FGFILL`.** `FGFILL x1,y1,x2,y2,pen` is accepted by
   the parser and writes nothing. The corner comes from the cursor.
+- **Pressing Ctrl-C once.** It pauses a running program silently; the
+  second Ctrl-C breaks it (`Stop in line N.`). At the pause, Ctrl-S runs
+  one line and any other key resumes. Seen on this machine for the pause
+  and the break (by hand, not by its suite); the mechanism is read out of the ABC802's ROM in
+  [its reference](../../abc802/docs/ABC802_BASIC_REFERENCE.md#stopping-a-running-program).
 
 ---
 

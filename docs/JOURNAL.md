@@ -21,6 +21,36 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-24 (15): Ctrl-C pauses; it takes two to break
+
+Entry (13) recorded that on the ABC802 Ctrl-C does not break
+`10 GOTO 10`, and it went onto the roadmap as an open problem, with a
+guess about the emulator's key gate. Both were wrong. One Ctrl-C
+*pauses* a running program and prints nothing; a second breaks it with
+`Stop in line N.`; and Ctrl-S at the pause runs one line and pauses
+again. The emulator was right throughout, and the ABC806 behaves the same.
+
+The ROM said so once it was read rather than watched. The DART's receive
+handler at `0x043E` sets a flag for `03h`, the statement loop at `0x1CA0`
+tests it before each statement and then waits for another key, and that
+second key decides: `03h` breaks, `13h` steps, anything else resumes. What
+turned the investigation was a profile. Typing a Ctrl-C after `RUN` moved
+nearly every executed instruction into the ROM's key-wait loop at
+`03EE`-`03FA`. The screen had given no hint: a paused loop that prints
+nothing looks exactly like a running one, and so does a paused loop that
+was printing, once its output has stopped. The first pty test sent a
+single Ctrl-C and read that stillness as "still running". Even the
+correction nearly went wrong: one run happened to end with PC in the wait
+loop and was briefly taken for a break, until a longer run with a command
+typed afterwards showed BASIC not answering.
+
+The lesson is an old one here: measure where the machine is, not what the
+screen seems to say. `basic-ctrl-c` now pins the pause (the screen unchanged between 100M
+and 200M T-states), the break, and one digit per Ctrl-S. It fails with
+either key dropped from the keyboard path.
+
+---
+
 ## 2026-09-24 (14): the debugger in the GTK windows
 
 The last debugger item. Where the prompt should live was the user's

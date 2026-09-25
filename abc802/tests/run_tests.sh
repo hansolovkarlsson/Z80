@@ -576,6 +576,32 @@ if tl_gate "$gtk_skip_reason" gtk-headless-boot gtk-headless-type gtk-debugger; 
     tl_gate_end
 fi
 
+# --- Stopping a running program -------------------------------------
+#
+# ABC802_BASIC_REFERENCE.md, "Stopping a running program": one Ctrl-C
+# pauses, a second breaks, and Ctrl-S at the pause runs one line. Each part
+# goes through the real keyboard path. The pause: the screen is the same
+# after 100M and 200M T-states. The break: `Stop in line 20.` and BASIC
+# answering afterwards, matched as a whole row. The step: one more Ctrl-S
+# prints exactly one more digit, on a program where every line but the
+# last prints one. Only output rows (starting "| digit") are counted, since
+# the program's own lines hold digits too.
+output_digits() { printf '%s\n' "$1" | grep -E '^\| [0-9]' | tr -cd '0-9' | wc -c | tr -d ' '; }
+LOOP=$'10 PRINT 1;\r20 GOTO 10\rRUN\r'
+paused_a=$("$ABC802" --cycles 100000000 --type "$LOOP"$'\x03' --screen 2>&1)
+paused_b=$("$ABC802" --cycles 200000000 --type "$LOOP"$'\x03' --screen 2>&1)
+broken=$("$ABC802" --cycles 200000000 --type "$LOOP"$'\x03\x03PRINT 5\r' --screen 2>&1)
+STEPS=$'10 PRINT 1;\r20 PRINT 2;\r30 PRINT 3;\r40 PRINT 4;\r50 PRINT 5;\r60 PRINT 6;\r70 PRINT 7;\r80 PRINT 8;\r90 GOTO 10\rRUN\r\x03'
+step2=$("$ABC802" --cycles 200000000 --type "$STEPS"$'\x13\x13' --screen 2>&1)
+step3=$("$ABC802" --cycles 200000000 --type "$STEPS"$'\x13\x13\x13' --screen 2>&1)
+tl_begin "basic-ctrl-c"
+tl_want_not "$paused_b" "Stop in line" "one Ctrl-C not breaking"
+tl_want_eq "$(output_digits "$paused_b")" "$(output_digits "$paused_a")" "one Ctrl-C pausing (the same output at 100M and 200M T-states)"
+tl_want "$broken" "Stop in line 20." "two Ctrl-Cs breaking"
+tl_want_eq "$(printf '%s\n' "$broken" | grep -cE '^\| 5 +\|$')" "1" "BASIC answering PRINT 5 after the break"
+tl_want_eq "$(( $(output_digits "$step3") - $(output_digits "$step2") ))" "1" "one more Ctrl-S running one more line"
+tl_end "$paused_a$broken$step3"
+
 # --- The debugger -----------------------------------------------------
 #
 # docs/DEBUGGER.md. A breakpoint the boot reaches late (3A76 runs about
