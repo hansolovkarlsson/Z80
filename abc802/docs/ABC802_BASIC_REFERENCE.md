@@ -288,7 +288,8 @@ see [Variables, types and declarations](#variables-types-and-declarations).
 ## Functions
 
 Read out of the ROM's function table at `0x0675`-`0x079D` (56 functions,
-plus `FN` itself and an entry named `XFN` whose purpose is unknown).
+plus `FN` itself and `XFN`, which writes a function by its number: see
+[How the keyword tables were read](#how-the-keyword-tables-were-read)).
 `LEFT`/`LEFT$`, `RIGHT`/`RIGHT$`, `MID`/`MID$` and `ASC`/`ASCII` are each
 pairs of synonyms sharing one token, so the `$` is optional on the three
 string-slicing functions.
@@ -1340,11 +1341,11 @@ device list head to `0xFF7B` (`0x110F`), the statement chain to `0xFF7D`
 | Header | Next | Code, count | Names | Entry handlers | Run handlers |
 |---|---|---|---|---|---|
 | `0x4BF7` | `0x088B` | `F9 00`, 1 | `0x4C01`, `WIDTH` | `0x4C08` | `0x4C0A` |
-| `0x088B` | `0x0895` | `00`, 25 | `0x097E`, the prefixed statements | `0x0A6C` | none |
+| `0x088B` | `0x0895` | `00`, 25 (24 named; `86 18` lists as garbage) | `0x097E`, the prefixed statements | `0x0A6C` | none |
 | `0x0895` | end | `00`, 37 | `0x089F`, the main statements | none | none |
 | `0x0661` | `0x066B` | `80`, 32 | `0x0814`, the attributes | `0x0080`, not examined | none |
 | `0x066B` | end | `00`, 54 | `0x0675`, the functions | `0x079E`, a token list (below) | none |
-| `0x6F9A` (DOS) | the old head | `A0`, 4 | `0x6F87`, `BYE` `KILL` `NAME` | `0x6F7B` | `0x6F81` |
+| `0x6F9A` (DOS) | the old head | `A0`, 4 | `0x6F87`, `BYE` `KILL` `NAME`, then `AS` | `0x6F7B` | `0x6F81` |
 
 **How a statement is stored and run.** A program line is stored as
 `0x87`, a length byte, the line number, then the statements, with `0x88`
@@ -1362,6 +1363,26 @@ and `0xF9`-`0xFF` there are themselves prefixes taking one more byte
 range holds the code supplies the run handler through its +4 table:
 `BYE`, index 0 of `0x6F81`, runs at `0x6D2F`.
 
+Three statements have a second, argument-less code `0x1A` above their
+own, which the entry handler picks: **(verified)** `RESTORE 10` is stored
+as `83` and a bare `RESTORE` as `9D`, `RESUME 10`/`RESUME` as `84`/`9E`,
+`ON ERROR GOTO 10`/`ON ERROR GOTO` as `85`/`9F`; `LIST` spells both the
+same. An assignment without `LET` has no statement code at all: `A=1` is
+stored starting with the variable. A function is stored after its
+argument as `D1` and the function's token with bit 7 cleared (`ABS(1)`
+ends `D1 1A`, `SIN` is `D1 03`, `LEN` `D1 10`).
+
+**`XSTM` and `XFN` write a code by its number.** Both names end in a
+`0x00`, so a number may follow them: **(verified)** `XSTM0 A(1)` is
+stored as `86 00` and lists as `DIM A(1)`, and `PRINT XFN26(-5)` is
+stored with `D1 1A`, lists as `PRINT ABS(-5)` and prints ` 5`. The other
+way round, `LIST` spells a prefixed statement or a function code that
+has no name the same way: `86 40` lists as `XSTM64` and `D1 7E` as
+`XFN126`. A code with no handler is refused on entry with `Error 200`,
+"unit not connected": they are how a program that uses an extension's
+statements or functions survives being loaded where that extension is
+not fitted, and why it then says what is missing.
+
 **(verified)** Both handler tables by breakpoints on the real ROM. Typed
 as a numbered line and not run, `WIDTH` stops only at `0x4C0C` (its
 entry handler, the first word of `0x4C08`) and `KILL` only at `0x6F78`
@@ -1374,14 +1395,20 @@ words for tokens `0x80`, `0x93` and `0x92` from `0x0A9C`, and only when
 the program runs. `BYE`'s entry word is `0x0059`, a routine every line
 passes through, which is why it seemed to be missing from its table.
 
-The DOS header claims four codes for three names; what `A3` would be is
-not known. `XFN`, the function table's first entry, is presumably the
-function chain's counterpart of `XSTM`, but no ROM in this set adds a
-function header, so nothing uses it here: the second extension's init
-at `0x7003` links `0000` into both keyword chains (see the device lists
-below), and the DOS's does not touch the function chain. The `0x079E`
-list is bare tokens (`9A 86 84 A3 …`, which are `ABS`, `ATN`, `COS`,
-`EXP` in name-list order) that the routine at `0x1785` searches, and the
+The DOS header's four codes are `BYE`, `KILL`, `NAME` and `AS`: `LIST`
+reads past the first group's `0xFF` into the lone `AS` group, so
+**(verified)** `86 A3` lists as `AS`, and `NAME "A" AS "B"` is stored with
+`86 A3` for the `AS`. No ROM in this set adds a function header: the
+second extension's init at `0x7003` links `0000` into both keyword chains
+(see the device lists below), and the DOS's does not touch the function
+chain. Function codes from `0xA0` would be looked up along it
+(`0x1D5E`), and the function tokenizer (`0x1912`) writes a prefix byte
+from `0xF8` when a header's byte +3 has bit 7 set, as the statement side
+does. The `0x079E` list is bare tokens (`9A 86 84 A3 …`, which are `ABS`,
+`ATN`, `COS`, `EXP` in name-list order) that the routine at `0x1785`
+searches; it loads that address itself (`LD BC,079Eh`) rather than from
+the header, and no code reading +8 of a function-chain header has been
+found, so what the attribute header's `0x0080` there means is open. The
 three bytes before the first attribute entry (`29 2D 6C` at `0x0811`)
 are an argument-type list that `0x16F7` hands to the parser at `0x1802`.
 
@@ -1394,21 +1421,42 @@ continues with. That is why `CON` accepts `CONT`, `CONTINUE` and even
 `EDIT 10` is `ED` with the argument `IT 10`, `Error 209`), and why
 `DEF FN` matches `DEF FNA` (all **(verified)**). The main table has
 `0x00` after `XSTM` and `DEF FN`, the command table after `CON` and `ED`.
-A name that ends without one needs a non-alphanumeric character next
-only while bit 2 of `0xFF1D` is set; that bit is set only around the
-number parse at `0x1B13`, so in direct mode `LIST10` lists line 10 and
-`LISTX` tries to list to a file called `X` (`Error 42`, disk not ready).
+A name that ends without one needs a character that is not a letter or
+digit (`0x4B85`) next, but only while bit 2 of `0xFF1D` is set. That bit
+is set only at `0x1B19`, in a routine reached with the statement chain's
+head, yet no parse tested has been strict: **(verified)** in direct mode
+`LIST10` lists line 10 and `LISTX` tries to list to a file called `X`
+(`Error 42`, disk not ready), and as program lines `WIDTH40`, `WIDTHX`,
+`KILLX$` and `PRINTX` are all accepted and list with a space inserted.
+What the bit is for is not known.
 
 The secondary keywords sit between the two statement tables, most in a
 group of their own that code looks up alone: `LD DE,0950h` at `0x1A26`
 for `STEP`, `LD DE,0978h` at `0x195C` for `THEN`, `LD DE,094Ah` at
 `0x197D` and `0x1B93` for `ELSE`, and likewise for `TO`, `AS FILE`,
-`COUNT`, `USING` and `LOCAL`. The five bytes before `ELSE` are `81`,
-`8B ?` and `88 :`, which nothing searches; `0x88` is the stored statement
-separator, so `88 :` is plausibly how `LIST` spells it, while `81` and
-`8B ?` are unexplained (typing `?` is a syntax error, not `PRINT`). The
-DOS's `AS` is the same kind of lone group, looked up with `LD DE,6F96h`
-at `0x6F6D`.
+`COUNT`, `USING` and `LOCAL`. The DOS's `AS` is the same kind of lone
+group, looked up with `LD DE,6F96h` at `0x6F6D`.
+
+**The five bytes before `ELSE` are `LIST`'s spellings, not keywords.**
+`LIST` turns a code back into a name by searching the name lists in
+memory order, straight past the main table's `0xFF`, so these entries
+name codes that have no keyword of their own. Nothing searches them.
+**(verified)** by storing lines and by poking codes into one:
+
+| Code | Lists as | What it is |
+|---|---|---|
+| `0x81` | nothing | the implied `GOTO` of a bare line number after `THEN` or `ELSE`: `IF 1 THEN 30 ELSE 40` is stored `95 … BD 06 81 1E 00 8A 04 81 28 00`, and `0x81` runs at `0x1D25`, as `GOTO` does |
+| `0x88` | `:` | the separator between statements on a line |
+| `0x8A` | `ELSE` | `ELSE`, stored with an offset byte after it as `THEN` (`BD`) is, and run at `0x1D15`, as `REM` is: reached from the `THEN` branch, it skips the rest of the line |
+| `0x8B` | `?` | a line kept although it did not tokenise: runs as `Error 144`, "invalid line" (`0x1DAF`, `RST 10h` with `0x90`) |
+
+A `0x8B` line is what `MERGE` makes of a text line with a syntax error,
+where typing the same line is refused: `0x11DD` stores the line as `0x8B`
+and its text (`LD A,8Bh` at `0x11F0`) when bit 2 of `0xFF23` is clear,
+and reports and rejects it when set, as it is for typed lines.
+**(verified)** A `T.BAS` listed to disk with `PRINT 2` changed to
+`PRXNT 2` in the image merges without stopping, lists as `20?PRXNT 2`,
+and `RUN` prints ` 1` from line 10 before `Error 144 in line 20`.
 
 The command table is outside both chains, looked up directly with
 `LD DE,4057h` and the same search routine (`CALL 4B21h`) at `0x1144`.

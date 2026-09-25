@@ -1218,3 +1218,37 @@ Four checks were added to the ABC802 suite: `basic-entry-and-run-handlers`,
 changed to one that does not exist. What remains unexplained is on the
 roadmap.
 
+## The codes without keywords, and XSTM/XFN (2026-09-25)
+
+The last open table details, mostly settled by poking stored codes into
+a program line (the first statement byte is at `0x8018`) and letting
+`LIST` and `RUN` say what they are.
+
+- **The bytes before `ELSE` are `LIST`'s spellings.** `LIST` searches the
+  name lists in memory order, past the main table's `0xFF`, so `81`
+  (nothing), `8B ?` and `88 :` name codes with no keyword. `0x81` is the
+  implied `GOTO` of a bare line number after `THEN`/`ELSE`, `0x88` the
+  statement separator, `0x8A` the stored `ELSE`, and `0x8B` a line kept
+  although it did not tokenise, which runs as `Error 144`.
+- **`MERGE` makes `0x8B` lines.** `0x11DD` keeps a bad line as `0x8B` and
+  its text when bit 2 of `0xFF23` is clear, and rejects it when set, as
+  for typed lines. Shown end to end: a `T.BAS` listed to a fresh image,
+  one keyword misspelled in the image, merges without stopping, lists as
+  `20?PRXNT 2` and fails at line 20 on `RUN`.
+- **The DOS's fourth code is `AS`**: `86 A3` lists as `AS`, the lone group
+  after `BYE`/`KILL`/`NAME`, and `NAME … AS` stores it.
+- **`XSTM` and `XFN` write a code by number.** `XSTM0 A(1)` is `DIM A(1)`,
+  `XFN26(-5)` is `ABS(-5)`; `LIST` spells unnamed codes the same way
+  (`XSTM64`, `XFN126`), and a code with no handler is refused with
+  `Error 200`, "unit not connected", which is how a program written for
+  a missing extension behaves.
+- **Bare forms have their own codes**, `0x1A` above the token: `RESTORE`,
+  `RESUME` and `ON ERROR GOTO` without an argument are `9D`, `9E`, `9F`.
+  Functions are stored after their argument as `D1` and the token with
+  bit 7 cleared.
+
+Two items stay open, on the roadmap: what bit 2 of `0xFF1D` restricts
+(no tested parse was strict), and whether anything reads +8 of a
+function-chain header. Six checks were added, and the `MERGE` one fails
+when the image is left unpatched.
+

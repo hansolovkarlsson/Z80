@@ -21,6 +21,32 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-25 (6): The ABC802 codes without keywords
+
+The remaining table mysteries all turned out to be about codes rather
+than keywords, and the method that cracked them was the cheapest one
+available: store `10 PRINT 1`, `POKE` another byte over the statement at
+`0x8018`, and let `LIST` and `RUN` say what it is. That showed the bytes
+before `ELSE` to be `LIST`'s spellings for codes nobody types (the
+implied `GOTO`, the separator, and a kept-but-invalid line), the DOS's
+spare fourth code to be `AS`, and `XSTM`/`XFN` to be both `LIST`'s names
+for unnamed codes and a way to type any code by number.
+
+The invalid-line marker was the one worth proving the long way, since
+the code said `MERGE` would produce it but nothing typed could: a
+program listed to a fresh `bin/abcdisk` image, one keyword misspelled in
+the image at the same length, and a second session merging it back. It
+behaved exactly as the code said. Two probes were misleading on the way:
+a direct-mode `FOR` loop to dump bytes is refused, and a line of sixteen
+`PEEK`s is too long (`Error 229`); the debugger's memory dump from a
+stop in a later line's entry handler did the job instead.
+
+Two things stay open: the strictness bit, which no parse tested obeys,
+and a header field no code has been found reading. Details are in
+`abc802/docs/ABC802_COMPLETED.md`.
+
+---
+
 ## 2026-09-25 (5): Linux, in the VM on the same Mac
 
 The Linux port had been waiting on "Docker or a Linux machine", and there

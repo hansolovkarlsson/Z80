@@ -112,6 +112,62 @@ tl_want "$out" "Stop in line 20" "the program stopping first"
 tl_want_eq "$(printf '%s\n' "$out" | grep -cE '^\| 2 +\|$')" "1" "CONXYZ continuing it to line 30"
 tl_end "$out"
 
+# Codes that have no keyword of their own (ABC802_BASIC_REFERENCE.md, How
+# a statement is stored and run). A bare RESTORE is stored as 9D (157),
+# RESTORE 10 as its own token 83 (131); the byte is at 0x8018 (32792),
+# the first statement of the first line.
+out=$(run802 $'10 RESTORE\rPRINT PEEK(32792)\r')
+tl_begin "basic-bare-restore-code"
+tl_want_eq "$(printf '%s\n' "$out" | grep -cE '^\| 157 +\|$')" "1" "a bare RESTORE stored as 9D"
+tl_end "$out"
+out=$(run802 $'10 RESTORE 10\rPRINT PEEK(32792)\r')
+tl_begin "basic-restore-line-code"
+tl_want_eq "$(printf '%s\n' "$out" | grep -cE '^\| 131 +\|$')" "1" "RESTORE 10 stored as 83, the control"
+tl_end "$out"
+
+# XSTM n and XFN n write a statement or function by its number: XSTM0 is
+# DIM and XFN26 is ABS, which LIST then names. RUN proves XFN26 is ABS.
+out=$(run802 $'10 XSTM0 A(1)\r20 PRINT XFN26(-5)\rLIST\rRUN\r')
+tl_begin "basic-xstm-xfn-by-number"
+tl_want "$out" "|10 DIM A(1)" "XSTM0 listed as DIM"
+tl_want "$out" "|20 PRINT ABS(-5)" "XFN26 listed as ABS"
+tl_want_eq "$(printf '%s\n' "$out" | grep -cE '^\| 5 +\|$')" "1" "RUN printing ABS(-5)"
+tl_end "$out"
+
+# 0x8B marks a line kept although it did not tokenise: it lists as '?'
+# and runs as Error 144, "invalid line". Poked here; basic-merge-invalid-
+# line below shows the ROM making one. And the DOS's fourth code, 86 A3,
+# is AS: poked over KILL's A1, the line lists as AS.
+out=$(run802 $'10 PRINT 1\rPOKE 32792,139\rRUN\r')
+tl_begin "basic-invalid-line-code"
+tl_want "$out" "Error 144 in line 10" "a 0x8B line refusing to run"
+tl_end "$out"
+out=$(run802 $'10 KILL "X"\rPOKE 32793,163\rLIST\r')
+tl_begin "basic-dos-fourth-code-is-as"
+tl_want "$out" '|10 AS "X"' "86 A3 listed as AS"
+tl_end "$out"
+
+# MERGE keeps a text line that does not tokenise, where typing it is
+# refused. A program is LISTed to a fresh image as text, one keyword is
+# spelled wrong in the image at the same length, and a second session
+# MERGEs it: the bad line is kept, lists with '?', and RUN reaches it.
+MERGE_IMG="$WORKDIR/merge.img"
+"$ABCDISK" create "$MERGE_IMG" --type mo > /dev/null
+"$ABC802" --columns 80 --screen --disk "$MERGE_IMG" --interleave 0 --type-at "$DISK_TYPE_AT" \
+    --cycles "$DISK_CAP" --type $'10 PRINT 1\r20 PRINT 2\rLIST "MO0:T"\r' > /dev/null 2>&1
+python3 - "$MERGE_IMG" <<'PY'
+import sys
+p = sys.argv[1]
+d = open(p, 'rb').read()
+open(p, 'wb').write(d.replace(b'PRINT 2', b'PRXNT 2'))
+PY
+out=$("$ABC802" --columns 80 --screen --disk "$MERGE_IMG" --interleave 0 --type-at "$DISK_TYPE_AT" \
+    --cycles "$DISK_CAP" --type $'MERGE "MO0:T"\rLIST\rRUN\r' 2>&1)
+tl_begin "basic-merge-invalid-line"
+tl_want "$out" "|20?PRXNT 2" "the bad line kept, listed with ?"
+tl_want "$out" "Error 144 in line 20" "RUN reaching it after line 10"
+tl_end "$out"
+
 # V24:, the RS-232 port, is a device in the second extension's chain
 # (0x7086), missing from the reference until 2026-09-25. Opening it must
 # succeed where an unknown device name gives Error 21.
