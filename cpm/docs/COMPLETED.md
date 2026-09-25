@@ -1471,6 +1471,10 @@ time with `(sleep 0.3; printf …) |`, so it was the test, not `C_STAT`.
 The suite now writes the input to a file first. Three full Linux runs
 after that were clean.
 
+The user then ran all four GTK apps by hand on the guest's desktop
+(`bin/z80-gtk`, `bin/abc80-gtk`, `bin/abc802-gtk`, `bin/abc806-gtk`), and
+all four worked.
+
 A trap for anyone driving the guest the same way: `prlctl exec` takes
 some dash options for itself, so `mkdir -p DIR` arrives as `mkdir DIR`,
 and a quoted command line is split into words. Commands go to

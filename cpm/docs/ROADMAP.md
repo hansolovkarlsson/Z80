@@ -82,12 +82,12 @@ Aspirational, not yet scoped:
   the model for the feasibility review a new target gets before any code.
 - **Windows, and the rest of Linux.** Linux works: the whole tree builds
   and passes `make test` on Ubuntu 24.04 (ARM64), GTK apps included (see
-  [`COMPLETED.md`](COMPLETED.md)), `bin/z80-gtk` included. Not yet
-  covered there: x86-64 Linux (only ARM64 has been run), any live GTK
-  window or `--interactive` session on a real Linux desktop (the suites
-  cover them headlessly and through a pty, and `bin/z80-gtk` has no check
-  at all, on either platform), and the VS Code extension checks, which
-  look for VS Code at its macOS path.
+  [`COMPLETED.md`](COMPLETED.md)), and all four GTK apps have been run by
+  hand on the Ubuntu desktop. Not yet covered there: x86-64 Linux (only
+  ARM64 has been run), a live `--interactive` session in a Linux terminal
+  (the suites drive it through a pty), and the VS Code extension checks,
+  which look for VS Code at its macOS path. `bin/z80-gtk` still has no
+  automated check on either platform.
   Windows needs a real console layer in place of `termios`/`select()`,
   or a POSIX environment such as MSYS2.
 - A custom ROM/OS on top of it — open design questions include a stack VM

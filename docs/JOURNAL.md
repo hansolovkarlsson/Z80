@@ -51,7 +51,8 @@ a check that had passed in every run before: `console_test.asm`'s
 `C_STAT`, fed through a pipe, raced the `printf` writing to it. A
 deliberately late writer made it fail every time, which settled that the
 emulator was right to say "no input yet", and the suite now feeds that
-test from a file. Details are in `cpm/docs/COMPLETED.md`.
+test from a file. Last, the user ran all four GTK apps on the Ubuntu
+desktop, and all four worked. Details are in `cpm/docs/COMPLETED.md`.
 
 ---
 
