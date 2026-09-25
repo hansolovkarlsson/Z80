@@ -1405,19 +1405,26 @@ detail is in `docs/JOURNAL.md` under that date).
   also redraw after every prompt command, so a `w` into screen memory
   shows while stopped.
 - **Ctrl-] cannot be typed on a Swedish Mac**, where `]` is Option-9.
-  **F12** now stops too, in the windows (`GDK_KEY_F12`) and under
-  `--interactive`, where a terminal sends it as `ESC [ 2 4 ~` and each
-  machine's key decoder recognises it (`Z80DBG_BREAK_CSI_PARAMS`). The
-  decoders now read a CSI sequence's parameter bytes; before, F12 typed
-  `4~` into BASIC. `debugger-f12` in each ABC suite stops a running
-  `10 GOTO 10` with it, and fails with the parameters changed.
+  **F12** now stops under `--interactive`, where a terminal sends it as
+  `ESC [ 2 4 ~` and each machine's key decoder recognises it
+  (`Z80DBG_BREAK_CSI_PARAMS`). The decoders now read a CSI sequence's
+  parameter bytes; before, F12 typed `4~` into BASIC. `debugger-f12` in
+  each ABC suite stops a running `10 GOTO 10` with it, and fails with the
+  parameters changed. The windows match `GDK_KEY_F12` too, but GTK's
+  macOS backend delivered no event for any function key in the user's
+  test, so on this Mac a window break key for a Swedish layout is still
+  open (see the roadmap).
 - **`bin/z80-gtk --debug` works**, given a program after the option (run
   with none, `bin/z80` prints its usage). It stops at `0100`, and Ctrl-C
   is its break key, since `bin/z80` keeps the terminal's own. Its window
-  stayed blank until the first keypress; the launcher now spawns
-  `bin/z80` once the terminal is mapped. That fix is unconfirmed until the
-  window is looked at. The launcher also wrote its argv's NULL one past
-  the end of the array, now fixed.
+  used to stay blank until the first keypress: with
+  `vte_terminal_spawn_async()`, VTE never showed output written before
+  the child's first wait, for a reason not pinned down. The launcher now
+  creates the pty, attaches it, and only then spawns `bin/z80`
+  (`vte_pty_spawn_async()`, which refuses `G_SPAWN_DO_NOT_REAP_CHILD`),
+  chosen by running the variants in real windows side by side and
+  confirmed by the user. It also wrote its argv's NULL one past the end of
+  the array, now fixed.
 - The start-up `Gdk-WARNING` about a skipped frame is GTK's own.
 
 ## Phase 4, VS Code support for z80asm: done

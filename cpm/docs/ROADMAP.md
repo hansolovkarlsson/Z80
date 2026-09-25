@@ -70,10 +70,13 @@ Aspirational, not yet scoped:
   terminal watch, Ctrl-] or F12 in the window, `q` closing it) has no
   automated check, since this machine's GTK has only the macOS backend
   and a window would take the desktop; everything they share with
-  `--screenshot` is checked. It was checked by hand on 2026-09-25, and
-  three fixes from that are still to be seen in a window: F12, the
-  redraw on resuming, and `bin/z80-gtk --debug` showing its prompt on
-  opening rather than after the first keypress. Each ABC machine has a hand-written ROM symbol
+  `--screenshot` is checked. It was checked by hand on 2026-09-25. Still
+  open from that: **a break key for the windows on a Swedish Mac**. Ctrl-]
+  cannot be typed there and GTK's macOS backend delivers no function
+  keys, so F12 works only under `--interactive`; candidates being tested
+  are Ctrl on the key right of Å (`]`'s position on a US layout) and
+  Cmd-. . The redraw on resuming after `c` is also yet to be seen in a
+  window. Each ABC machine has a hand-written ROM symbol
   file in its `resources/rom/`, which grows as investigations pin down
   more addresses.
 - **More machine targets, such as the ZX Spectrum.** It is Z80-based, so it

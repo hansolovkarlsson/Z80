@@ -178,8 +178,9 @@ runs it with the same code as the blocking prompt.
 bin/abc802-gtk --symbols abc802/resources/rom/abc802.sym
 ```
 
-**Ctrl-C in that terminal** stops the machine, and so does **Ctrl-] or
-F12 in the window**. With a debug option Ctrl-C no longer closes the window;
+**Ctrl-C in that terminal** stops the machine, and so does **Ctrl-] in
+the window** (and F12, where the GTK backend delivers function keys: on
+macOS it did not, in the one test made). With a debug option Ctrl-C no longer closes the window;
 File > Quit, closing it, or `q` at the prompt do. Time at the prompt is
 subtracted from the pacing, as under `--interactive`.
 
@@ -275,8 +276,10 @@ after it; `n` over the `CALL 0005h` is the natural way past one.
 
 ## Not yet
 
-- The live GTK windows' own pieces (the terminal watch, Ctrl-] or F12 in
-  the window, `q` closing it) are checked by hand only; see
+- The live GTK windows' own pieces (the terminal watch, Ctrl-] in the
+  window, `q` closing it) are checked by hand only; see
   [In the GTK windows](#in-the-gtk-windows). Ctrl-] on a US layout, `m`
-  and `c` have been; F12, and the prompt `bin/z80-gtk` should now show on
-  opening, have not.
+  and `bin/z80-gtk`'s prompt on opening have been; the prompt pause
+  before `c` no longer delaying the next frame has not been seen yet. On a Swedish Mac
+  the windows have no break key yet: Ctrl-] cannot be typed and F12 never
+  arrives; Ctrl-C in the launching terminal works.

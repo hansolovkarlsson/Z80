@@ -90,36 +90,54 @@ static void on_child_exited(VteTerminal *terminal, int status, gpointer user_dat
     // until the user closes it themselves.
 }
 
-static void on_spawn_complete(VteTerminal *terminal, GPid pid, GError *error, gpointer user_data) {
-    (void)user_data;
-    if (error != NULL) {
+static void on_spawn_complete(GObject *source, GAsyncResult *result, gpointer user_data) {
+    VteTerminal *terminal = user_data;
+    GError *error = NULL;
+    GPid pid = -1;
+    if (!vte_pty_spawn_finish(VTE_PTY(source), result, &pid, &error)) {
         g_printerr("Failed to launch bin/z80: %s\n", error->message);
+        g_error_free(error);
         return;
     }
-    (void)terminal;
-    (void)pid;
+    // What vte_terminal_spawn_async() did for itself: without the watch,
+    // "child-exited" is never emitted.
+    vte_terminal_watch_child(terminal, pid);
 }
 
-// Spawns bin/z80 once the terminal is on screen rather than as soon as it
-// exists. VTE processes pty output on the widget's frame clock, and a
-// child that writes everything before the window is mapped and then goes
-// quiet - bin/z80 --debug, stopped at its first instruction - left the
-// window blank until the first keypress brought more output to process.
-static void on_terminal_map(GtkWidget *terminal, gpointer user_data) {
+// The pty is created and attached to the terminal *before* bin/z80 starts,
+// rather than letting vte_terminal_spawn_async() do both, which attaches
+// it only once the child is already running. Done that way, a bin/z80 that
+// writes everything at once and then waits - bin/z80 --debug, stopped at
+// its first instruction - left the window blank, the cursor never having
+// moved, until a keypress; attached first, the same run shows its
+// start-up lines and the prompt. It runs once the terminal is mapped, as
+// the arrangement that was verified did. Established by running both in real
+// windows side by side (docs/JOURNAL.md, 2026-09-25). Why VTE loses the
+// output the other way was not pinned down.
+static void spawn_child(GtkWidget *widget, gpointer user_data) {
     (void)user_data;
-    g_signal_handlers_disconnect_by_func(terminal, G_CALLBACK(on_terminal_map), NULL);
-    vte_terminal_spawn_async(
-        VTE_TERMINAL(terminal),
-        VTE_PTY_DEFAULT,
+    g_signal_handlers_disconnect_by_func(widget, G_CALLBACK(spawn_child), NULL);
+    VteTerminal *terminal = VTE_TERMINAL(widget);
+    GError *error = NULL;
+    VtePty *pty = vte_pty_new_sync(VTE_PTY_DEFAULT, NULL, &error);
+    if (!pty) {
+        g_printerr("Failed to create a pty: %s\n", error->message);
+        g_error_free(error);
+        return;
+    }
+    vte_terminal_set_pty(terminal, pty);
+    vte_pty_spawn_async(
+        pty,
         g_cwd,            // working directory: same as ours (see g_cwd's comment)
         g_child_argv,     // argv: bin/z80 <its own args...>
         NULL,             // envv: inherit ours
-        G_SPAWN_DEFAULT,
+        G_SPAWN_DEFAULT,  // VTE adds DO_NOT_REAP_CHILD itself, and refuses it here
         NULL, NULL, NULL, // child_setup
         -1,               // no timeout
         NULL,             // cancellable
         on_spawn_complete,
-        NULL);
+        terminal);
+    g_object_unref(pty);  // the terminal holds its own reference
 }
 
 static void activate(GtkApplication *app, gpointer user_data) {
@@ -132,7 +150,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GtkWidget *terminal = vte_terminal_new();
     gtk_window_set_child(GTK_WINDOW(window), terminal);
     g_signal_connect(terminal, "child-exited", G_CALLBACK(on_child_exited), NULL);
-    g_signal_connect(terminal, "map", G_CALLBACK(on_terminal_map), NULL);
+    g_signal_connect(terminal, "map", G_CALLBACK(spawn_child), NULL);
 
     gtk_window_present(GTK_WINDOW(window));
 }

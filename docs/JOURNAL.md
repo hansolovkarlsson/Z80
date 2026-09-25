@@ -54,29 +54,54 @@ program after the option it stops at `0100` and Ctrl-C breaks a running
 one, checked on a pty. Two more bugs were in that launcher.
 It allocated `argc` pointers for an argv of `argc` entries plus a NULL.
 And, reported by the user once it ran, the window stayed blank until
-Enter was pressed, although the prompt was printed. The likeliest
-reading, not a confirmed one: VTE processes pty output on the widget's
-frame clock, and a child that writes everything before the window is
-mapped and then waits on the prompt gives it no reason to process
-anything more. The child is now spawned from the terminal's `map` signal,
-so its output arrives at a widget that is on screen. An attempt to confirm the cause headlessly, with
-a VTE widget never put in a window, was abandoned: an unrealized widget
-drops output even from a plain run of `hello.com`, so it proves nothing
-either way. The user's eyes are the check.
+Enter was pressed, although `bin/z80` had printed its start-up lines, the
+stop and the prompt (a `sample` of the process showed it waiting in the
+prompt's `fgets`, and the same run on a plain pty shows all of it).
 
-**F12 is a second break key**, the user's choice for layouts where
-Ctrl-] cannot be typed (Swedish macOS puts `]` on Option-9). In a window
-it is `GDK_KEY_F12`. In a terminal it arrives as `ESC [ 2 4 ~`, which
-cannot be an interrupt character, so each `--interactive` key decoder
-recognises it. Those decoders had only ever read one byte after `ESC [`,
-so F12 used to drop the `2` and type `4~` into BASIC; they now collect a
-CSI sequence's parameter bytes, and drop any other parameterised key.
-`ptysession.py`'s `key:` now takes several bytes in one write, the way a
-terminal sends a function key. `debugger-f12` in each ABC suite types
-`10 GOTO 10`, `RUN`, then F12, and wants `[stopped]`; with the recognised
-parameters changed to `99`, all three fail. One false alarm on the way:
-the first ABC80 try typed `4ü`, from a binary the rebuild had not
-included, not from the decoder.
+That one took three tries, and the first two are worth recording. The
+first guess was that VTE had simply not processed output written before
+the window was mapped, so the child was spawned from the terminal's `map`
+signal instead. It was committed on no evidence and changed nothing. The
+second line of attack was a VTE widget never put in a window, which could
+be read without taking the user's desktop. It reproduced the blank, and a
+morning of experiments on it built a plausible story about termios
+changes racing VTE's own pty setup, down to VTE's source and a packet-mode
+test showing the kernel delivered every byte. Then the same probe lost a
+line with *no* flag changed at all, while reporting the cursor below it:
+an unrealized widget's text snapshot was never reliable, so none of those
+readings meant anything. What settled it was a diagnostic the user ran,
+three real windows side by side, each reporting its terminal's text and
+cursor: `vte_terminal_spawn_async()` left the cursor at 0,0 with nothing
+shown, while creating the pty with `vte_pty_new_sync()`, attaching it with
+`vte_terminal_set_pty()` and only then starting the child with
+`vte_pty_spawn_async()` showed every line, delayed start or not. The
+launcher now does the latter, and the user confirmed the stop and the
+prompt appear on opening. Why VTE loses the output the other way is not
+known. One more trap on the way: `vte_pty_spawn_async()` refuses
+`G_SPAWN_DO_NOT_REAP_CHILD` with a runtime check and spawns nothing,
+because it adds that flag itself.
+
+**F12 was the user's choice of a second break key**, for layouts where
+Ctrl-] cannot be typed (Swedish macOS puts `]` on Option-9). In a terminal
+it arrives as `ESC [ 2 4 ~`, which cannot be an interrupt character, so
+each `--interactive` key decoder recognises it. Those decoders had only
+ever read one byte after `ESC [`, so F12 used to drop the `2` and type
+`4~` into BASIC; they now collect a CSI sequence's parameter bytes, and
+drop any other parameterised key. `ptysession.py`'s `key:` now takes
+several bytes in one write, the way a terminal sends a function key.
+`debugger-f12` in each ABC suite types `10 GOTO 10`, `RUN`, then F12, and
+wants `[stopped]`; with the recognised parameters changed to `99`, all
+three fail. One false alarm on the way: the first ABC80 try typed `4ü`,
+from a binary the rebuild had not included, not from the decoder.
+
+**In the windows F12 does nothing on this Mac**, and that was only found
+by the user trying it. A key-logging window received no event at all for
+F12, Fn-F12 or F5, only the modifiers and Ctrl combinations; GTK's macOS
+backend is not delivering function keys here (the top row defaults to
+media keys, `com.apple.keyboard.fnState` being unset, but Fn-F12 gave
+nothing either). The windows still match `GDK_KEY_F12`, which costs
+nothing and should work on other backends, but a window break key for
+this keyboard is still open.
 
 The Gdk warning printed at start-up (`gdk_frame_timings_presented()
 called on skipped frame`) is GTK's own; nothing in this repository calls
