@@ -110,14 +110,15 @@ Real, understood, and deliberately not solved yet — not oversights.
   BASIC function table opens with `XFN` (token `0xFE`). Its statement
   counterpart `XSTM` turned out to be the prefix for a second statement
   table, so `XFN` is probably a prefix too, but no prefixed function has
-  been found or tested. Also unread: the word table at `0x0A6C` that the
-  statement pointer block names, the nameless `0x81` entry heading the
-  secondary keywords at `0x0945`, and the `0x00` bytes inside the main
-  statement table (after `XSTM` and after `DEF FN`). Finally, the rows
-  below the statements in `ABC802_BASIC_REFERENCE.md`'s table list
-  (commands, extension, device names, DOS commands) have not been
-  rechecked against the ROM's own pointers, as the operator, function,
-  attribute and statement ranges have been.
+  been found or tested. Also unread: the nameless `0x81` entry heading
+  the secondary keywords at `0x0945`; the `0x00` bytes inside the main
+  statement table (after `XSTM` and after `DEF FN`) and the command table
+  (after `CON` and `ED`); the two middle words of each keyword-chain
+  header (see `ABC802_BASIC_REFERENCE.md`, How the keyword tables were
+  read); and how the DOS header's handler words are indexed, since `BYE`
+  enters at the word its third field names rather than through the
+  handler table, whose first word is a routine every line passes
+  through. Every table row now starts where a ROM pointer says.
 - **Frame frequency is ambiguous** — MAME's DIP label and the code
   comment that consumes it disagree; see `ABC802_REFERENCE.md`. Nothing
   currently depends on it.

@@ -21,6 +21,33 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-25 (3): The ABC802 keyword chains
+
+The rest of the ABC802 table rows, rechecked the way the operators just
+were, turned out to hang off one structure. Boot copies three list heads
+to `0xFF7B` from `0x014F`, and two of them are chains of five-word
+headers (next, two unknown words, names, handlers) that yesterday had
+been read as separate "pointer blocks" at `0x0661` and `0x088B`. Seen as a
+chain, the "word table at `0x0A6C`, not yet read" was simply the prefixed
+statements' handler table, which breakpoints then confirmed, and the
+extension row turned out to span a header's tail rather than a table.
+The UFD-DOS splices its own header and its drives in at the front of
+both lists at init.
+
+The bytes at `0x0151`-`0x0154` had come up once already today, as an
+apparent reference to `0x0661`, and been set aside as coincidence. They
+were the function chain's head in the boot copy. The lesson is the one
+the morning's VTE work already taught: a hit that does not fit is worth
+one more look before calling it noise, when the look is this cheap.
+
+One breakpoint test needed a control to mean anything: `0x0059` stopped
+every statement typed, `PRINT 1` included, because it is on the path
+every line takes. Only a statement that reaches none of the breakpoints
+makes the others evidence. Details are in
+`abc802/docs/ABC802_COMPLETED.md`.
+
+---
+
 ## 2026-09-25 (2): The ABC802 operator table, from the parser
 
 The last BASIC table row not pinned by a ROM pointer was the operators.

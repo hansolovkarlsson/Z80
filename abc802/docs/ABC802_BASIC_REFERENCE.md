@@ -218,7 +218,7 @@ off the terminal's flow control so Ctrl-S is not taken as XOFF, and in
 
 Read out of the ROM's two statement tables, the main one at
 `0x089F`-`0x0944` and a second at `0x097E`-`0x0A21` whose statements a
-program stores behind a prefix token, plus the extension table at `0x4BFA`
+program stores behind a prefix token, plus the extension table at `0x4C01`
 that adds `WIDTH`. Grouped here by what they do rather than by token
 order.
 
@@ -662,9 +662,10 @@ mode, so it will happily report dots inside ordinary text characters.
 
 ### Device names
 
-Storage is addressed by a device prefix ending in `:`. The complete list
-is the DOS ROM's own device-name table at `0x6E37`-`0x6EB4`, read out of
-`ABC802-dos.32-31.bin`:
+Storage is addressed by a device prefix ending in `:`. The drives are
+the DOS ROM's own device list at `0x6E35`-`0x6EB4`, read out of
+`ABC802-dos.32-31.bin` (how the list is built is under
+[How the keyword tables were read](#how-the-keyword-tables-were-read)):
 
 | Device | Unit | What it is |
 |---|---|---|
@@ -682,8 +683,8 @@ Five more device names are not drives:
 | `CAS:` | cassette recorder (SIO channel B) | ROM `0x7481` |
 | `MEM:` | 32 KB RAM-floppy — the low RAM the ROM overlays | ROM `0x7368` |
 | `PR:` | printer | ROM `0x7081`, in the printer/terminal ROM |
-| `NUL:` | the null device — swallows output **(verified)** | ROM `0x1111` |
-| `CON:` | keyboard and screen | manual; **(verified)** by use |
+| `NUL:` | the null device: swallows output **(verified)** | ROM `0x1111`, the name in BASIC's device entry at `0x110F` |
+| `CON:` | keyboard and screen | ROM `0x018C`, the name in the entry at `0x018A`; **(verified)** by use |
 
 **The default device is `DR0:`, with `DR1:` as secondary.** A bare
 `SAVE "PROG"` therefore goes to drive 0 and you only need a prefix to
@@ -741,8 +742,8 @@ back afterwards:
 | `CHAIN "MO0:PART2"` | in a program: load and run another | not tested |
 
 `KILL` and `NAME` … `AS` are *statements* from the DOS ROM's own command
-table at `0x6F87`, whose complete contents are exactly four entries:
-`BYE`, `KILL`, `NAME`, `AS`.
+table at `0x6F87`, whose complete contents are `BYE`, `KILL` and `NAME`,
+with `AS` in a group of its own after it.
 
 **`MERGE` only works on a text file. (verified)** Against a `.BAC` it
 gives `Error 204` ("MERGE cannot be used on a BAC file"), which is the
@@ -1266,7 +1267,7 @@ What is genuinely new or different, restricted to things confirmed here:
   `POSIT`, and the `CVT` family.
 - `GET #` / `PUT #` / `POSIT #` — random access on files.
 - `WIDTH` — 40/80 columns from software (ABC802-specific; it is in the
-  ROM's extension table at `0x4BFA`, not the main statement table).
+  ROM's extension table at `0x4C01`, not the main statement table).
 - The attribute and colour words.
 
 **Changed**
@@ -1314,50 +1315,93 @@ token, which is how `NEW`/`SCR`, `RENUMBER`/`REN`, `LEFT`/`LEFT$` and
 | Secondary keywords | `0x0945`-`0x097D` | 11 entries in 8 groups (`ELSE`, `THEN`, `TO`, `STEP`, ...) |
 | Prefixed statements | `0x097E`-`0x0A21` | 24 entries (`DIM` to `CLR DOT`) |
 | Commands | `0x4057`-`0x40B2` | 17 entries |
-| Extension | `0x4BFA`-`0x4C0B` | 1 entry (`WIDTH`) |
-| Device names | `0x6E37`-`0x6EB4` | 16 entries, in the DOS ROM |
-| DOS commands | `0x6F87`-`0x6F99` | 4 entries (`BYE`, `KILL`, `NAME`, `AS`) |
+| Extension | `0x4C01`-`0x4C07` | 1 entry (`WIDTH`) |
+| DOS statements | `0x6F87`-`0x6F95` | 3 entries (`BYE`, `KILL`, `NAME`) |
+| DOS secondary keyword | `0x6F96`-`0x6F99` | 1 entry (`AS`) |
+| Device list, BASIC | `0x110F`, `0x018A` | 2 linked entries (`NUL`, `CON`) |
+| Device list, DOS | `0x6E35`-`0x6EB4` | 16 linked entries, `DR0` to `HD3`, in the DOS ROM |
 
-The function and attribute starts are the addresses the ROM's own
-pointers hold, in a block at `0x0661`: `0x0667` holds `0x0814`, and
-`0x0671` holds `0x0675` followed by `0x079E`. That second address is not
-the name list's end. It starts a separate list of bare tokens
-(`9A 86 84 A3 …`, which are `ABS`, `ATN`, `COS`, `EXP` in name-list
-order), which the routine at `0x1785` searches. The three bytes before the
-first attribute entry (`29 2D 6C` at `0x0811`) are not part of the table.
-They are an argument-type list that `0x16F7` hands to the parser at
-`0x1802`, and that list ends on `RED`'s token, which is the first byte
-with bit 7 set.
+**The statement and function tables are found through two chains of
+10-byte headers**, whose heads boot copies from `0x014F` to RAM with the
+device list's (`LD HL,014Fh` / `LD DE,0FF7Bh` / `LDIR` at `0x008A`): the
+device list head to `0xFF7B` (`0x110F`), the statement chain to `0xFF7D`
+(`0x4BF7`) and the function chain to `0xFF7F` (`0x0661`). Each header
+is five words: the next header (`0000` ends the chain), two words whose
+meaning is unknown, the name list, and a table of handler addresses.
 
-The statement tables are pinned the same way. A block at `0x088B` holds
-`0x097E` (at `0x0891`), `0x0A6C` (at `0x0893`, not yet read) and
-`0x089F` (at `0x089B`). The main table opens with **`XSTM`, token
-`0x86`, which is a prefix rather than a statement**: the 24 statements
-at `0x097E` number their tokens from `0x80` again, and a program stores
-one as `0x86` followed by its token minus `0x80`. A program saved to
-cassette shows it: `GOTO 10` is stored as `80 0A 00`, `STOP` as
-`86 08` and `DIM` as `86 00`. Between the two tables are the secondary
-keywords, most in a group of their own that code looks up alone:
-`LD DE,0950h` at `0x1A26` for `STEP`, `LD DE,0978h` at `0x195C` for
-`THEN`, and likewise for `TO`, `AS FILE`, `COUNT`, `USING` and `LOCAL`.
-The first group (`0x0945`: an entry with token `0x81` and no name, then
-`?`, `:` and `ELSE`) has no pointer that has been found.
+| Header | Next | Names | Handlers |
+|---|---|---|---|
+| `0x4BF7` | `0x088B` | `0x4C01`, `WIDTH` | `0x4C08` |
+| `0x088B` | `0x0895` | `0x097E`, the prefixed statements | `0x0A6C` |
+| `0x0895` | end | `0x089F`, the main statements | none |
+| `0x0661` | `0x066B` | `0x0814`, the attributes | `0x0080` |
+| `0x066B` | end | `0x0675`, the functions | `0x079E` |
 
-The operator, function, attribute and three statement-region ranges end
-on their table's closing `0xFF`, and every one of their starts is an
-address the ROM points at (the operators' is the first record of the
-level block at `0x060A`). The rows below the statements were not
-rechecked. (The operator row read `0x0625`-`0x0661` until 2026-09-25, one
-byte past its `0xFF`; `0x0661` is the next pointer block.) (Until 2026-09-24 the functions read
-`0x0676`-`0x079A`, the attributes `0x0810`-`0x088C`, and the statements
-`0x08A5`-`0x0A22` as one table of 62 entries. None of the three starts
-fell on an entry the ROM points at.)
+The UFD-DOS adds itself at the head of the statement chain: its init at
+`0x6C7E` copies its header at `0x6F9A` (names `0x6F87`, handlers
+`0x6F7B`) to `0xFDD8`, stores the old head in the copy's first word and
+makes `0xFDD8` the head. **(verified)** The handler tables are what they
+look like, by breakpoints on the real ROM: `DIM`, `POKE`, `OUT` and
+`INTEGER` stop at the 1st, 3rd, 4th and 16th words of `0x0A6C`
+(`0x164A`, `0x1A60`, `0x1A6A`, `0x3A1C`), which is their position in the
+prefixed list; `WIDTH` at `0x4C0C`, the first word of `0x4C08`; `KILL`
+and `NAME` at `0x6F78` and `0x6F60`, the second and third words of
+`0x6F7B`; and `PRINT 1` at none of them. `BYE` stops at `0x6D2F`, the word
+the DOS header's third field (`0x6F81`) points at, and the first word of
+`0x6F7B` is `0x0059`, a routine every line passes through, so how the
+DOS header's handler words are indexed is not settled. The `0x079E`
+list is bare tokens (`9A 86 84 A3 …`, which are `ABS`, `ATN`, `COS`,
+`EXP` in name-list order) that the routine at `0x1785` searches, and the
+three bytes before the first attribute entry (`29 2D 6C` at `0x0811`)
+are an argument-type list that `0x16F7` hands to the parser at `0x1802`.
+
+The main statement table opens with **`XSTM`, token `0x86`, which is a
+prefix rather than a statement**: the 24 statements at `0x097E` number
+their tokens from `0x80` again, and a program stores one as `0x86`
+followed by its token minus `0x80`. A program saved to cassette shows
+it: `GOTO 10` is stored as `80 0A 00`, `STOP` as `86 08` and `DIM` as
+`86 00`. Between the two tables are the secondary keywords, most in a
+group of their own that code looks up alone: `LD DE,0950h` at `0x1A26`
+for `STEP`, `LD DE,0978h` at `0x195C` for `THEN`, and likewise for `TO`,
+`AS FILE`, `COUNT`, `USING` and `LOCAL`. The first group (`0x0945`: an
+entry with token `0x81` and no name, then `?`, `:` and `ELSE`) has no
+pointer that has been found. The DOS's `AS` is the same kind of lone
+group, looked up with `LD DE,6F96h` at `0x6F6D`.
+
+The command table is outside both chains, looked up directly with
+`LD DE,4057h` and the same search routine (`CALL 4B21h`) at `0x1144`.
+Two of its entries, `CON` and `ED`, are followed by a `0x00` byte whose
+meaning is unknown, like the ones inside the main statement table.
+
+**The device lists are linked 8-byte entries**: the next entry, a
+three-letter name, a handler address and a unit byte. BASIC's own list
+is `NUL` (`0x110F`) then `CON` (`0x018A`). The DOS's init copies a
+blank-named entry from `0x6E2D` to `0xFDD0`, links it to BASIC's list,
+and makes the head `DR0` (`0x6E35`, the link stored in that blank
+entry). Its 16 drives run in the order `DR0`-`DR2`, `UFD`, `MF0`-`MF2`,
+`MO0`-`MO1`, `SF0`-`SF2`, `HD0`-`HD3`, all with the handler `0x6D85`,
+and `HD3` links to `0xFDD0`. So with the DOS present the chain is the 16
+drives, the blank entry, `NUL` and `CON`.
+
+Every name-list range ends on its table's closing `0xFF`, and every
+start is an address the ROM points at (the operators' is the first
+record of the level block at `0x060A`). The device lists have no `0xFF`;
+they end where a link does.
+
+Earlier readings of these rows, kept because other records quote them:
+until 2026-09-24 the functions read `0x0676`-`0x079A`, the attributes
+`0x0810`-`0x088C`, and the statements `0x08A5`-`0x0A22` as one table of
+62 entries, none of those starts falling on an entry the ROM points at.
+Until 2026-09-25 the operators read `0x0625`-`0x0661`, one byte past
+their `0xFF`; the extension `0x4BFA`-`0x4C0B`, spanning its header's
+tail, the names and the handlers; the DOS devices `0x6E37`, the first
+name rather than the first entry; and the DOS commands one row of four.
 
 Two things fell out of that format for free. The operator table's `0xFF`
 separators are **precedence group boundaries**, which is where the
 precedence table in this document first came from; the parser's level
-block and an expression per boundary have since confirmed it. And the attribute words' tokens are exactly their
-character codes plus `0x80`, which is what made the attribute table
+block and an expression per boundary have since confirmed it. And the
+attribute words' tokens are exactly their character codes plus `0x80`, which is what made the attribute table
 derivable and then checkable with `PEEK`.
 
 ## Sources

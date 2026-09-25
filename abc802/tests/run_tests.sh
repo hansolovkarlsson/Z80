@@ -650,6 +650,25 @@ tl_want "$out" "wait_first_key:" "the first-key loop's label"
 tl_want "$out" "LD A,(kbd_ready_flag)" "the polled flag named in the operand"
 tl_end "$out"
 
+# The keyword chain's handler tables (ABC802_BASIC_REFERENCE.md, How the
+# keyword tables were read): a statement runs from the word at its
+# position in its header's handler table. DIM is the first prefixed
+# statement, so it enters at the first word of 0A6C; WIDTH at the first
+# of 4C08. PRINT, a main statement, reaches neither, which is what shows
+# the breakpoints are not simply on a path every line takes (0059 is).
+DBG_CHAIN_SCRIPT="$(mktemp)"
+printf 'b 164A\nb 4C0C\nc\nq\n' > "$DBG_CHAIN_SCRIPT"
+chain_stop() {
+    "$ABC802" --cycles "$CAP" --type "$1"$'\r' --debug --debug-script "$DBG_CHAIN_SCRIPT" < /dev/null 2>&1 |
+        grep -aoE '^\[breakpoint\] [0-9A-F]{4}' | tail -1
+}
+tl_begin "basic-statement-handlers"
+tl_want_eq "$(chain_stop 'DIM A(5)')" "[breakpoint] 164A" "DIM entering at the first word of 0A6C"
+tl_want_eq "$(chain_stop 'WIDTH 40')" "[breakpoint] 4C0C" "WIDTH entering at the first word of 4C08"
+tl_want_eq "$(chain_stop 'PRINT 1')" "" "PRINT stopping at neither"
+tl_end ""
+rm -f "$DBG_CHAIN_SCRIPT"
+
 # The named spaces: memory the bus hooks divert out of the flat array. At
 # the first-key loop, 7800 in the CPU's view is ROM code while chr:0 holds
 # the sign-on banner, which is the whole reason the spaces exist (as

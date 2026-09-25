@@ -1131,3 +1131,45 @@ search for it found only coincidences: the parser at `0x3773` loads
 ABC802 suite type those expressions at the real ROM. `abc802.sym` names
 the level block, the `NOT` group, and the parser's entry, level climb and
 prefix check.
+
+## The rest of the keyword tables: two chains and two device lists (2026-09-25)
+
+The last four rows of `ABC802_BASIC_REFERENCE.md`'s table list were
+checked against the ROM's own pointers, and three were not what they
+said. What held them together is that boot copies three list heads from
+`0x014F` to `0xFF7B` (`LD HL,014Fh` / `LD DE,0FF7Bh` / `LDIR` at
+`0x008A`): the device list, a chain of statement tables, and a chain of
+function tables.
+
+- **The pointer blocks are headers in a chain.** The statement chain runs
+  `0x4BF7` (`WIDTH`) to `0x088B` (prefixed statements) to `0x0895` (main
+  statements); the function chain `0x0661` (attributes) to `0x066B`
+  (functions). Each header is five words: the next header, two not yet
+  understood, the name list and its handler table. That made the unread
+  word table at `0x0A6C` the prefixed statements' handlers, and
+  breakpoints confirmed it: `DIM`, `POKE`, `OUT` and `INTEGER` enter at
+  the words their positions predict, `WIDTH` at the first word of
+  `0x4C08`, and `PRINT` at none of them.
+- **The extension row was the whole header region.** The name list is
+  `0x4C01`-`0x4C07`; `0x4BFA`-`0x4C0B` had spanned the header's tail and
+  the handlers, and the header itself starts at `0x4BF7`.
+- **The DOS adds itself at the head of both lists** (`0x6C73`): its
+  statement header `0x6F9A` is copied to `0xFDD8` and linked in front of
+  `WIDTH`'s, and its drives are linked in front of BASIC's own devices
+  through a blank entry copied from `0x6E2D` to `0xFDD0`. The DOS
+  statements are `BYE`, `KILL` and `NAME` (`0x6F87`-`0x6F95`, `KILL` and
+  `NAME` entering at the second and third handler words); `AS` is a lone
+  group at `0x6F96`, looked up by itself at `0x6F6D`.
+- **The devices are a linked list of 8-byte entries** (next, name,
+  handler, unit), so the first DOS entry is `DR0` at `0x6E35`, not its
+  name at `0x6E37`. BASIC's own list is `NUL` (`0x110F`) then `CON`
+  (`0x018A`), which gives `CON:` a ROM location where the reference had
+  only the manual.
+- **The command table held.** `0x4057`-`0x40B2`, 17 entries, looked up
+  directly (`LD DE,4057h` at `0x1144`), outside both chains.
+
+`basic-statement-handlers` in the ABC802 suite stops `DIM` and `WIDTH` at
+their handler words and `PRINT` at neither; moving the `DIM` breakpoint
+one word along makes it fail. `abc802.sym` names the headers, the handler
+tables, the device entries and the three RAM list heads.
+
