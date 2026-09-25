@@ -1173,3 +1173,48 @@ their handler words and `PRINT` at neither; moving the `DIM` breakpoint
 one word along makes it fail. `abc802.sym` names the headers, the handler
 tables, the device entries and the three RAM list heads.
 
+## The table details: headers, stored statements, devices (2026-09-25)
+
+The roadmap's list of unread ROM table details, worked through. Every
+answer below came from the ROM's code and was then tested on the real
+ROM or matched against real media, except where it says otherwise.
+
+- **A chain header is next, code and count, run handlers, names, entry
+  handlers.** Byte +2 is the stored code of the list's first name and
+  byte +3 the count (or, with bit 7 set, a prefix number and count). The
+  two handler tables were told apart by breakpoints: `WIDTH` typed as a
+  numbered line reaches only `0x4C0C`, from the +8 table, and `RUN` then
+  reaches `0x4C13`, from the +4 table; `KILL` the same with `0x6F78` and
+  `0x6EFE`.
+- **How statements are stored**, from dumps of stored lines: a line is
+  `87`, length, line number, statements, with `88` between statements.
+  Main statements are their own tokens and run from `0x0A9C`
+  (breakpoints on `GOTO`, `PRINT` and `END` confirm three entries). The
+  rest are behind `86`: BASIC's own prefixed statements below `0x80`,
+  chain codes from `0x80` (the DOS's `A0`-`A2`), and two-byte codes from
+  `0xF9` (`WIDTH` is `86 F9 00`).
+- **`BYE` was never missing from its table.** It is `86 A0`, index 0 of
+  the DOS's run table (`0x6D2F`); its entry handler is `0x0059`, a routine
+  every line uses, which is why a breakpoint there looked meaningless.
+- **A `0x00` after a name means anything may follow it** (`0x4B21`):
+  `CONXYZ` continues a stopped program, `EDIT 10` is `ED` with the
+  argument `IT 10`, and `DEF FNA` works. A space inside a name is
+  optional, and in direct mode no delimiter is needed after one.
+- **The secondary keyword group is `ELSE` alone, from `0x094A`.** The
+  "nameless `0x81` entry" was a misreading: the five bytes before `ELSE`
+  are searched by nothing. `0x88` in them is the stored separator.
+- **The device table's unknown bits are geometry and handshake.** The
+  select byte's top two bits choose a block transfer (`00`, `11`) or a
+  polled one (`01`, `10`), and `10` marks the ABC830 layout, whose live
+  free-list is at sector 6 rather than 14. The second byte's low three
+  bits are log2 of the sectors per cluster. The ABC830 and ABC832 values
+  agree with the layout `bin/abcdisk` took from real media.
+- **A fourth non-drive device, `V24:`**, found in a second extension's
+  device chain (`CAS`, `MEM`, `V24`, `PR`, linked at `0x7003`). It opens.
+
+Four checks were added to the ABC802 suite: `basic-entry-and-run-handlers`,
+`basic-name-any-continuation`, `basic-device-v24` and its control
+`basic-device-unknown`. The V24 check fails when the device name is
+changed to one that does not exist. What remains unexplained is on the
+roadmap.
+

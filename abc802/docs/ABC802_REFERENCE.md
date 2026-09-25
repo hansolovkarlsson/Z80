@@ -319,8 +319,31 @@ The byte at `0xFD01` chooses the entry: `0x61B2` takes its low five bits
 (or `0xFFF9` when they are `0x1E`), and `0x6184` masks those with `0x1C`,
 so each entry is a multiple of four from `0xFDE2`. A zero index reads the
 `DR` entry's select byte as the offset instead, which is how `DR` becomes
-`MF`. What the second byte of each entry means, and what the top bits of
-`MF`/`MO`/`SF`'s select bytes carry, are not known.
+`MF`.
+
+The rest of each entry is geometry and handshake, read from the DOS's
+own code and matched against the layout `bin/abcdisk` derived from real
+media (`abcbus/mkdisk.c`):
+
+- **The select byte's top two bits pick the transfer and the layout.**
+  `0x611D` sends a sector with one `OTIR`/`INIR` when they are `00` or
+  `11`, and a byte at a time with a wait on status bit 0 before each
+  (`0x612D`, `0x6140`) when they are `01` or `10`. So `HD` (`00`) is a
+  block transfer and `MF`, `SF` (`01`) and `MO` (`10`) are polled. `10`
+  also marks the ABC830 layout: the DOS entry at `0x6003` (`JP 6212h`)
+  returns the live free-list's sector, `6` for `10` and `14` for anything
+  else, which are the free-list sectors `mkdisk.c` has for the ABC830 and
+  the ABC832.
+- **Bits 2-0 of the second byte are log2 of the sectors per cluster.**
+  `0x6274` returns them plus one, and its callers scale a count by that
+  power of two (`ADD HL,HL` at `0x62AF`, shifts at `0x62A3`). `MO` and
+  `SF` (`0`) are 1 sector per cluster, `MF` (`2`) 4 and `HD` (`5`) 32.
+  The first two are the cluster sizes `mkdisk.c` has for the ABC830 and
+  the ABC832; the hard disk's 32 is read from the code alone.
+
+The block transfer is what an `HD` entry would need from this card, and
+nothing here exercises it: `abcbus/disk.c` models only the ABC830 and
+ABC832, both polled.
 
 (These codes were once recorded as coming from a "select table" at
 `0x61DA`-`0x61FB`. That range is code in both DOS images, where the `2Ch`

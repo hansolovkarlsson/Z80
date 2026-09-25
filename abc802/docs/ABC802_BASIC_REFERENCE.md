@@ -676,13 +676,14 @@ the DOS ROM's own device list at `0x6E35`-`0x6EB4`, read out of
 | `HD0:`…`HD3:` | 4, 5, 6, 7 | hard disk |
 | `UFD:` | 30 | the UFD-DOS system device |
 
-Five more device names are not drives:
+Six more device names are not drives:
 
 | Device | Meaning | Found at |
 |---|---|---|
 | `CAS:` | cassette recorder (SIO channel B) | ROM `0x7481` |
 | `MEM:` | 32 KB RAM-floppy — the low RAM the ROM overlays | ROM `0x7368` |
 | `PR:` | printer | ROM `0x7081`, in the printer/terminal ROM |
+| `V24:` | the RS-232 port **(verified: opens)** | ROM `0x7088`, the name in the entry at `0x7086` |
 | `NUL:` | the null device: swallows output **(verified)** | ROM `0x1111`, the name in BASIC's device entry at `0x110F` |
 | `CON:` | keyboard and screen | ROM `0x018C`, the name in the entry at `0x018A`; **(verified)** by use |
 
@@ -1325,53 +1326,92 @@ token, which is how `NEW`/`SCR`, `RENUMBER`/`REN`, `LEFT`/`LEFT$` and
 10-byte headers**, whose heads boot copies from `0x014F` to RAM with the
 device list's (`LD HL,014Fh` / `LD DE,0FF7Bh` / `LDIR` at `0x008A`): the
 device list head to `0xFF7B` (`0x110F`), the statement chain to `0xFF7D`
-(`0x4BF7`) and the function chain to `0xFF7F` (`0x0661`). Each header
-is five words: the next header (`0000` ends the chain), two words whose
-meaning is unknown, the name list, and a table of handler addresses.
+(`0x4BF7`) and the function chain to `0xFF7F` (`0x0661`). A header is:
 
-| Header | Next | Names | Handlers |
-|---|---|---|---|
-| `0x4BF7` | `0x088B` | `0x4C01`, `WIDTH` | `0x4C08` |
-| `0x088B` | `0x0895` | `0x097E`, the prefixed statements | `0x0A6C` |
-| `0x0895` | end | `0x089F`, the main statements | none |
-| `0x0661` | `0x066B` | `0x0814`, the attributes | `0x0080` |
-| `0x066B` | end | `0x0675`, the functions | `0x079E` |
+| Offset | Contents |
+|---|---|
+| +0 | the next header, `0000` ending the chain |
+| +2 | the stored code of the list's first name |
+| +3 | how many codes the header owns; if bit 7 is set, bits 6-4 are a prefix number and bits 3-0 the count less one |
+| +4 | the handlers run when a statement **executes**, one word per code |
+| +6 | the name list |
+| +8 | the handlers run when a line is **entered**, one word per name |
 
-The UFD-DOS adds itself at the head of the statement chain: its init at
-`0x6C7E` copies its header at `0x6F9A` (names `0x6F87`, handlers
-`0x6F7B`) to `0xFDD8`, stores the old head in the copy's first word and
-makes `0xFDD8` the head. **(verified)** The handler tables are what they
-look like, by breakpoints on the real ROM: `DIM`, `POKE`, `OUT` and
-`INTEGER` stop at the 1st, 3rd, 4th and 16th words of `0x0A6C`
-(`0x164A`, `0x1A60`, `0x1A6A`, `0x3A1C`), which is their position in the
-prefixed list; `WIDTH` at `0x4C0C`, the first word of `0x4C08`; `KILL`
-and `NAME` at `0x6F78` and `0x6F60`, the second and third words of
-`0x6F7B`; and `PRINT 1` at none of them. `BYE` stops at `0x6D2F`, the word
-the DOS header's third field (`0x6F81`) points at, and the first word of
-`0x6F7B` is `0x0059`, a routine every line passes through, so how the
-DOS header's handler words are indexed is not settled. The `0x079E`
+| Header | Next | Code, count | Names | Entry handlers | Run handlers |
+|---|---|---|---|---|---|
+| `0x4BF7` | `0x088B` | `F9 00`, 1 | `0x4C01`, `WIDTH` | `0x4C08` | `0x4C0A` |
+| `0x088B` | `0x0895` | `00`, 25 | `0x097E`, the prefixed statements | `0x0A6C` | none |
+| `0x0895` | end | `00`, 37 | `0x089F`, the main statements | none | none |
+| `0x0661` | `0x066B` | `80`, 32 | `0x0814`, the attributes | `0x0080`, not examined | none |
+| `0x066B` | end | `00`, 54 | `0x0675`, the functions | `0x079E`, a token list (below) | none |
+| `0x6F9A` (DOS) | the old head | `A0`, 4 | `0x6F87`, `BYE` `KILL` `NAME` | `0x6F7B` | `0x6F81` |
+
+**How a statement is stored and run.** A program line is stored as
+`0x87`, a length byte, the line number, then the statements, with `0x88`
+between statements (**(verified)** by dumping stored lines: `10 A=1:B=2`
+is `87 0F 0A 00 D5 81 B4 78 01 88 D5 82 B4 78 02`). A main statement is
+its own token, `0x80`-`0xA4` (`GOTO` is `80`, `RETURN` `A0`), and runs
+from the table at `0x0A9C`, one word per token (`0x099C + 2 × token`, at
+`0x1CE2`). Everything else is stored behind **`XSTM`, `0x86`**, which is
+a prefix rather than a statement: a byte below `0x80` after it is one of
+BASIC's own 24 prefixed statements (`DIM` is `86 00`, `STOP` `86 08`); a
+byte from `0x80` up is looked up along the statement chain (`0x1D00`),
+and `0xF9`-`0xFF` there are themselves prefixes taking one more byte
+(`0x1DA2`). So `KILL` is stored as `86 A1`, `NAME` as `86 A2`, `BYE` as
+`86 A0`, and `WIDTH` as `86 F9 00`, prefix 1, code 0. The header whose
+range holds the code supplies the run handler through its +4 table:
+`BYE`, index 0 of `0x6F81`, runs at `0x6D2F`.
+
+**(verified)** Both handler tables by breakpoints on the real ROM. Typed
+as a numbered line and not run, `WIDTH` stops only at `0x4C0C` (its
+entry handler, the first word of `0x4C08`) and `KILL` only at `0x6F78`
+(the second word of `0x6F7B`); with `RUN` they then also stop at `0x4C13`
+and `0x6EFE`, their run handlers. `DIM`, `POKE`, `OUT` and `INTEGER`
+stop at the 1st, 3rd, 4th and 16th entry words of `0x0A6C` (`0x164A`,
+`0x1A60`, `0x1A6A`, `0x3A1C`), their positions in the prefixed list.
+`GOTO`, `PRINT` and `END` stop at `0x1D25`, `0x1DB1` and `0x1CF1`, the
+words for tokens `0x80`, `0x93` and `0x92` from `0x0A9C`, and only when
+the program runs. `BYE`'s entry word is `0x0059`, a routine every line
+passes through, which is why it seemed to be missing from its table.
+
+The DOS header claims four codes for three names; what `A3` would be is
+not known. `XFN`, the function table's first entry, is presumably the
+function chain's counterpart of `XSTM`, but no ROM in this set adds a
+function header, so nothing uses it here: the second extension's init
+at `0x7003` links `0000` into both keyword chains (see the device lists
+below), and the DOS's does not touch the function chain. The `0x079E`
 list is bare tokens (`9A 86 84 A3 …`, which are `ABS`, `ATN`, `COS`,
 `EXP` in name-list order) that the routine at `0x1785` searches, and the
 three bytes before the first attribute entry (`29 2D 6C` at `0x0811`)
 are an argument-type list that `0x16F7` hands to the parser at `0x1802`.
 
-The main statement table opens with **`XSTM`, token `0x86`, which is a
-prefix rather than a statement**: the 24 statements at `0x097E` number
-their tokens from `0x80` again, and a program stores one as `0x86`
-followed by its token minus `0x80`. A program saved to cassette shows
-it: `GOTO 10` is stored as `80 0A 00`, `STOP` as `86 08` and `DIM` as
-`86 00`. Between the two tables are the secondary keywords, most in a
+**How a name is matched** (`0x4B21`, every table's search). Letters are
+compared without regard to case. A space inside a name is optional
+(**(verified)** `NOTRACE` is accepted). A **`0x00` after a name means
+anything may follow it**: the match succeeds there whatever the text
+continues with. That is why `CON` accepts `CONT`, `CONTINUE` and even
+`CONXYZ`, why `ED` matches the first two letters of `EDIT` (so
+`EDIT 10` is `ED` with the argument `IT 10`, `Error 209`), and why
+`DEF FN` matches `DEF FNA` (all **(verified)**). The main table has
+`0x00` after `XSTM` and `DEF FN`, the command table after `CON` and `ED`.
+A name that ends without one needs a non-alphanumeric character next
+only while bit 2 of `0xFF1D` is set; that bit is set only around the
+number parse at `0x1B13`, so in direct mode `LIST10` lists line 10 and
+`LISTX` tries to list to a file called `X` (`Error 42`, disk not ready).
+
+The secondary keywords sit between the two statement tables, most in a
 group of their own that code looks up alone: `LD DE,0950h` at `0x1A26`
-for `STEP`, `LD DE,0978h` at `0x195C` for `THEN`, and likewise for `TO`,
-`AS FILE`, `COUNT`, `USING` and `LOCAL`. The first group (`0x0945`: an
-entry with token `0x81` and no name, then `?`, `:` and `ELSE`) has no
-pointer that has been found. The DOS's `AS` is the same kind of lone
-group, looked up with `LD DE,6F96h` at `0x6F6D`.
+for `STEP`, `LD DE,0978h` at `0x195C` for `THEN`, `LD DE,094Ah` at
+`0x197D` and `0x1B93` for `ELSE`, and likewise for `TO`, `AS FILE`,
+`COUNT`, `USING` and `LOCAL`. The five bytes before `ELSE` are `81`,
+`8B ?` and `88 :`, which nothing searches; `0x88` is the stored statement
+separator, so `88 :` is plausibly how `LIST` spells it, while `81` and
+`8B ?` are unexplained (typing `?` is a syntax error, not `PRINT`). The
+DOS's `AS` is the same kind of lone group, looked up with `LD DE,6F96h`
+at `0x6F6D`.
 
 The command table is outside both chains, looked up directly with
 `LD DE,4057h` and the same search routine (`CALL 4B21h`) at `0x1144`.
-Two of its entries, `CON` and `ED`, are followed by a `0x00` byte whose
-meaning is unknown, like the ones inside the main statement table.
 
 **The device lists are linked 8-byte entries**: the next entry, a
 three-letter name, a handler address and a unit byte. BASIC's own list
@@ -1380,8 +1420,12 @@ blank-named entry from `0x6E2D` to `0xFDD0`, links it to BASIC's list,
 and makes the head `DR0` (`0x6E35`, the link stored in that blank
 entry). Its 16 drives run in the order `DR0`-`DR2`, `UFD`, `MF0`-`MF2`,
 `MO0`-`MO1`, `SF0`-`SF2`, `HD0`-`HD3`, all with the handler `0x6D85`,
-and `HD3` links to `0xFDD0`. So with the DOS present the chain is the 16
-drives, the blank entry, `NUL` and `CON`.
+and `HD3` links to `0xFDD0`. A second extension in the upper half of the
+DOS image, whose init is at `0x7003`, links four more with the helper at
+`0x7021`: `CAS` (`0x747F`), `MEM` (`0x7366`), **`V24`** (`0x7086`) and
+`PR` (`0x707F`). `V24:` is the RS-232 port by its European name, and it
+is a real device: **(verified)** `OPEN "V24:" AS FILE 1` is accepted
+where an unknown name gives `Error 21`.
 
 Every name-list range ends on its table's closing `0xFF`, and every
 start is an address the ROM points at (the operators' is the first

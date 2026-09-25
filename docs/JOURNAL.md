@@ -21,6 +21,33 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-25 (4): The ABC802 table details
+
+The roadmap's list of unread ROM details mostly fell to two routines:
+the name search at `0x4B21`, which explained the `0x00` bytes, and the
+statement chain lookup at `0x1D73`, which explained the header words and
+then `BYE`. The only thing that took a detour was finding a stored
+program to check the lookup against. The first memory dump came from a
+breakpoint in `DIM`'s handler, which fires while the line is still being
+entered, so nothing had been stored yet; the stack looked like a program
+for a while (it held `097E` and `0A6C`, the chain values being worked
+on). Stopping in line 20's handler instead found line 10 at `0x8014`.
+
+Two answers came with independent confirmation that was already in the
+tree. The device table's second byte turned out to be the sectors per
+cluster as a power of two, and the top bits of the select byte to pick
+the free-list sector, 6 or 14; `abcbus/mkdisk.c` had both numbers for
+the ABC830 and ABC832, taken from real disks when that tool was written
+(2026-08-29), long before anyone knew the ROM stored them. And one earlier claim was a misreading: the
+"nameless `0x81` entry" heading the secondary keywords was never a
+search target at all, since the code searches from `ELSE`.
+
+Found on the way: a `V24:` device (the RS-232 port) in a second
+extension's device chain, which no document listed. Details are in
+`abc802/docs/ABC802_COMPLETED.md`.
+
+---
+
 ## 2026-09-25 (3): The ABC802 keyword chains
 
 The rest of the ABC802 table rows, rechecked the way the operators just

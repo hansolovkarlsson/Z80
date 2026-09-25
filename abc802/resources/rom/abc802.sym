@@ -4,8 +4,8 @@
 ;
 ; Every name below is an address this repo's own documents state, checked
 ; against the ROM bytes (2026-09-24, and 2026-09-25 for the expression
-; parser and the keyword and device chains) before it went in; the source is in
-; brackets. Loaded with --symbols (docs/DEBUGGER.md). Names that do not
+; parser, the keyword and device chains and the table details) before it
+; went in; the source is in brackets. Loaded with --symbols (docs/DEBUGGER.md). Names that do not
 ; correspond to a documented claim, or whose claim the bytes did not bear
 ; out, were left out on purpose rather than guessed.
 reset                    equ 0000h   ; label JR to the boot code [ABC802_REFERENCE]
@@ -26,16 +26,22 @@ basic_statement_table    equ 089Fh   ; label statement keywords, XSTM first [ABC
 basic_secondary_keywords equ 0945h   ; label ELSE, STEP, TO, THEN ... [ABC802_BASIC_REFERENCE]
 basic_prefixed_stmts     equ 097Eh   ; label statements behind XSTM, DIM first [ABC802_BASIC_REFERENCE]
 basic_prefixed_handlers  equ 0A6Ch   ; label handlers for the prefixed statements, DIM first [ABC802_BASIC_REFERENCE]
+main_stmt_run_handlers   equ 0A9Ch   ; label run handlers for tokens 80 up, GOTO first [ABC802_BASIC_REFERENCE]
 basic_nul_device         equ 110Fh   ; label device entry NUL, the head of BASIC's list [ABC802_BASIC_REFERENCE]
+main_stmt_dispatch       equ 1CDCh   ; label runs a stored main statement token [ABC802_BASIC_REFERENCE]
+stmt_chain_lookup        equ 1D73h   ; label finds the header owning a stored code [ABC802_BASIC_REFERENCE]
+stmt_code_prefix         equ 1DA2h   ; label F9-FF take one more byte [ABC802_BASIC_REFERENCE]
 expr_prefix              equ 3759h   ; label unary +/- or NOT before a level [ABC802_BASIC_REFERENCE]
 expr_parse               equ 3773h   ; label LD IX,0607h: the expression parser [ABC802_BASIC_REFERENCE]
 expr_next_level          equ 3777h   ; label climb one precedence level [ABC802_BASIC_REFERENCE]
 ctc3_clock_isr           equ 3A76h   ; label CTC channel 3 tick, 93.75 Hz [ABC802_REFERENCE]
 str_error                equ 3D6Eh   ; label the string 'Error' [ABC802_BASIC_REFERENCE]
 basic_command_table      equ 4057h   ; label command keywords, 17 entries [ABC802_BASIC_REFERENCE]
+name_search              equ 4B21h   ; label matches text against a name list [ABC802_BASIC_REFERENCE]
 basic_ext_header         equ 4BF7h   ; label statement chain head: WIDTH, next 088B [ABC802_BASIC_REFERENCE]
 basic_ext_table          equ 4C01h   ; label extension names, WIDTH [ABC802_BASIC_REFERENCE]
-basic_ext_handlers       equ 4C08h   ; label handlers for WIDTH [ABC802_BASIC_REFERENCE]
+basic_ext_handlers       equ 4C08h   ; label entry handlers for WIDTH [ABC802_BASIC_REFERENCE]
+basic_ext_run_handlers   equ 4C0Ah   ; label run handlers for WIDTH [ABC802_BASIC_REFERENCE]
 abcbus_cmd03             equ 6077h   ; label L6077, bus command 03 [ABC802_FLOPPY_SCOPING]
 abcbus_cmd03_load        equ 6080h   ; label L6080, LD C,03h [ABC802_FLOPPY_SCOPING]
 abcbus_cmd0c             equ 6084h   ; label L6084, bus command 0C [ABC802_FLOPPY_SCOPING]
@@ -43,6 +49,7 @@ abcbus_cmd0c_load        equ 608Dh   ; label L608D, LD C,0Ch [ABC802_FLOPPY_SCOP
 abcbus_driver            equ 608Fh   ; label the generic ABC-bus driver [ABC802_FLOPPY_SCOPING]
 abcbus_idle_test         equ 6107h   ; label IN A,(01h) / BIT 7,A: idle [ABC802_REFERENCE]
 abcbus_bit2_test         equ 610Dh   ; label AND 05h / XOR 01h: bit 2 clear [ABC802_REFERENCE]
+abcbus_transfer_mode     equ 611Dh   ; label select bits 7-6: block or polled [ABC802_REFERENCE]
 abcbus_ini_loop          equ 612Dh   ; label waits on status bit 0 [ABC802_REFERENCE]
 abcbus_outi_loop         equ 6140h   ; label waits on status bit 0 [ABC802_REFERENCE]
 abcbus_aux_status        equ 6158h   ; label OR A on the auxiliary status [ABC802_REFERENCE]
@@ -51,15 +58,25 @@ abcbus_select_mask       equ 6172h   ; label AND 3Fh before OUT (01h) [ABC802_FL
 abcbus_select_out        equ 6177h   ; label OUT (01h),A: the select [ABC802_REFERENCE]
 abcbus_select_lookup     equ 6184h   ; label select byte from FDE2 table [ABC802_REFERENCE]
 abcbus_poll_loop         equ 6196h   ; label aborts on status 00 or FF [ABC802_REFERENCE]
+dos_free_list_sector     equ 6212h   ; label 6 for select bits 10, else 14 [ABC802_REFERENCE]
+dos_cluster_shift        equ 6274h   ; label log2 sectors per cluster, plus one [ABC802_REFERENCE]
 dos_chain_links          equ 6C73h   ; label init: devices and keywords linked ahead of BASIC's [ABC802_BASIC_REFERENCE]
 dos_device_table_copy    equ 6C85h   ; label LDIR 6ED3 to FDE2 [ABC802_REFERENCE]
 dos_device_template      equ 6E2Dh   ; label blank device entry, copied to FDD0 [ABC802_BASIC_REFERENCE]
 dos_device_names         equ 6E35h   ; label device list, DR0 first, 8-byte entries [ABC802_BASIC_REFERENCE]
 dos_device_table         equ 6ED3h   ; label DR, HD, MF, MO, SF, RM selects [ABC802_REFERENCE]
+dos_entry_handlers       equ 6F7Bh   ; label entry handlers for BYE, KILL, NAME [ABC802_BASIC_REFERENCE]
+dos_run_handlers         equ 6F81h   ; label run handlers, BYE first [ABC802_BASIC_REFERENCE]
 dos_command_table        equ 6F87h   ; label DOS statements BYE, KILL, NAME [ABC802_BASIC_REFERENCE]
 dos_as_keyword           equ 6F96h   ; label AS, looked up alone at 6F6D [ABC802_BASIC_REFERENCE]
 dos_ext_header           equ 6F9Ah   ; label DOS statement header, copied to FDD8 [ABC802_BASIC_REFERENCE]
+ext2_init                equ 7003h   ; label links CAS, MEM, V24, PR into the device list [ABC802_BASIC_REFERENCE]
+ext2_link                equ 7021h   ; label links a chain into a list head [ABC802_BASIC_REFERENCE]
+ext2_pr_device           equ 707Fh   ; label device entry PR [ABC802_BASIC_REFERENCE]
+ext2_v24_device          equ 7086h   ; label device entry V24, the RS-232 port [ABC802_BASIC_REFERENCE]
+ext2_mem_device          equ 7366h   ; label device entry MEM [ABC802_BASIC_REFERENCE]
 cassette_rx_isr          equ 739Ah   ; label SIO receive ISR, software checksum [CLAUDE.md]
+ext2_cas_device          equ 747Fh   ; label device entry CAS, head of the chain [ABC802_BASIC_REFERENCE]
 kbd_input_routines       equ 7EB0h   ; label received-key routines, 7EB0-7F40 [ABC802_REFERENCE]
 dos_device_ram           equ 0FDD0h  ; label RAM copy of 6E2D, linked to BASIC's list [ABC802_BASIC_REFERENCE]
 dos_ext_header_ram       equ 0FDD8h  ; label RAM copy of 6F9A, the statement chain head [ABC802_BASIC_REFERENCE]

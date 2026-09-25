@@ -103,22 +103,18 @@ Real, understood, and deliberately not solved yet — not oversights.
 - **The DART/SIO/CTC are modeled only as far as the boot path needs.**
   Baud-rate generation, transmit interrupts, and the SIO's own vectors
   are absent.
-- **Some ROM table details are unread.** The DOS device table
-  (`0x6ED3`, see `ABC802_REFERENCE.md`) has a second byte per entry
-  (`HD` `05`, `MF`/`SF`/`RM` `02`, the rest `00`) and select bytes whose
-  top two bits the bus never sees; what either means is unknown. The
-  BASIC function table opens with `XFN` (token `0xFE`). Its statement
-  counterpart `XSTM` turned out to be the prefix for a second statement
-  table, so `XFN` is probably a prefix too, but no prefixed function has
-  been found or tested. Also unread: the nameless `0x81` entry heading
-  the secondary keywords at `0x0945`; the `0x00` bytes inside the main
-  statement table (after `XSTM` and after `DEF FN`) and the command table
-  (after `CON` and `ED`); the two middle words of each keyword-chain
-  header (see `ABC802_BASIC_REFERENCE.md`, How the keyword tables were
-  read); and how the DOS header's handler words are indexed, since `BYE`
-  enters at the word its third field names rather than through the
-  handler table, whose first word is a routine every line passes
-  through. Every table row now starts where a ROM pointer says.
+- **A few ROM table details are still unexplained.** The five bytes
+  before `ELSE` in the secondary keywords (`81`, `8B ?`, `88 :`) are
+  searched by nothing; `0x88` is the stored statement separator, but
+  `81` and `8B ?` are not accounted for. The DOS's statement header
+  claims four codes (`A0`-`A3`) for three names. The attribute header's
+  `+8` field (`0x0080`) has not been examined. Bit 2 of `0xFF1D`, which
+  makes a keyword need a non-alphanumeric character after it, is set only
+  around the number parse at `0x1B13`, and what that is for is not
+  known. `XFN` is presumably the function-side prefix, but no ROM in this
+  set adds a function header, so it cannot be exercised here. The hard
+  disk's 32 sectors per cluster is read from the DOS code alone; the
+  ABC830 and ABC832 values are confirmed against real media.
 - **Frame frequency is ambiguous** — MAME's DIP label and the code
   comment that consumes it disagree; see `ABC802_REFERENCE.md`. Nothing
   currently depends on it.

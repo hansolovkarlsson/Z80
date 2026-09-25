@@ -102,6 +102,29 @@ tl_begin "basic-unary-minus-after-operator"
 tl_want "$out" "Error 234" "unary minus refused after *"
 tl_end "$out"
 
+# A 0x00 after a name in a keyword table means anything may follow it
+# (ABC802_BASIC_REFERENCE.md, How a name is matched): the command table
+# has one after CON, so CONXYZ continues a stopped program. The answer
+# " 2" comes only from line 30 running.
+out=$(run802 $'10 PRINT 1\r20 STOP\r30 PRINT 2\rRUN\rCONXYZ\r')
+tl_begin "basic-name-any-continuation"
+tl_want "$out" "Stop in line 20" "the program stopping first"
+tl_want_eq "$(printf '%s\n' "$out" | grep -cE '^\| 2 +\|$')" "1" "CONXYZ continuing it to line 30"
+tl_end "$out"
+
+# V24:, the RS-232 port, is a device in the second extension's chain
+# (0x7086), missing from the reference until 2026-09-25. Opening it must
+# succeed where an unknown device name gives Error 21.
+out=$(run802 $'OPEN "V24:" AS FILE 1\rPRINT 5\r')
+tl_begin "basic-device-v24"
+tl_want_not "$out" "Error" "OPEN \"V24:\" accepted"
+tl_want "$out" "| 5 " "BASIC carrying on afterwards"
+tl_end "$out"
+out=$(run802 $'OPEN "XYZ:" AS FILE 1\r')
+tl_begin "basic-device-unknown"
+tl_want "$out" "Error 21" "an unknown device refused, the control for basic-device-v24"
+tl_end "$out"
+
 # UTF-8 in on the keyboard, ABC802 charset bytes through the ROM's
 # tokenizer and string evaluation, and back out to UTF-8 for the render.
 # --type used to feed its argument as raw UTF-8 bytes, which reached
@@ -668,6 +691,21 @@ tl_want_eq "$(chain_stop 'WIDTH 40')" "[breakpoint] 4C0C" "WIDTH entering at the
 tl_want_eq "$(chain_stop 'PRINT 1')" "" "PRINT stopping at neither"
 tl_end ""
 rm -f "$DBG_CHAIN_SCRIPT"
+
+# A header's two handler tables: +8 runs when a line is entered, +4 when
+# it executes. WIDTH typed as a numbered line reaches only its entry
+# handler (4C0C); RUN then reaches its run handler (4C13) as well.
+DBG_PHASE_SCRIPT="$(mktemp)"
+printf 'b 4C0C\nb 4C13\nc\nc\nc\nq\n' > "$DBG_PHASE_SCRIPT"
+phase_stops() {
+    "$ABC802" --cycles "$CAP" --type "$1" --debug --debug-script "$DBG_PHASE_SCRIPT" < /dev/null 2>&1 |
+        grep -aoE '^\[breakpoint\] [0-9A-F]{4}' | tr '\n' ' '
+}
+tl_begin "basic-entry-and-run-handlers"
+tl_want_eq "$(phase_stops $'10 WIDTH 40\r')" "[breakpoint] 4C0C " "entering the line: the entry handler only"
+tl_want_eq "$(phase_stops $'10 WIDTH 40\rRUN\r')" "[breakpoint] 4C0C [breakpoint] 4C13 " "then RUN: the run handler too"
+tl_end ""
+rm -f "$DBG_PHASE_SCRIPT"
 
 # The named spaces: memory the bus hooks divert out of the flat array. At
 # the first-key loop, 7800 in the CPU's view is ROM code while chr:0 holds
