@@ -59,10 +59,12 @@ whatever the program is doing, including when nothing is reading the
 keyboard. Ctrl-C still reaches BASIC and Ctrl-\ still exits; the sign-on
 line says which keys do what.
 
-**F12** stops too, for keyboards where Ctrl-] cannot be typed: on a Swedish
-Mac `]` is Option-9, and Ctrl-Option-9 is not Ctrl-]. A terminal sends F12
-as `ESC [ 2 4 ~`, which cannot be an interrupt character, so the machine's
-own key decoder recognises it instead. That makes it a key like any other
+**F12** stops too, as a second key (on a Mac whose top row sends media
+keys, press Fn-F12). On a Swedish layout Ctrl-] is Ctrl on the key right
+of Å (Ctrl-¨), which the terminal sends as Ctrl-]; both were confirmed in
+a real terminal on 2026-09-25. A terminal sends F12 as `ESC [ 2 4 ~`,
+which cannot be an interrupt character, so the machine's own key decoder
+recognises it instead. That makes it a key like any other
 typed one: it is read when the loop polls the keyboard, which it does
 while a program runs as well as at the `READY` prompt.
 
@@ -282,5 +284,3 @@ after it; `n` over the `CALL 0005h` is the natural way past one.
   window, `q` closing it) are checked by hand only; see
   [In the GTK windows](#in-the-gtk-windows). All of them have been, on
   2026-09-25, on US and Swedish layouts.
-- F12 under `--interactive` has been tested only through a pty, not in a
-  real terminal app, where the top row may send media keys instead.

@@ -1146,10 +1146,12 @@ terminal in cooked mode while it reads and restores the machine's raw mode
 after. Under the ABC machines' `--interactive`, Ctrl-C belongs to BASIC, so
 the break key is Ctrl-] (`Z80DBG_BREAK_CHAR`, made the terminal's VINTR)
 or F12 (which a terminal sends as `ESC [ 2 4 ~`, so each machine's key
-decoder recognises it; it exists because Ctrl-] cannot be typed on a
-Swedish Mac). The GTK windows get no function keys from GTK's macOS
-backend, so they instead also take Cmd-. and Ctrl on the key where a US
-layout has `]` (matched by key code, 30 on macOS),
+decoder recognises it; on a Mac whose top row sends media keys it needs
+Fn). On a Swedish layout a terminal delivers Ctrl on the key right of Å
+as Ctrl-], so the terminal needs nothing more. The GTK windows do: they
+get no function keys from GTK's macOS backend and see that key by its
+code, so they also take Cmd-. and Ctrl on the key where a US layout has
+`]` (matched by key code, 30 on macOS),
 and each loop's pacing subtracts `z80dbg_seconds_stopped()` so a resumed
 machine does not run flat out to make up the pause. The three ABC GTK
 windows use an **async mode** (`z80dbg_set_async()`): a stop prints the

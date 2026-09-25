@@ -1404,7 +1404,9 @@ detail is in `docs/JOURNAL.md` under that date).
   `z80dbg_seconds_stopped()` now counts a stop in progress. The windows
   also redraw after every prompt command, so a `w` into screen memory
   shows while stopped.
-- **Ctrl-] cannot be typed on a Swedish Mac**, where `]` is Option-9.
+- **Ctrl-] could not be typed in a window on a Swedish Mac**, where `]` is
+  Option-9. (In a terminal it can: Ctrl on the key right of Å arrives as
+  Ctrl-], confirmed later the same day.)
   **F12** now stops under `--interactive`, where a terminal sends it as
   `ESC [ 2 4 ~` and each machine's key decoder recognises it
   (`Z80DBG_BREAK_CSI_PARAMS`). The decoders now read a CSI sequence's

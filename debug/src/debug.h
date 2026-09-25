@@ -57,9 +57,11 @@ void z80dbg_add_space(Z80Debugger *dbg, const Z80DbgSpace *space);
 // same key to reach its own prompt.
 #define Z80DBG_BREAK_CHAR 0x1D
 
-// F12 stops too, for keyboards that have no reachable Ctrl-]: a Swedish Mac
-// types `]` with Option, and Ctrl-Option-9 is not Ctrl-]. A terminal sends
-// F12 as the sequence ESC [ 2 4 ~, which cannot be an interrupt character,
+// F12 stops too, as a second key (Fn-F12 where the top row sends media
+// keys). A Swedish layout reaches Ctrl-] as Ctrl on the key right of Å,
+// which a terminal sends as 0x1D; only the GTK windows needed more (see
+// their is_debug_break_key()). A terminal sends F12 as the sequence
+// ESC [ 2 4 ~, which cannot be an interrupt character,
 // so each CLI's key decoder recognises these parameters and asks for the
 // stop with z80dbg_request_stop(); a window matches GDK_KEY_F12 directly.
 #define Z80DBG_BREAK_CSI_PARAMS "24"

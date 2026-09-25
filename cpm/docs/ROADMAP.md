@@ -71,10 +71,8 @@ Aspirational, not yet scoped:
   automated check, since this machine's GTK has only the macOS backend
   and a window would take the desktop; everything they share with
   `--screenshot` is checked. It was checked by hand on 2026-09-25, and
-  the fixes from that seen working. Not yet tried: F12 under
-  `--interactive` in a real terminal (the suites send it through a pty),
-  and whether a Swedish keyboard can reach Ctrl-] there at all; Ctrl-C
-  in the launching terminal and the windows' own keys cover the gap. Each ABC machine has a hand-written ROM symbol
+  the fixes from that seen working, as were Fn-F12 and Ctrl-¨ (Ctrl-] on
+  a Swedish layout) under `--interactive` in a real terminal. Each ABC machine has a hand-written ROM symbol
   file in its `resources/rom/`, which grows as investigations pin down
   more addresses.
 - **More machine targets, such as the ZX Spectrum.** It is Z80-based, so it

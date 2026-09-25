@@ -188,6 +188,16 @@ it stops too. The user confirmed both stop the machine in
 `bin/abc802-gtk`, and that `c` now resumes with the screen moving at
 once, which closes the first report of the day.
 
+Later the same day the user tried the terminal side, `bin/abc802
+--interactive --debug`: Fn-F12 stops the machine (plain F12 is the Mac's
+volume key), and so does Ctrl-¨, which the terminal sends as Ctrl-]. So
+the premise F12 was added on, that a Swedish keyboard cannot reach
+Ctrl-], held only in the GTK windows, where GDK reports the key by
+keysym. F12 stays as a second key. The first attempt at that test ran
+`bin/z80 --interactive`, an option only the ABC machines have, and
+`bin/z80` took `--interactive` for a file name; it now refuses an unknown
+option and names a file it cannot open.
+
 The Gdk warning printed at start-up (`gdk_frame_timings_presented()
 called on skipped frame`) is GTK's own; nothing in this repository calls
 the frame-timing API.
