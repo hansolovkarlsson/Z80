@@ -42,7 +42,16 @@ called `home` is not the Mac home folder, so the tree was not visible
 from the guest. And `prlctl exec` quietly eats some dash options, so the
 helper's `mkdir -p` lost its `-p` and failed only on the second run, when
 the directory existed; the helper now sends every command through
-`bash -s`. Details are in `cpm/docs/COMPLETED.md`.
+`bash -s`.
+
+Installing VTE in the guest then brought in `bin/z80-gtk`, whose lookup
+of its own path was macOS-only (`<mach-o/dyld.h>`); Linux reads
+`/proc/self/exe` instead. And the first full run with it failed once, in
+a check that had passed in every run before: `console_test.asm`'s
+`C_STAT`, fed through a pipe, raced the `printf` writing to it. A
+deliberately late writer made it fail every time, which settled that the
+emulator was right to say "no input yet", and the suite now feeds that
+test from a file. Details are in `cpm/docs/COMPLETED.md`.
 
 ---
 

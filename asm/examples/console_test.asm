@@ -3,10 +3,12 @@
 ; (6, E=0FFh), and C_READSTR (10). Not interactive - meant to be driven
 ; with piped stdin, e.g.:
 ;
-;   printf 'ABOK\r' | bin/z80 console_test.com
+;   printf 'ABOK\r' > in.txt; bin/z80 console_test.com < in.txt
 ;
-; (see cpm/tests/run_tests.sh, which drives it exactly this way). Same "OK
-; n"/"FAIL n" convention as selftest.asm/gaps_test.asm.
+; which is how cpm/tests/run_tests.sh drives it. A pipe (`printf ... |`)
+; works too, but races check 1: C_STAT does not wait, so it fails whenever
+; the emulator asks before printf has written. Same "OK n"/"FAIL n"
+; convention as selftest.asm/gaps_test.asm.
 
 BDOS:   equ 5
 

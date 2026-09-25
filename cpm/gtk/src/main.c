@@ -18,7 +18,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/resource.h>
+#ifdef __APPLE__
 #include <mach-o/dyld.h>
+#endif
 #include <gtk/gtk.h>
 #include <vte/vte.h>
 
@@ -44,14 +46,21 @@ static void lower_fd_limit(void) {
 }
 
 // Locates the real bin/z80 binary as a sibling of this one (both build
-// into bin/), using _NSGetExecutablePath() (the standard macOS way to
-// find your own binary's real path, robust to how it was invoked - via
-// PATH, a relative path, a symlink, etc. - unlike trusting argv[0]
-// as-is). Caller frees the result.
+// into bin/), from this binary's own path rather than argv[0], so it is
+// robust to how it was invoked (via PATH, a relative path, a symlink).
+// macOS gives that path through _NSGetExecutablePath(); Linux through the
+// /proc/self/exe link, which readlink() does not terminate. Caller frees
+// the result.
 static char *find_sibling_z80(void) {
     char path[4096];
+#ifdef __APPLE__
     uint32_t size = sizeof(path);
     if (_NSGetExecutablePath(path, &size) != 0) return NULL;
+#else
+    ssize_t n = readlink("/proc/self/exe", path, sizeof(path) - 1);
+    if (n < 0) return NULL;
+    path[n] = '\0';
+#endif
     char *real = realpath(path, NULL);
     if (!real) return NULL;
     char *slash = strrchr(real, '/');

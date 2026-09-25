@@ -88,7 +88,12 @@ check_asm_example() {
     # throwaway location instead of the checkout itself.
     local out
     if [ -n "$stdin_data" ]; then
-        out=$(cd "$WORKDIR" && printf '%s' "$stdin_data" | "$Z80" "$com" 2>&1)
+        # From a file, not a pipe: console_test.asm's first check is C_STAT,
+        # which is non-blocking, so with `printf | z80` it failed whenever
+        # the emulator got there before printf had written (seen on a loaded
+        # Linux VM, 2026-09-25; `(sleep 0.3; printf ...) |` fails every time).
+        printf '%s' "$stdin_data" > "$WORKDIR/stdin.txt"
+        out=$(cd "$WORKDIR" && "$Z80" "$com" < "$WORKDIR/stdin.txt" 2>&1)
     else
         out=$(cd "$WORKDIR" && "$Z80" "$com" < /dev/null 2>&1)
     fi
@@ -344,7 +349,7 @@ check_disasm_example
 
 for src in "$ROOT"/asm/examples/*.asm; do
     case "$(basename "$src")" in
-        # Needs specific piped stdin to drive its BDOS console-input
+        # Needs specific stdin to drive its BDOS console-input
         # checks (C_READ/C_RAWIO/C_READSTR) - see the .asm file's header
         # comment for exactly what each byte is for.
         console_test.asm) check_asm_example "$src" $'ABOK\r' ;;

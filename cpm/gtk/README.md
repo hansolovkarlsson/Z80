@@ -33,8 +33,9 @@ argument to resolve, same convention as `bin/z80` - see the top-level
 `README.md`.)
 
 Every argument is passed straight through to `bin/z80` (located as a
-sibling of `bin/z80-gtk` via `_NSGetExecutablePath()`, not trusted from
-`argv[0]`), exactly as if it had been typed directly at a shell.
+sibling of `bin/z80-gtk` via `_NSGetExecutablePath()` on macOS and the
+`/proc/self/exe` link on Linux, not trusted from `argv[0]`), exactly as
+if it had been typed directly at a shell.
 
 ## Status: work in progress, blocked on a macOS 26 OS bug
 

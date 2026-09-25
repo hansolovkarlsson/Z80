@@ -1457,6 +1457,20 @@ three ABC GTK apps' headless checks; the 8 VS Code extension checks skip
 there. The Mac's count is 147. What is still unrun on Linux is on the
 roadmap.
 
+**`bin/z80-gtk`** built too once `libvte-2.91-gtk4-dev` was installed in
+the guest (it needed an `apt-get update` first; the stale index pointed
+at a package the mirror had replaced). It found its sibling `bin/z80`
+through `_NSGetExecutablePath()` from `<mach-o/dyld.h>`, which Linux does
+not have; it now reads `/proc/self/exe` there.
+
+**A test race the VM exposed.** Once, `console_test.asm` failed check 1,
+`C_STAT`. The suite fed it `printf 'ABOK\r' | bin/z80 …`, and `C_STAT` does
+not wait, so it answered "nothing yet" whenever the emulator asked before
+`printf` had written; a busy guest made that likely. It reproduces every
+time with `(sleep 0.3; printf …) |`, so it was the test, not `C_STAT`.
+The suite now writes the input to a file first. Three full Linux runs
+after that were clean.
+
 A trap for anyone driving the guest the same way: `prlctl exec` takes
 some dash options for itself, so `mkdir -p DIR` arrives as `mkdir DIR`,
 and a quoted command line is split into words. Commands go to
