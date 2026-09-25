@@ -540,6 +540,11 @@ disassembler in `disasm/src/`, and the ABC floppy-image tool in
 `abcbus/mkdisk.c`; the Makefile builds all four into `bin/` at the repo
 root.
 
+It builds and passes `make test` on macOS and on Linux (Ubuntu 24.04,
+ARM64); `scripts/linuxvm.sh` drives a Parallels Linux guest from the Mac
+(copy the tree in, run `make`), since the host's own build must not share
+object files with the guest's.
+
 ```
 make               # builds bin/z80, bin/z80asm, bin/z80dasm and bin/abcdisk
 make emulator      # just the emulator

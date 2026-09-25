@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <ctype.h>
 
 #include "common.h"
@@ -29,8 +30,12 @@ bool load_file(const char *filename, uint16_t load_address) {
         return false;
     }
 
-    fread(&ram[load_address], 1, size, f);
+    size_t got = fread(&ram[load_address], 1, (size_t)size, f);
     fclose(f);
+    if (got != (size_t)size) {
+        fprintf(stderr, "Failed to read '%s': got %zu of %ld bytes\n", filename, got, size);
+        return false;
+    }
     printf("Loaded '%s' (%ld bytes) at 0x%04X\n", filename, size, load_address);
     return true;
 }
@@ -267,7 +272,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    printf("Finished. Total T-states executed: %llu\n", total_cycles);
+    printf("Finished. Total T-states executed: %" PRIu64 "\n", total_cycles);
     return EXIT_SUCCESS;
 }
 

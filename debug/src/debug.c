@@ -606,6 +606,7 @@ static int run_command(Z80Debugger *dbg, Z80 *cpu, char *line) {
     strcpy(copy, start);
     for (char *tok = strtok(copy, " \t"); tok && argc < 64; tok = strtok(NULL, " \t"))
         argv[argc++] = tok;
+    if (argc == 0) return CMD_STAY;   // cannot happen after the skip above; says so to the compiler
     const char *cmd = argv[0];
     dbg->last_command[0] = '\0';
 

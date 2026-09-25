@@ -59,6 +59,15 @@ make test          # build, then run all four suites (cpm, abc80, abc802, abc806
 make clean         # remove build output
 ```
 
+It builds and passes `make test` on **macOS** and on **Linux** (Ubuntu
+24.04, ARM64; checked 2026-09-25). On Linux, install `build-essential`
+and `pkg-config`; `libgtk-4-dev` and `libsdl2-dev` add the ABC GTK apps,
+and `libvte-2.91-gtk4-dev` adds `bin/z80-gtk`. `make test` builds each
+GTK app only when its packages are present. The VS Code extension checks
+run only on a Mac with VS Code installed, and skip elsewhere.
+`scripts/linuxvm.sh` builds and tests this tree in a Parallels Linux VM
+on the same Mac. Windows is not supported yet.
+
 `source scripts/config.sh` (from the repo root) puts `bin/` on `PATH`
 (and sets `$BASEDIR` to the repo root), so the three tools below can be
 run as `z80`/`z80asm`/`z80dasm` from anywhere instead of needing a

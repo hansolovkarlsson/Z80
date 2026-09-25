@@ -21,6 +21,31 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-25 (5): Linux, in the VM on the same Mac
+
+The Linux port had been waiting on "Docker or a Linux machine", and there
+was a Linux machine all along: an Ubuntu VM in Parallels. `prlctl exec`
+turned out to be enough to drive it from here, running commands as root
+in the guest and passing stdin through, so the tree went in as a tar
+stream and `make` ran as the guest's own user with no setup on the
+user's side at all. The guest also already had GTK 4 and SDL2 installed.
+
+The port was nearly free. The default build and all three ABC machines
+compiled first time; the only failure was a missing `-lm` on
+`bin/abc80-gtk`, invisible on macOS where libm lives inside the C
+library. GCC's warnings found three small things clang had not, fixed
+alongside. With the disk images copied in, the Linux run matched the
+Mac's check for check, less the VS Code extension's eight.
+
+Two tooling traps cost a few minutes each. The Parallels shared folder
+called `home` is not the Mac home folder, so the tree was not visible
+from the guest. And `prlctl exec` quietly eats some dash options, so the
+helper's `mkdir -p` lost its `-p` and failed only on the second run, when
+the directory existed; the helper now sends every command through
+`bash -s`. Details are in `cpm/docs/COMPLETED.md`.
+
+---
+
 ## 2026-09-25 (4): The ABC802 table details
 
 The roadmap's list of unread ROM details mostly fell to two routines:

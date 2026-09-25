@@ -1431,6 +1431,37 @@ detail is in `docs/JOURNAL.md` under that date).
   the array, now fixed.
 - The start-up `Gdk-WARNING` about a skipped frame is GTK's own.
 
+## Linux: builds and passes (2026-09-25)
+
+The tree was built and tested on Ubuntu 24.04.4 (ARM64, GCC 13.3) in a
+Parallels VM on the development Mac. `prlctl exec` runs commands in the
+guest and passes stdin through, so the tree was copied in as a tar
+stream and `make` driven from the Mac, with no SSH or shared folder;
+`scripts/linuxvm.sh` keeps that as `sync`, `disks` and `run`. The copy is
+separate from the Mac's because object files sit beside their sources.
+
+It needed one fix. **`bin/abc80-gtk` did not link**: it calls `fmod()`
+and its link line had no `-lm`, which macOS never notices because libm
+is part of its C library. The command-line ABC80 already linked `-lm`.
+GCC also found three things clang had not: a `%llu` given a `uint64_t`
+(`unsigned long` on Linux, now `PRIu64`), an unchecked `fread()` of the
+program file (a short read is now an error), and an `argv` it could not
+prove initialised in the debugger's command parser (a guard for the
+impossible empty case). Eight remaining GCC warnings are deliberate
+bounded `strncpy`/`snprintf` truncations in the assembler, each into a
+terminated buffer.
+
+Result: `make test` passes on Linux with 139 checks, every disk check
+included once the uncommitted images were copied in, and all ten of the
+three ABC GTK apps' headless checks; the 8 VS Code extension checks skip
+there. The Mac's count is 147. What is still unrun on Linux is on the
+roadmap.
+
+A trap for anyone driving the guest the same way: `prlctl exec` takes
+some dash options for itself, so `mkdir -p DIR` arrives as `mkdir DIR`,
+and a quoted command line is split into words. Commands go to
+`bash -s` on stdin instead.
+
 ## Phase 4, VS Code support for z80asm: done
 
 `asm/vscode/` is a VS Code extension with no dependencies and no build

@@ -80,13 +80,15 @@ Aspirational, not yet scoped:
   bringing a core of its own, which is what keeps it in this repo, unlike
   the Game Boy above. Not yet scoped. `abc806/docs/ABC806_SCOPING.md` is
   the model for the feasibility review a new target gets before any code.
-- **Linux and Windows ports.** Everything has been built and run on macOS
-  only. The emulators use POSIX terminal and I/O calls (`termios`,
-  `select()`, `unistd.h`, in `cpm/emu/src/cpm.c` and each ABC target's
-  `main.c`/`ports.c`, plus `abcbus/disk.c`), so Linux should mostly be a
-  matter of building and fixing what breaks. Windows needs a real console
-  layer in their place, or a POSIX environment such as MSYS2. The GTK apps
-  come from `pkg-config` and should follow wherever `gtk4` is available.
+- **Windows, and the rest of Linux.** Linux works: the whole tree builds
+  and passes `make test` on Ubuntu 24.04 (ARM64), GTK apps included (see
+  [`COMPLETED.md`](COMPLETED.md)). Not yet covered there: x86-64 Linux
+  (only ARM64 has been run), `bin/z80-gtk` (VTE was not installed in the
+  guest), a live GTK window or `--interactive` session on a real Linux
+  desktop (the suites cover them headlessly and through a pty), and the
+  VS Code extension checks, which look for VS Code at its macOS path.
+  Windows needs a real console layer in place of `termios`/`select()`,
+  or a POSIX environment such as MSYS2.
 - A custom ROM/OS on top of it — open design questions include a stack VM
   and whether Logo-style prefix notation could combine with a stack machine
   model.

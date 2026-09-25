@@ -304,8 +304,10 @@ $(EMU_TEST_INTERRUPTS_TARGET): cpm/tests/test_interrupts.c $(Z80CORE_SRC_DIR)/z8
 $(GTK_TARGET): $(GTK_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(GTK_OBJS) $(GTK_LIBS)
 
+# -lm for fmod(), in the window's own blink phase and in sound.c. macOS
+# puts libm inside its C library, so the omission only fails on Linux.
 $(ABC80_GTK_TARGET): $(ABC80_GTK_OBJS) | $(BIN_DIR)
-	$(CC) $(CFLAGS) -o $@ $(ABC80_GTK_OBJS) $(ABC80_GTK_LIBS)
+	$(CC) $(CFLAGS) -o $@ $(ABC80_GTK_OBJS) $(ABC80_GTK_LIBS) -lm
 
 $(ABC806_GTK_TARGET): $(ABC806_GTK_OBJS) | $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $(ABC806_GTK_OBJS) $(ABC806_GTK_LIBS)
