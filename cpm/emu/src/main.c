@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <errno.h>
 #include <ctype.h>
 
 #include "common.h"
@@ -14,7 +15,7 @@ static u_int8_t ram[RAM_SIZE];
 bool load_file(const char *filename, uint16_t load_address) {
     FILE *f = fopen(filename, "rb");
     if (!f) {
-        perror("Failed to open file");
+        fprintf(stderr, "Failed to open '%s': %s\n", filename, strerror(errno));
         return false;
     }
 
@@ -148,6 +149,14 @@ int main(int argc, char *argv[]) {
     if (argc < 2 || strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0) {
         print_usage(argv[0]);
         return EXIT_SUCCESS;
+    }
+
+    // Anything else that looks like an option is one this program does not
+    // take, not a file to load: without this, `bin/z80 --interactive x.com`
+    // (an option the ABC machines have) tried to open "--interactive".
+    if (argv[1][0] == '-' && strcmp(argv[1], "--ccp") != 0) {
+        fprintf(stderr, "%s: unknown option '%s' (see %s --help)\n", argv[0], argv[1], argv[0]);
+        return EXIT_FAILURE;
     }
 
     // --ccp <path> boots a CCP (a "shell": DIR/TYPE/ERA/etc. plus running
