@@ -66,13 +66,14 @@ Aspirational, not yet scoped:
 - **The debugger** runs on all four CLIs, under `--interactive`, and in
   the three ABC GTK windows (see
   [`../../docs/DEBUGGER.md`](../../docs/DEBUGGER.md) and the write-up in
-  [`COMPLETED.md`](COMPLETED.md)). Two small things are open. The live
-  windows' own glue (the terminal watch, Ctrl-] in the window, `q`
-  closing it) has no automated check, since this machine's GTK has only
-  the macOS backend and a window would take the desktop; everything they
-  share with `--screenshot` is checked. And `bin/z80-gtk`, which passes
-  its options to `bin/z80` on the window's own terminal, has not been
-  tried with `--debug`. Each ABC machine has a hand-written ROM symbol
+  [`COMPLETED.md`](COMPLETED.md)). The live windows' own glue (the
+  terminal watch, Ctrl-] or F12 in the window, `q` closing it) has no
+  automated check, since this machine's GTK has only the macOS backend
+  and a window would take the desktop; everything they share with
+  `--screenshot` is checked. It was checked by hand on 2026-09-25, and
+  three fixes from that are still to be seen in a window: F12, the
+  redraw on resuming, and `bin/z80-gtk --debug` showing its prompt on
+  opening rather than after the first keypress. Each ABC machine has a hand-written ROM symbol
   file in its `resources/rom/`, which grows as investigations pin down
   more addresses.
 - **More machine targets, such as the ZX Spectrum.** It is Z80-based, so it

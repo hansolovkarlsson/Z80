@@ -100,17 +100,14 @@ static void on_spawn_complete(VteTerminal *terminal, GPid pid, GError *error, gp
     (void)pid;
 }
 
-static void activate(GtkApplication *app, gpointer user_data) {
+// Spawns bin/z80 once the terminal is on screen rather than as soon as it
+// exists. VTE processes pty output on the widget's frame clock, and a
+// child that writes everything before the window is mapped and then goes
+// quiet - bin/z80 --debug, stopped at its first instruction - left the
+// window blank until the first keypress brought more output to process.
+static void on_terminal_map(GtkWidget *terminal, gpointer user_data) {
     (void)user_data;
-
-    GtkWidget *window = gtk_application_window_new(app);
-    gtk_window_set_title(GTK_WINDOW(window), "Z80 / CP/M");
-    gtk_window_set_default_size(GTK_WINDOW(window), 800, 500);
-
-    GtkWidget *terminal = vte_terminal_new();
-    gtk_window_set_child(GTK_WINDOW(window), terminal);
-    g_signal_connect(terminal, "child-exited", G_CALLBACK(on_child_exited), NULL);
-
+    g_signal_handlers_disconnect_by_func(terminal, G_CALLBACK(on_terminal_map), NULL);
     vte_terminal_spawn_async(
         VTE_TERMINAL(terminal),
         VTE_PTY_DEFAULT,
@@ -123,6 +120,19 @@ static void activate(GtkApplication *app, gpointer user_data) {
         NULL,             // cancellable
         on_spawn_complete,
         NULL);
+}
+
+static void activate(GtkApplication *app, gpointer user_data) {
+    (void)user_data;
+
+    GtkWidget *window = gtk_application_window_new(app);
+    gtk_window_set_title(GTK_WINDOW(window), "Z80 / CP/M");
+    gtk_window_set_default_size(GTK_WINDOW(window), 800, 500);
+
+    GtkWidget *terminal = vte_terminal_new();
+    gtk_window_set_child(GTK_WINDOW(window), terminal);
+    g_signal_connect(terminal, "child-exited", G_CALLBACK(on_child_exited), NULL);
+    g_signal_connect(terminal, "map", G_CALLBACK(on_terminal_map), NULL);
 
     gtk_window_present(GTK_WINDOW(window));
 }
@@ -151,8 +161,9 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    // Build the child's argv: [z80_path, argv[1], argv[2], ..., NULL].
-    g_child_argv = malloc((size_t)argc * sizeof(char *));
+    // Build the child's argv: [z80_path, argv[1], argv[2], ..., NULL],
+    // which is argc entries and the NULL.
+    g_child_argv = malloc((size_t)(argc + 1) * sizeof(char *));
     g_child_argv[0] = z80_path;
     for (int i = 1; i < argc; i++) {
         g_child_argv[i] = argv[i];

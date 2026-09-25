@@ -21,6 +21,69 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-25: The GTK windows by hand, and what that found
+
+Yesterday's one debugger item with no automated check was the live
+windows, so the day began with the user running them. Ctrl-] stopped the
+machine on a US layout but not on a Swedish one, `m` worked, and `c`
+seemed to hang for a couple of seconds. `bin/z80-gtk --debug` did
+nothing, and Ctrl-] in it printed the tail of `bin/z80`'s usage text. All
+four turned out to have different causes.
+
+**The "hang" was the screen, not the machine.** The windows pace against
+real time minus `z80dbg_seconds_stopped()`, and schedule redraws against
+the same figure. That total only gained a stop's length when the stop
+ended. While the prompt was open the window's timer kept ticking, so
+`elapsed_real` went on growing and `last_render_sec` followed it; on `c`
+the total jumped up and `elapsed_real` fell back by the whole pause, and
+no frame was due until it had caught up again. The machine ran
+throughout. The CLIs never showed this, because their prompt blocks and
+nothing reads the clock while it is open. The fix counts a stop still in
+progress, so real time minus the total never goes backwards. A throwaway
+program stopping the debugger on a pty measured it: with yesterday's
+`debug.c`, the total read `0.00` a second into a stop and `1.26` after it;
+now it reads `1.01` during. `--screenshot` could not have caught it,
+because the headless path waits on `select()` and has no timer. A window
+now also redraws after each prompt command, since no frame is scheduled
+while stopped and a `w` into screen memory would otherwise stay invisible.
+
+**`bin/z80-gtk --debug` was run with no program**, which is what
+yesterday's standup had said to do. `bin/z80` printed its usage and
+exited; "CLAUDE.md's top-level layout" is a phrase from that text. With a
+program after the option it stops at `0100` and Ctrl-C breaks a running
+one, checked on a pty. Two more bugs were in that launcher.
+It allocated `argc` pointers for an argv of `argc` entries plus a NULL.
+And, reported by the user once it ran, the window stayed blank until
+Enter was pressed, although the prompt was printed. The likeliest
+reading, not a confirmed one: VTE processes pty output on the widget's
+frame clock, and a child that writes everything before the window is
+mapped and then waits on the prompt gives it no reason to process
+anything more. The child is now spawned from the terminal's `map` signal,
+so its output arrives at a widget that is on screen. An attempt to confirm the cause headlessly, with
+a VTE widget never put in a window, was abandoned: an unrealized widget
+drops output even from a plain run of `hello.com`, so it proves nothing
+either way. The user's eyes are the check.
+
+**F12 is a second break key**, the user's choice for layouts where
+Ctrl-] cannot be typed (Swedish macOS puts `]` on Option-9). In a window
+it is `GDK_KEY_F12`. In a terminal it arrives as `ESC [ 2 4 ~`, which
+cannot be an interrupt character, so each `--interactive` key decoder
+recognises it. Those decoders had only ever read one byte after `ESC [`,
+so F12 used to drop the `2` and type `4~` into BASIC; they now collect a
+CSI sequence's parameter bytes, and drop any other parameterised key.
+`ptysession.py`'s `key:` now takes several bytes in one write, the way a
+terminal sends a function key. `debugger-f12` in each ABC suite types
+`10 GOTO 10`, `RUN`, then F12, and wants `[stopped]`; with the recognised
+parameters changed to `99`, all three fail. One false alarm on the way:
+the first ABC80 try typed `4ü`, from a binary the rebuild had not
+included, not from the decoder.
+
+The Gdk warning printed at start-up (`gdk_frame_timings_presented()
+called on skipped frame`) is GTK's own; nothing in this repository calls
+the frame-timing API.
+
+---
+
 ## 2026-09-24 (15): Ctrl-C pauses; it takes two to break
 
 Entry (13) recorded that on the ABC802 Ctrl-C does not break

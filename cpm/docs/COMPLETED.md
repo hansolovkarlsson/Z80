@@ -1392,6 +1392,34 @@ Not covered automatically: the live window's own glue (the watch
 callback, Ctrl-] in the window, `q` closing it). This machine's GTK has
 only the macOS backend, and opening a window takes the user's desktop.
 
+### The hand-check, and F12
+
+The user ran the live windows on 2026-09-25, which found four things (the
+detail is in `docs/JOURNAL.md` under that date).
+
+- **`c` looked like a hang.** The machine resumed at once, but no frame
+  was drawn for as long as the prompt had been open: the stopped-time
+  total only gained a stop's length when it ended, so the window's clock
+  ran on through the stop and fell back by all of it on resuming.
+  `z80dbg_seconds_stopped()` now counts a stop in progress. The windows
+  also redraw after every prompt command, so a `w` into screen memory
+  shows while stopped.
+- **Ctrl-] cannot be typed on a Swedish Mac**, where `]` is Option-9.
+  **F12** now stops too, in the windows (`GDK_KEY_F12`) and under
+  `--interactive`, where a terminal sends it as `ESC [ 2 4 ~` and each
+  machine's key decoder recognises it (`Z80DBG_BREAK_CSI_PARAMS`). The
+  decoders now read a CSI sequence's parameter bytes; before, F12 typed
+  `4~` into BASIC. `debugger-f12` in each ABC suite stops a running
+  `10 GOTO 10` with it, and fails with the parameters changed.
+- **`bin/z80-gtk --debug` works**, given a program after the option (run
+  with none, `bin/z80` prints its usage). It stops at `0100`, and Ctrl-C
+  is its break key, since `bin/z80` keeps the terminal's own. Its window
+  stayed blank until the first keypress; the launcher now spawns
+  `bin/z80` once the terminal is mapped. That fix is unconfirmed until the
+  window is looked at. The launcher also wrote its argv's NULL one past
+  the end of the array, now fixed.
+- The start-up `Gdk-WARNING` about a skipped frame is GTK's own.
+
 ## Phase 4, VS Code support for z80asm: done
 
 `asm/vscode/` is a VS Code extension with no dependencies and no build

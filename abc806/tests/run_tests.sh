@@ -613,4 +613,16 @@ tl_want "$out" "[interrupted]" "Ctrl-] stopping at the prompt"
 tl_want "$verdict" "ok " "emulated time excluding the pause ($verdict)"
 tl_end "$out"
 
+# F12, the break key for layouts where Ctrl-] cannot be typed. A terminal
+# sends it as ESC [ 2 4 ~, so it is the machine's key decoder that must
+# recognise it, and it must do so while a program runs, not only at the
+# prompt: `10 GOTO 10`, RUN, then F12. Before the decoder read a CSI
+# sequence's parameters it dropped the 2 and typed "4~".
+out=$(cd "$ROOT" && python3 "$ROOT/scripts/ptysession.py" \
+      'wait:1,key:313020474f544f2031300d,wait:0.5,key:52554e0d,wait:1,key:1b5b32347e,wait:0.5,text:q' \
+      -- "$ABC806" --interactive --symbols "$ROOT/abc806/resources/rom/abc806.sym" 2>&1)
+tl_begin "debugger-f12"
+tl_want "$out" "[stopped]" "F12 stopping a running program at the prompt"
+tl_end "$out"
+
 tl_summary "abc806"

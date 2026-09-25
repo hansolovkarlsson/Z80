@@ -169,8 +169,14 @@ static double elapsed_since(const struct timespec *start) {
            (double)(now.tv_nsec - start->tv_nsec) / 1e9;
 }
 
+// poll_keyboard_byte()'s return for F12, the debugger's second break key
+// (Z80DBG_BREAK_CSI_PARAMS): not a byte for the machine.
+#define KEY_DEBUG_BREAK (-2)
+
 static int poll_keyboard_byte(void) {
     static enum { ESC_NONE, ESC_SEEN, ESC_BRACKET } esc_state = ESC_NONE;
+    static char csi_params[8];   // a CSI sequence's parameter bytes, e.g. "24"
+    static size_t csi_len;
     static struct timespec esc_started;
     static int utf8_lead = -1;
     static struct timespec utf8_started;
@@ -211,7 +217,25 @@ static int poll_keyboard_byte(void) {
 
     if (esc_state == ESC_SEEN) {
         esc_state = (b == '[') ? ESC_BRACKET : ESC_NONE;
+        csi_len = 0;
         return (esc_state == ESC_BRACKET) ? -1 : b;
+    }
+
+    // Parameter bytes (digits, ';') come before a CSI sequence's final
+    // byte. Read one at a time as they once were, F12 (ESC [ 2 4 ~) typed
+    // "4~" into BASIC.
+    if (esc_state == ESC_BRACKET && b >= 0x30 && b <= 0x3F) {
+        if (csi_len < sizeof csi_params - 1) csi_params[csi_len++] = (char)b;
+        return -1;
+    }
+    csi_params[csi_len] = '\0';
+    if (b == '~' && strcmp(csi_params, Z80DBG_BREAK_CSI_PARAMS) == 0) {
+        esc_state = ESC_NONE;
+        return KEY_DEBUG_BREAK;
+    }
+    if (csi_len > 0) {   // some other key with parameters: dropped
+        esc_state = ESC_NONE;
+        return -1;
     }
 
     // ESC_BRACKET: a CSI sequence. Left is the only one this machine can
@@ -391,7 +415,7 @@ int main(int argc, char **argv) {
         sigaction(SIGINT, &sa, NULL);
         sigaction(SIGQUIT, &sa, NULL);
         printf("Interactive - Ctrl-C reaches BASIC, Ctrl-\\ exits%s.\n",
-               dbg ? ", Ctrl-] stops in the debugger" : "");
+               dbg ? ", Ctrl-] or F12 stops in the debugger" : "");
     }
 
     // Per-address execution counts. A flat 64K array of counters is the
@@ -490,6 +514,8 @@ int main(int argc, char **argv) {
             if (key >= 0) {
                 abc802_keyboard_send((uint8_t)key);
                 next_key_at = cycles + key_gap;
+            } else if (key == KEY_DEBUG_BREAK) {
+                z80dbg_request_stop(dbg);
             }
             // A -1 return deliberately does *not* start a new gap. It
             // means poll_keyboard_byte() consumed part of a multi-byte

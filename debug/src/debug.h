@@ -57,9 +57,17 @@ void z80dbg_add_space(Z80Debugger *dbg, const Z80DbgSpace *space);
 // same key to reach its own prompt.
 #define Z80DBG_BREAK_CHAR 0x1D
 
-// Wall-clock seconds spent at the prompt so far (0 with dbg NULL). A CLI
-// pacing execution against real time subtracts it, or the machine would
-// run flat out on resuming to make up for time it spent stopped.
+// F12 stops too, for keyboards that have no reachable Ctrl-]: a Swedish Mac
+// types `]` with Option, and Ctrl-Option-9 is not Ctrl-]. A terminal sends
+// F12 as the sequence ESC [ 2 4 ~, which cannot be an interrupt character,
+// so each CLI's key decoder recognises these parameters and asks for the
+// stop with z80dbg_request_stop(); a window matches GDK_KEY_F12 directly.
+#define Z80DBG_BREAK_CSI_PARAMS "24"
+
+// Wall-clock seconds spent at the prompt so far, the current stop included
+// (0 with dbg NULL). A loop pacing execution against real time subtracts
+// it, or the machine would run flat out on resuming to make up for time it
+// spent stopped; so real time minus this never goes backwards.
 double z80dbg_seconds_stopped(const Z80Debugger *dbg);
 
 // Async mode, for a program with its own main loop (the GTK windows), which

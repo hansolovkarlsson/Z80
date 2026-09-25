@@ -1144,7 +1144,10 @@ never seen at the return address. And **commands come from `/dev/tty`**,
 not stdin, which a CP/M program reads as its console; the prompt puts the
 terminal in cooked mode while it reads and restores the machine's raw mode
 after. Under the ABC machines' `--interactive`, Ctrl-C belongs to BASIC, so
-the break key is Ctrl-] (`Z80DBG_BREAK_CHAR`, made the terminal's VINTR),
+the break key is Ctrl-] (`Z80DBG_BREAK_CHAR`, made the terminal's VINTR)
+or F12 (which a terminal sends as `ESC [ 2 4 ~`, so each machine's key
+decoder recognises it; it exists because Ctrl-] cannot be typed on a
+Swedish Mac),
 and each loop's pacing subtracts `z80dbg_seconds_stopped()` so a resumed
 machine does not run flat out to make up the pause. The three ABC GTK
 windows use an **async mode** (`z80dbg_set_async()`): a stop prints the

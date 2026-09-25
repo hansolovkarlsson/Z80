@@ -40,7 +40,7 @@ input. End it with `q` to stop the run there instead.
 **Ctrl-C** during a debugged run stops at the next instruction and opens the
 prompt. Without a debug option, Ctrl-C behaves as it always has. Under an
 ABC machine's `--interactive`, where Ctrl-C belongs to BASIC, the key is
-**Ctrl-]** instead; see below.
+**Ctrl-]** or **F12** instead; see below.
 
 ### Under `--interactive`
 
@@ -58,6 +58,13 @@ to reach its own prompt), so it stops the machine at the next instruction
 whatever the program is doing, including when nothing is reading the
 keyboard. Ctrl-C still reaches BASIC and Ctrl-\ still exits; the sign-on
 line says which keys do what.
+
+**F12** stops too, for keyboards where Ctrl-] cannot be typed: on a Swedish
+Mac `]` is Option-9, and Ctrl-Option-9 is not Ctrl-]. A terminal sends F12
+as `ESC [ 2 4 ~`, which cannot be an interrupt character, so the machine's
+own key decoder recognises it instead. That makes it a key like any other
+typed one: it is read when the loop polls the keyboard, which it does
+while a program runs as well as at the `READY` prompt.
 
 The prompt appears below the last frame drawn, with line editing, and the
 screen stops updating while it is open. `c` resumes, and the next frame
@@ -171,8 +178,8 @@ runs it with the same code as the blocking prompt.
 bin/abc802-gtk --symbols abc802/resources/rom/abc802.sym
 ```
 
-**Ctrl-C in that terminal** stops the machine, and so does **Ctrl-] in
-the window**. With a debug option Ctrl-C no longer closes the window;
+**Ctrl-C in that terminal** stops the machine, and so does **Ctrl-] or
+F12 in the window**. With a debug option Ctrl-C no longer closes the window;
 File > Quit, closing it, or `q` at the prompt do. Time at the prompt is
 subtracted from the pacing, as under `--interactive`.
 
@@ -182,6 +189,18 @@ that is how the async path is tested without opening a window. On
 `bin/abc80-gtk`, the File menu's Save and Load of a `.bas` program run the
 machine themselves to type and list the lines, and are refused while it
 is stopped. The `.bac` forms only copy memory and work at any time.
+
+`bin/z80-gtk` is different: it runs the real `bin/z80` on the window's own
+terminal, so the prompt is in the window and the keys are `bin/z80`'s.
+The debug option goes before the program, as it does for `bin/z80`:
+
+```
+cd cpm && ../bin/z80-gtk --debug cpm_disk/tastybas.com
+```
+
+It stops at `0100` before the first instruction, and Ctrl-C breaks a
+running program. `--debug` with no program gets `bin/z80`'s usage text
+and nothing else.
 
 A window started from the Finder has no terminal, so a debug option there
 fails at start-up with the same message the CLIs give; `--debug-script`
@@ -256,9 +275,8 @@ after it; `n` over the `CALL 0005h` is the natural way past one.
 
 ## Not yet
 
-- `bin/z80-gtk` passes its options through to `bin/z80`, which runs on the
-  window's own terminal, so `--debug` there should put the prompt inside
-  the window. It has not been tried.
-- The live GTK windows' own pieces (the terminal watch, Ctrl-] in the
-  window, `q` closing it) are checked by hand only; see
-  [In the GTK windows](#in-the-gtk-windows).
+- The live GTK windows' own pieces (the terminal watch, Ctrl-] or F12 in
+  the window, `q` closing it) are checked by hand only; see
+  [In the GTK windows](#in-the-gtk-windows). Ctrl-] on a US layout, `m`
+  and `c` have been; F12, and the prompt `bin/z80-gtk` should now show on
+  opening, have not.

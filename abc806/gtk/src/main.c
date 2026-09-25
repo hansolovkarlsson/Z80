@@ -233,9 +233,11 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval,
     (void)keycode;
     AppState *app = user_data;
 
-    // Ctrl-] stops in the debugger, as it does in bin/abc806 --interactive
-    // (Z80DBG_BREAK_CHAR). Without a debugger it is not a key the ROM uses.
-    if (app->dbg && (state & GDK_CONTROL_MASK) && keyval == GDK_KEY_bracketright) {
+    // Ctrl-] or F12 stops in the debugger, as in bin/abc806 --interactive
+    // (Z80DBG_BREAK_CHAR, Z80DBG_BREAK_CSI_PARAMS). Without a debugger
+    // neither is a key the ROM uses.
+    if (app->dbg && (((state & GDK_CONTROL_MASK) && keyval == GDK_KEY_bracketright) ||
+                     keyval == GDK_KEY_F12)) {
         z80dbg_request_stop(app->dbg);
         return TRUE;
     }
@@ -383,7 +385,11 @@ static gboolean on_debug_input(gint fd, GIOCondition condition, gpointer user_da
     (void)fd;
     (void)condition;
     AppState *app = user_data;
-    if (z80dbg_poll_input(app->dbg, &app->cpu) == Z80DBG_QUIT && app->window) {
+    int r = z80dbg_poll_input(app->dbg, &app->cpu);
+    // The timer schedules no frames while the machine is stopped, so a
+    // command that wrote memory would not show until it resumed.
+    if (app->drawing_area) gtk_widget_queue_draw(app->drawing_area);
+    if (r == Z80DBG_QUIT && app->window) {
         gtk_window_destroy(GTK_WINDOW(app->window));
         return G_SOURCE_REMOVE;
     }
@@ -565,7 +571,7 @@ static void print_usage(const char *prog) {
     printf("  --type TEXT        with --screenshot, type TEXT before rendering\n");
     printf("  -h, --help         this message\n");
     printf("\nDebugger (the prompt is the terminal this was started from; Ctrl-C\n");
-    printf("there or Ctrl-] in the window stops the machine):\n");
+    printf("there, or Ctrl-] or F12 in the window, stops the machine):\n");
     z80dbg_print_usage(stdout);
 }
 

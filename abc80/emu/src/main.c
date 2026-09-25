@@ -259,8 +259,14 @@ static int poll_stdin_byte(void) {
 // look up the ABC80 byte via abc80_charset_byte_for_codepoint() - dropped
 // silently if the codepoint isn't in that table, matching this function's
 // existing precedent for any other unrecognized sequence.
+// poll_keyboard_byte()'s return for F12, the debugger's second break key
+// (Z80DBG_BREAK_CSI_PARAMS): not a byte for the machine.
+#define KEY_DEBUG_BREAK (-2)
+
 static int poll_keyboard_byte(void) {
     static enum { ESC_NONE, ESC_SEEN, ESC_BRACKET } esc_state = ESC_NONE;
+    static char csi_params[8];   // a CSI sequence's parameter bytes, e.g. "24"
+    static size_t csi_len;
     static struct timespec esc_started;
     static int utf8_lead = -1;
     static struct timespec utf8_started;
@@ -314,7 +320,25 @@ static int poll_keyboard_byte(void) {
 
     if (esc_state == ESC_SEEN) {
         esc_state = (b == '[') ? ESC_BRACKET : ESC_NONE;
+        csi_len = 0;
         return (esc_state == ESC_BRACKET) ? -1 : b;
+    }
+
+    // Parameter bytes (digits, ';') come before a CSI sequence's final
+    // byte. Read one at a time as they once were, F12 (ESC [ 2 4 ~) typed
+    // "4~" into BASIC.
+    if (esc_state == ESC_BRACKET && b >= 0x30 && b <= 0x3F) {
+        if (csi_len < sizeof csi_params - 1) csi_params[csi_len++] = (char)b;
+        return -1;
+    }
+    csi_params[csi_len] = '\0';
+    if (b == '~' && strcmp(csi_params, Z80DBG_BREAK_CSI_PARAMS) == 0) {
+        esc_state = ESC_NONE;
+        return KEY_DEBUG_BREAK;
+    }
+    if (csi_len > 0) {   // some other key with parameters: dropped
+        esc_state = ESC_NONE;
+        return -1;
     }
 
     // esc_state == ESC_BRACKET
@@ -652,7 +676,7 @@ int main(int argc, char *argv[]) {
         sigaction(SIGQUIT, &sa, NULL);
         printf("\nStarting ABC80 ROM execution at PC=0x0000 "
                "(interactive - Ctrl-C reaches BASIC, Ctrl-\\ exits%s)...\n",
-               dbg ? ", Ctrl-] stops in the debugger" : "");
+               dbg ? ", Ctrl-] or F12 stops in the debugger" : "");
     } else {
         printf("\nStarting ABC80 ROM execution at PC=0x0000 (cap: %ld instructions)...\n\n",
                max_instructions);
@@ -707,6 +731,8 @@ int main(int argc, char *argv[]) {
             int stdin_byte = poll_keyboard_byte();
             if (stdin_byte >= 0) {
                 abc80_keyboard_press((uint8_t)stdin_byte);
+            } else if (stdin_byte == KEY_DEBUG_BREAK) {
+                z80dbg_request_stop(dbg);
             }
         }
 

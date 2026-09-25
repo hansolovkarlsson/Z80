@@ -226,8 +226,21 @@ static const char *label_for(const Z80Debugger *dbg, uint16_t addr) {
     return dbg->symbols[dbg->label_at[addr]].name;
 }
 
+// Includes a stop still in progress, which only async mode can be asked
+// about: a window's timer keeps ticking at the prompt, and a total that
+// left the current stop out would jump back by its whole length on
+// resuming, so anything scheduled against it (the next redraw) would wait
+// that long again.
 double z80dbg_seconds_stopped(const Z80Debugger *dbg) {
-    return dbg ? dbg->seconds_stopped : 0.0;
+    if (!dbg) return 0.0;
+    double total = dbg->seconds_stopped;
+    if (dbg->async && dbg->waiting) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        total += (double)(now.tv_sec - dbg->stopped_at.tv_sec) +
+                 (double)(now.tv_nsec - dbg->stopped_at.tv_nsec) / 1e9;
+    }
+    return total;
 }
 
 void z80dbg_add_space(Z80Debugger *dbg, const Z80DbgSpace *space) {
@@ -333,8 +346,8 @@ void z80dbg_print_usage(FILE *out) {
     fprintf(out, "  --debug-script F read debugger commands from F instead of the\n");
     fprintf(out, "                   terminal; at its end the run continues undisturbed.\n");
     fprintf(out, "                   See docs/DEBUGGER.md for the commands\n");
-    fprintf(out, "  With --interactive, where Ctrl-C belongs to the machine, Ctrl-]\n");
-    fprintf(out, "  stops in the debugger instead.\n");
+    fprintf(out, "  With --interactive, where Ctrl-C belongs to the machine, Ctrl-] or\n");
+    fprintf(out, "  F12 stops in the debugger instead.\n");
 }
 
 bool z80dbg_start(Z80Debugger *dbg) {

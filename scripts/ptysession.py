@@ -5,7 +5,8 @@ Usage: python3 scripts/ptysession.py STEPS -- COMMAND [ARG...]
 
 STEPS is a comma-separated list, each step one of:
   wait:SECONDS   read the command's output for that long
-  key:HEX        send one byte (1d is Ctrl-], 1c is Ctrl-\\)
+  key:HEX        send the bytes in one write, as a terminal sends a key
+                 (1d is Ctrl-], 1c is Ctrl-\\, 1b5b32347e is F12)
   text:WORDS     send WORDS followed by a newline, in one write
   mark:NAME      note the time, for the report
 
@@ -63,7 +64,7 @@ def main():
         if kind == "wait":
             pump(float(arg))
         elif kind == "key":
-            os.write(fd, bytes([int(arg, 16)]))
+            os.write(fd, bytes.fromhex(arg))
         elif kind == "text":
             os.write(fd, arg.encode() + b"\n")
         elif kind == "mark":
