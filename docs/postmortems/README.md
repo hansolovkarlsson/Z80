@@ -23,6 +23,7 @@ Each one answers the same four questions:
 
 | Date | Postmortem | One-line lesson |
 |---|---|---|
+| 2026-09-24 | [A paused machine looks like a running one](2026-09-24-a-paused-machine-looks-like-a-running-one.md) | A screen is evidence only of the states it can tell apart; ask the CPU where it is before saying what it is doing |
 | 2026-09-24 | [The command ran, but not the program](2026-09-24-the-command-ran-but-not-the-program.md) | Running a command proves a program by that name ran; check which one before trusting what it printed |
 | 2026-09-08 | [A list beside the thing it lists](2026-09-08-a-list-beside-the-thing-it-lists.md) | A hand-written copy of a set the tree already defines will drift, and a count does not read like a claim |
 | 2026-08-31 | [Too fast is a correctness bug](2026-08-31-too-fast-is-a-correctness-bug.md) | For a device the guest services by interrupt, the gap between events is part of the contract |

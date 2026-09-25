@@ -505,7 +505,10 @@ services by interrupt, the gap *between* events is part of the contract -,
 "a list beside the thing it lists" (a hand-written copy of a set the tree
 defines will drift), and "the command ran, but not the program" (running a
 command proves only that *a* program by that name ran; `scripts/config.sh`
-let Homebrew's `z80asm` stand in for this repo's). Each machine target's *finished* work now lives in its
+let Homebrew's `z80asm` stand in for this repo's), and "a paused machine
+looks like a running one" (one Ctrl-C pauses ABC802 BASIC silently, which
+was written up as a missing break until a profile showed the CPU in the
+key-wait loop). Each machine target's *finished* work now lives in its
 own `*_COMPLETED.md` (`cpm/docs/COMPLETED.md`,
 `abc80/docs/ABC80_COMPLETED.md`, `abc802/docs/ABC802_COMPLETED.md`,
 `abc806/docs/ABC806_COMPLETED.md`) rather than in its roadmap, so each `ROADMAP.md` answers only "what works, what

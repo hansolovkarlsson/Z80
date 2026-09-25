@@ -45,7 +45,8 @@ loop and was briefly taken for a break, until a longer run with a command
 typed afterwards showed BASIC not answering.
 
 The lesson is an old one here: measure where the machine is, not what the
-screen seems to say. `basic-ctrl-c` now pins the pause (the screen unchanged between 100M
+screen seems to say. It has its own postmortem,
+[a paused machine looks like a running one](postmortems/2026-09-24-a-paused-machine-looks-like-a-running-one.md). `basic-ctrl-c` now pins the pause (the screen unchanged between 100M
 and 200M T-states), the break, and one digit per Ctrl-S. It fails with
 either key dropped from the keyboard path.
 
