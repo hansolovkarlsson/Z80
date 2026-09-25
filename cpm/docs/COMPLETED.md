@@ -1412,8 +1412,10 @@ detail is in `docs/JOURNAL.md` under that date).
   each ABC suite stops a running `10 GOTO 10` with it, and fails with the
   parameters changed. The windows match `GDK_KEY_F12` too, but GTK's
   macOS backend delivered no event for any function key in the user's
-  test, so on this Mac a window break key for a Swedish layout is still
-  open (see the roadmap).
+  test. So the windows gained two keys found by logging what they
+  receive: Ctrl on the key where a US layout has `]` (key code 30 on
+  macOS, the key right of Å on a Swedish one), and Cmd-. . Both confirmed
+  by the user in a window, along with the redraw on resuming.
 - **`bin/z80-gtk --debug` works**, given a program after the option (run
   with none, `bin/z80` prints its usage). It stops at `0100`, and Ctrl-C
   is its break key, since `bin/z80` keeps the terminal's own. Its window

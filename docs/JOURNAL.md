@@ -100,8 +100,14 @@ F12, Fn-F12 or F5, only the modifiers and Ctrl combinations; GTK's macOS
 backend is not delivering function keys here (the top row defaults to
 media keys, `com.apple.keyboard.fnState` being unset, but Fn-F12 gave
 nothing either). The windows still match `GDK_KEY_F12`, which costs
-nothing and should work on other backends, but a window break key for
-this keyboard is still open.
+nothing and should work on other backends. A second key-logging run
+found two that do arrive: Ctrl on the key right of Å comes through with
+key code 30, which is where a US layout has `]` (`kVK_ANSI_RightBracket`),
+so the windows now also match Ctrl-] by position on macOS; and Cmd-.
+comes through as `period` with the Meta mask, the Mac's own stop key, so
+it stops too. The user confirmed both stop the machine in
+`bin/abc802-gtk`, and that `c` now resumes with the screen moving at
+once, which closes the first report of the day.
 
 The Gdk warning printed at start-up (`gdk_frame_timings_presented()
 called on skipped frame`) is GTK's own; nothing in this repository calls

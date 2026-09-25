@@ -320,6 +320,28 @@ static void draw_screen(GtkDrawingArea *area, cairo_t *cr, int width, int height
     }
 }
 
+// The keys that stop the machine in the debugger. Ctrl-] is the one
+// bin/abc80 --interactive uses (Z80DBG_BREAK_CHAR), matched here by
+// character and, on macOS, also by position: a Swedish layout has no
+// reachable Ctrl-], but Ctrl on the key right of Å, where a US layout has
+// `]`, arrives as that key's code, 30 (kVK_ANSI_RightBracket). Cmd-. is
+// the Mac's own stop key. F12 is the --interactive alternative
+// (Z80DBG_BREAK_CSI_PARAMS), kept for backends that deliver function keys;
+// macOS's delivered none in the user's test. All three checked by logging
+// what a GTK window receives on the user's Swedish keyboard (2026-09-25).
+#define MACOS_KEYCODE_RIGHT_BRACKET 30
+static bool is_debug_break_key(guint keyval, guint keycode, GdkModifierType state) {
+    if (state & GDK_CONTROL_MASK) {
+        if (keyval == GDK_KEY_bracketright) return true;
+#ifdef __APPLE__
+        if (keycode == MACOS_KEYCODE_RIGHT_BRACKET) return true;
+#endif
+    }
+    if ((state & GDK_META_MASK) && keyval == GDK_KEY_period) return true;
+    (void)keycode;
+    return keyval == GDK_KEY_F12;
+}
+
 // GDK keyvals equal real ASCII/Latin-1 codepoints for every printable
 // character (both follow the same X11-keysym-derived convention for the
 // Latin-1 range), so most keys need no translation table at all - only
@@ -347,10 +369,7 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval,
     (void)keycode;
     AppState *app = user_data;
 
-    // Ctrl-] or F12 stops in the debugger, as in bin/abc80 --interactive
-    // (Z80DBG_BREAK_CHAR, Z80DBG_BREAK_CSI_PARAMS).
-    if (app->dbg && (((state & GDK_CONTROL_MASK) && keyval == GDK_KEY_bracketright) ||
-                     keyval == GDK_KEY_F12)) {
+    if (app->dbg && is_debug_break_key(keyval, keycode, state)) {
         z80dbg_request_stop(app->dbg);
         return TRUE;
     }
@@ -1416,7 +1435,8 @@ static void print_usage(const char *prog) {
     printf("                     FILE when the window closes - also available from the\n");
     printf("                     File menu as \"Save Program...\"\n");
     printf("\nDebugger (the prompt is the terminal this was started from; Ctrl-C\n");
-    printf("there, or Ctrl-] or F12 in the window, stops the machine):\n");
+    printf("there, or Ctrl-], Ctrl on the key where US layouts have ] (macOS),\n");
+    printf("Cmd-. or F12 in the window, stops the machine):\n");
     z80dbg_print_usage(stdout);
 }
 
