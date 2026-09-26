@@ -1336,15 +1336,15 @@ device list head to `0xFF7B` (`0x110F`), the statement chain to `0xFF7D`
 | +3 | how many codes the header owns; if bit 7 is set, bits 6-4 are a prefix number and bits 3-0 the count less one |
 | +4 | the handlers run when a statement **executes**, one word per code |
 | +6 | the name list |
-| +8 | the handlers run when a line is **entered**, one word per name |
+| +8 | statement chain: the handlers run when a line is **entered**, one word per name; function chain: where the names' argument descriptors are found (below) |
 
-| Header | Next | Code, count | Names | Entry handlers | Run handlers |
+| Header | Next | Code, count | Names | +8: entry handlers, or descriptors | Run handlers |
 |---|---|---|---|---|---|
 | `0x4BF7` | `0x088B` | `F9 00`, 1 | `0x4C01`, `WIDTH` | `0x4C08` | `0x4C0A` |
 | `0x088B` | `0x0895` | `00`, 25 (24 named; `86 18` lists as garbage) | `0x097E`, the prefixed statements | `0x0A6C` | none |
 | `0x0895` | end | `00`, 37 | `0x089F`, the main statements | none | none |
-| `0x0661` | `0x066B` | `80`, 32 | `0x0814`, the attributes | `0x0080`, not examined | none |
-| `0x066B` | end | `00`, 54 | `0x0675`, the functions | `0x079E`, a token list (below) | none |
+| `0x0661` | `0x066B` | `80`, 32 | `0x0814`, the attributes | `0x0080`: every name parses as token `0x80` | none |
+| `0x066B` | end | `00`, 54 | `0x0675`, the functions | `0x079E`, the descriptor list (below) | none |
 | `0x6F9A` (DOS) | the old head | `A0`, 4 | `0x6F87`, `BYE` `KILL` `NAME`, then `AS` | `0x6F7B` | `0x6F81` |
 
 **How a statement is stored and run.** A program line is stored as
@@ -1404,13 +1404,34 @@ second extension's init at `0x7003` links `0000` into both keyword chains
 chain. Function codes from `0xA0` would be looked up along it
 (`0x1D5E`), and the function tokenizer (`0x1912`) writes a prefix byte
 from `0xF8` when a header's byte +3 has bit 7 set, as the statement side
-does. The `0x079E` list is bare tokens (`9A 86 84 A3 …`, which are `ABS`,
-`ATN`, `COS`, `EXP` in name-list order) that the routine at `0x1785`
-searches; it loads that address itself (`LD BC,079Eh`) rather than from
-the header, and no code reading +8 of a function-chain header has been
-found, so what the attribute header's `0x0080` there means is open. The
-three bytes before the first attribute entry (`29 2D 6C` at `0x0811`)
-are an argument-type list that `0x16F7` hands to the parser at `0x1802`.
+does. The `0x079E` list holds the functions' **argument descriptors**:
+groups of tokens (`9A 86 84 A3 …`, which are `ABS`, `ATN`, `COS`, `EXP`),
+each group followed by descriptor bytes with bit 7 clear. `0x1788` finds
+a token with `CPIR`, skips the rest of its group (`0x1790`) and reads
+the descriptor through IX.
+
+**A function-chain header's +8 word says where that lookup happens**, so
+for this chain it is not an entry-handler table. The chain search at
+`0x3445` reads it while walking the header (`0x344F`, after the name
+list at +6), and `fn_tokenize` returns it in BC, with Z set from its
+high byte (`INC B` / `DEC B` at `0x193D`). `0x1782` then branches:
+a word with a **non-zero high byte is the address of a descriptor
+list**, searched for the name's own token (the functions' `0x079E`); a
+word with a **zero high byte is a token**, whose descriptor in the
+standard list at `0x079E` the header's names all share (`0x1784` takes
+the low byte, and `0x1785` loads `0x079E`). The attributes' `0x0080`
+is the second kind: all 32 parse as token `0x80` does, which shares its
+group with `0xA9`, descriptor `22` at `0x07F3`. **(verified)** by a
+read log on the two headers during a session using functions and
+attributes (both +8 words read, by `0x344F`/`0x3451` only), by
+breakpoints (`A` = `0x80` at `0x1785` for `RED` and for `GRN`), and by a
+ROM copy with byte `0x0669` changed from `80` to `9A`, `ABS`'s token:
+there `PRINT RED;7` is `Error 223` and `PRINT RED(-7)` is accepted, the
+reverse of the real ROM, so attributes had taken `ABS`'s argument form.
+An extension's function header could therefore bring its own descriptor
+list. The three bytes before the first attribute entry (`29 2D 6C` at
+`0x0811`) are an argument-type list that `0x16F7` hands to the parser at
+`0x1802`.
 
 **How a name is matched** (`0x4B21`, every table's search). Letters are
 compared without regard to case. A space inside a name is optional
@@ -1421,14 +1442,36 @@ continues with. That is why `CON` accepts `CONT`, `CONTINUE` and even
 `EDIT 10` is `ED` with the argument `IT 10`, `Error 209`), and why
 `DEF FN` matches `DEF FNA` (all **(verified)**). The main table has
 `0x00` after `XSTM` and `DEF FN`, the command table after `CON` and `ED`.
-A name that ends without one needs a character that is not a letter or
-digit (`0x4B85`) next, but only while bit 2 of `0xFF1D` is set. That bit
-is set only at `0x1B19`, in a routine reached with the statement chain's
-head, yet no parse tested has been strict: **(verified)** in direct mode
-`LIST10` lists line 10 and `LISTX` tries to list to a file called `X`
-(`Error 42`, disk not ready), and as program lines `WIDTH40`, `WIDTHX`,
-`KILLX$` and `PRINTX` are all accepted and list with a space inserted.
-What the bit is for is not known.
+Spaces in the typed text between a name's letters are skipped too
+(**(verified)** `PRINT A BS(-5)` prints ` 5`), by `0x4BE6`, the routine
+that advances the text pointer after each matched letter.
+
+**Bit 2 of `0xFF1D` makes that strict**, and its one live use is the
+number after `XSTM` and `XFN`. With it set, `0x4BE6` stops skipping
+spaces; the matcher would also require a space written into a name to
+be typed (`0x4B43`), and a name ending in a letter or digit to be
+followed by neither (`0x4B6E`, testing with `0x4B85`). But **(verified)**
+by a watch on `0xFF1D` from power-on through storing, listing and running
+`XSTM` and `XFN` lines, the bit is set only at `0x1B19` and restored at
+`0x1B21`, and all that runs between them is `0x4B98`, which reads a
+decimal integer into DE (carry set when the text does not start with a
+digit) and never calls the matcher. No other code writes bit 2
+(`0x3A22` rewrites the byte keeping all but bit 0), so in this ROM set
+the matcher's strict branches are never taken, which is why
+`LIST10`, `WIDTHX` and `PRINTX` all parse. `0x1B08` reaches `0x1B13`
+with the statement chain's head for `XSTM`, and `0x17D5` with the
+function chain's for `XFN`.
+
+What the strictness buys is visible in the number itself. Every other
+number BASIC reads with `0x4B98` skips spaces between digits:
+**(verified)** `1 0 PRINT 2` replaces line 10, and `GOTO 3 0` is stored
+as `GOTO 30`. The code after `XSTM`/`XFN` ends at the first space
+instead, so a statement whose arguments begin with a digit can be
+written by number: **(verified)** `10 XSTM2 30000,5` lists as
+`POKE 30000,5`, and `PRINT XFN2 6(-5)` is `Error 223` where `XFN26(-5)`
+prints ` 5`. Cleared with the debugger right after `0x1B19`, the same
+`XSTM2 30000,5` reads as code 230000 and is refused with `Error 200`,
+and `XSTM2 1,5` as code 21, `Error 234`.
 
 The secondary keywords sit between the two statement tables, most in a
 group of their own that code looks up alone: `LD DE,0950h` at `0x1A26`

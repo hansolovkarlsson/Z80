@@ -134,6 +134,36 @@ tl_want "$out" "|20 PRINT ABS(-5)" "XFN26 listed as ABS"
 tl_want_eq "$(printf '%s\n' "$out" | grep -cE '^\| 5 +\|$')" "1" "RUN printing ABS(-5)"
 tl_end "$out"
 
+# The number after XSTM/XFN ends at a space, where every other number
+# BASIC reads skips spaces between digits (GOTO 3 0 is GOTO 30): bit 2 of
+# 0xFF1D, set around the read at 0x1B19, stops 0x4BE6 skipping them. So
+# a statement whose arguments start with a digit can be written by
+# number: XSTM2 is POKE, and read loosely this would be code 230000.
+out=$(run802 $'10 XSTM2 30000,5\r20 GOTO 3 0\rLIST\r')
+tl_begin "basic-xstm-number-ends-at-space"
+tl_want "$out" "|10 POKE 30000,5" "XSTM2's number ending at the space"
+tl_want "$out" "|20 GOTO 30" "GOTO's number read across the space, the control"
+tl_end "$out"
+
+# A function-chain header's +8 word says how its names take arguments.
+# The attributes' is 0x0080: a zero high byte, so every attribute parses
+# as token 0x80, which takes none. In a copy of the ROM with that byte
+# (0x0669) made 9A, ABS's token, attributes take ABS's one argument: the
+# real ROM is the control, and the two must answer the same lines the
+# opposite way.
+cp -R "$ROOT/abc802/resources/rom" "$WORKDIR/rom-plus8"
+printf '\x9a' | dd of="$WORKDIR/rom-plus8/ABC802-basic.02-11.bin" bs=1 seek=$((0x0669)) conv=notrunc 2> /dev/null
+real_bare=$(run802 $'PRINT RED;7\r')
+real_arg=$(run802 $'PRINT RED(-7)\r')
+patched_bare=$(run802 $'PRINT RED;7\r' --rom-dir "$WORKDIR/rom-plus8")
+patched_arg=$(run802 $'PRINT RED(-7)\r' --rom-dir "$WORKDIR/rom-plus8")
+tl_begin "basic-fn-header-plus8"
+tl_want_eq "$(printf '%s\n' "$real_bare" | grep -cE '^\| +7 +\|$')" "1" "RED taking no argument on the real ROM"
+tl_want "$real_arg" "Error 223" "RED(-7) refused on the real ROM"
+tl_want "$patched_bare" "Error 223" "RED without an argument refused once +8 names ABS"
+tl_want_not "$patched_arg" "Error" "RED(-7) accepted once +8 names ABS"
+tl_end "$real_bare$real_arg$patched_bare$patched_arg"
+
 # 0x8B marks a line kept although it did not tokenise: it lists as '?'
 # and runs as Error 144, "invalid line". Poked here; basic-merge-invalid-
 # line below shows the ROM making one. And the DOS's fourth code, 86 A3,

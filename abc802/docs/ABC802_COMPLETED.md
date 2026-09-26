@@ -1252,3 +1252,72 @@ Two items stay open, on the roadmap: what bit 2 of `0xFF1D` restricts
 function-chain header. Six checks were added, and the `MERGE` one fails
 when the image is left unpatched.
 
+
+## Bit 2 of `0xFF1D`: the number after XSTM and XFN (2026-09-26)
+
+The open question was what bit 2 of `0xFF1D` restricts, since the name
+matcher tests it and yet no parse had ever been strict. The answer was
+that the matcher was the wrong place to look.
+
+- **Every access to the byte was listed from the ROM bytes** (all go
+  through IY at `0xFF00`): `BIT 2` at `0x4B3D` and `0x4B68` in the
+  matcher, `LD A,(IY+29)` at `0x4BE7`, one `SET 2` at `0x1B19`, and a
+  save at `0x1B15` with a restore at `0x1B21`. No `RES 2` exists, and
+  the only other whole-byte write, `0x3A22`, changes bit 0 alone.
+- **Between the set and the restore only `CALL 4B98` runs**, and that is
+  not a name search but the decimal reader: digits into DE, carry when
+  the text does not start with one. It reaches the bit through `0x4BE6`,
+  the shared advance-and-skip-spaces step, which skips nothing while the
+  bit is set.
+- **Breakpoints on `0x1B19` and `0x17DB`** fire only for `XSTM` and
+  `XFN`, the two statements that write a code by number. A watch from
+  power-on through storing, listing and running both shows the bit set
+  twice and restored twice, and nowhere else.
+- **Why they want it**: every other number skips spaces between digits
+  (`1 0 PRINT 2` replaces line 10, `GOTO 3 0` is `GOTO 30`), which would
+  run a code number into a statement's own first argument. `10 XSTM2
+  30000,5` lists as `POKE 30000,5`; with the bit cleared by the debugger
+  right after `0x1B19`, it reads as 230000 and is refused with
+  `Error 200`.
+
+So the matcher's strict branches (a name's space must be typed, a name
+ending in a letter or digit must not be followed by one) exist but are
+never taken in this ROM set. One check was added,
+`basic-xstm-number-ends-at-space`, with `GOTO 3 0` as its control; with
+the bit cleared at the same point it loses the `POKE` line. Four names
+went into `abc802.sym`: `xstm_code_number`, `read_decimal`,
+`text_next_char` and `parse_flags`.
+
+## The +8 word of a function-chain header (2026-09-26)
+
+The other open item was whether anything reads +8 of a function-chain
+header, where the attributes have `0x0080` and the functions `0x079E`.
+A static search for offset-8 reads had found nothing, because the chain
+search reaches +8 by walking its pointer on from the name list at +6,
+not by an offset.
+
+- **A read log settled whether it is read.** A throwaway patch to the
+  ABC802 bus read hook (reverted, never committed) logged every data
+  read of `0x0661`-`0x0674` with the instruction's PC, over a session of
+  functions, attributes, `DEF FN`, `LIST` and `RUN`. Both headers' +8
+  are read, by `0x344F`/`0x3451` in the chain search at `0x3445`, and by
+  nothing else.
+- **What it means came from following BC out.** `fn_tokenize` returns
+  the +8 word in BC and sets Z from its high byte (`0x193D`); `0x1782`
+  then uses a word with a non-zero high byte as the address of a
+  descriptor list to search for the name's token, and one with a zero
+  high byte as a token whose descriptor in the standard list at
+  `0x079E` every name in that header shares. Breakpoints showed `A` =
+  `0x80` at `0x1785` for both `RED` and `GRN`. Register sets mattered
+  here: `0x3415` swaps with `EXX` before its arithmetic, so the offset
+  it computes never touches the +8 word.
+- **A patched ROM proved the effect.** With byte `0x0669` changed from
+  `80` to `9A` (`ABS`'s token) in a copy, `PRINT RED;7` is `Error 223`
+  and `PRINT RED(-7)` is accepted, the reverse of the real ROM.
+
+The `0x079E` list was also described wrongly as bare tokens: it is
+groups of tokens, each followed by descriptor bytes with bit 7 clear.
+One check was added, `basic-fn-header-plus8`, which runs the patched copy
+against the real ROM; with the patch made a no-op it fails on both
+patched assertions. `fn_descriptor_lookup` went into `abc802.sym`. With
+this, the ABC802 roadmap has no open ROM table questions.

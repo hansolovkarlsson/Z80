@@ -21,6 +21,47 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-26 (3): The +8 word, found by reading rather than searching
+
+The static search for code reading +8 of a function-chain header had
+looked for offset-8 instructions and found only file control blocks.
+The read was there all along, as `LD C,(HL)` after a routine that had
+already stepped HL past +6. What found it was changing the question
+from "which instruction mentions 8" to "who reads these ten bytes": a
+throwaway line in the bus read hook, logging PC for reads of the two
+headers, answered in one run. It was reverted straight after, and no
+debugger feature was added, since a read watch had been needed once.
+
+Following the value out needed care with `EXX`: the chain search does
+its arithmetic in the other register set, so the BC the tokeniser
+returns is the header's word untouched. A patched copy of the ROM then
+turned the reading into a result: one byte changed, and the attributes
+took `ABS`'s argument.
+
+---
+
+## 2026-09-26 (2): Bit 2 of 0xFF1D was about digits
+
+Yesterday's open question assumed the bit belonged to the keyword
+matcher, because that is where it is tested, and every experiment was a
+keyword typed some strict or loose way. None was ever strict. Listing
+the byte's accesses from the ROM instead showed the bit set and restored
+around a single call, and that call reads a decimal number. Breakpoints
+then found the only callers to be `XSTM` and `XFN`, and the reason fell
+out of trying digits: BASIC skips spaces inside numbers everywhere else,
+so a code number would swallow a statement's first argument.
+`XSTM2 30000,5` is `POKE 30000,5` only because of it.
+
+The lesson is small but it recurred: a flag is best characterised by
+what runs while it is set, not by where it is read. The matcher's strict
+branches are real code that this ROM set never takes.
+
+One slip on the way: the first "injection" of the new check was run
+from `abc802/`, where the ROM path does not resolve, and its missing
+output read like a failure until the screen was looked at.
+
+---
+
 ## 2026-09-26 (1): The last two Linux skips
 
 Two of the standup's fixes, both about checks that never ran on Linux.

@@ -109,14 +109,8 @@ Real, understood, and deliberately not solved yet — not oversights.
 - **The DART/SIO/CTC are modeled only as far as the boot path needs.**
   Baud-rate generation, transmit interrupts, and the SIO's own vectors
   are absent.
-- **Two ROM table details are still open.** Bit 2 of `0xFF1D`, which
-  makes a keyword need a non-alphanumeric character after it, is set
-  only at `0x1B19`, in a routine reached with the statement chain's head,
-  but no parse tested has been strict, so what it restricts is not known.
-  And no code has been found reading +8 of a function-chain header, so
-  the attribute header's `0x0080` there has no known meaning (the
-  functions header's `0x079E` is loaded directly by `0x1785` instead).
-  The hard disk's 32 sectors per cluster is read from the DOS code alone.
+- **The hard disk's 32 sectors per cluster is read from the DOS code
+  alone**, with no `HD` media to confirm it.
 - **Frame frequency is ambiguous** — MAME's DIP label and the code
   comment that consumes it disagree; see `ABC802_REFERENCE.md`. Nothing
   currently depends on it.
