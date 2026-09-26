@@ -335,6 +335,70 @@ check_vscode_extension() {
     [ "$status" -eq 0 ] || overall_status=1
 }
 
+# bin/z80-gtk, in a real window on a virtual X display. The app draws
+# nothing of its own (VTE does), so there is no --screenshot to check as
+# the ABC windows have, and a VTE widget that is never mapped gives no
+# reliable reading (docs/postmortems/2026-09-25-a-stand-in-answers-only-
+# where-it-matches.md). Xvfb maps the window for real without anything
+# appearing on a desktop; a real window on the user's own display is
+# ruled out, since this machine's desktop is in use for other work. So
+# this runs where xvfb-run exists (Linux) and skips loudly elsewhere.
+#
+# The program prints its CP/M command tail, and is named by a path
+# relative to the working directory, so one line of output proves that
+# the launcher found bin/z80, passed every argument, and started it in
+# the right directory. Z80_GTK_TEXT_FILE makes the window write its
+# terminal's text once bin/z80 exits, and quit.
+check_z80_gtk() {
+    local gtk="$ROOT/bin/z80-gtk"
+    if [ ! -x "$gtk" ]; then
+        echo "SKIP: z80-gtk - bin/z80-gtk not built ('make test' builds it when pkg-config finds gtk4 and VTE)"
+        return
+    fi
+    if ! command -v xvfb-run > /dev/null; then
+        echo "SKIP: z80-gtk - needs xvfb-run for a virtual display; a real window would take over the desktop"
+        return
+    fi
+    local dir="$WORKDIR/gtk" out reasons
+    mkdir -p "$dir/sub"
+    cat > "$dir/tail.asm" <<'EOF'
+        org 100h
+        ld de, open
+        ld c, 9
+        call 5
+        ld hl, 80h
+        ld b, (hl)
+next:   ld a, b
+        or a
+        jr z, done
+        inc hl
+        ld e, (hl)
+        push hl
+        push bc
+        ld c, 2
+        call 5
+        pop bc
+        pop hl
+        dec b
+        jr next
+done:   ld de, close
+        ld c, 9
+        call 5
+        ret
+open:   db 'TAIL[$'
+close:  db ']', 13, 10, '$'
+EOF
+    "$Z80ASM" "$dir/tail.asm" -o "$dir/sub/tail.com" > /dev/null 2>&1
+    out=$(cd "$dir" && Z80_GTK_TEXT_FILE="$dir/text.txt" \
+          timeout 30 xvfb-run -a "$gtk" sub/tail.com hello there 2>&1)
+    local status=$? text
+    text=$(cat "$dir/text.txt" 2>/dev/null)
+    reasons="$([ "$status" -eq 0 ] || echo "    expected the window to quit by itself (exit status $status)")
+$(want "$text" "TAIL[ HELLO THERE]" "the program's command tail in the terminal")
+$(want "$text" "Program terminated normally" "bin/z80's closing line in the terminal")"
+    report "z80-gtk" "$(printf '%s' "$reasons" | grep .)" "$text"$'\n'"$out"
+}
+
 TEST_INTERRUPTS="$ROOT/bin/z80-test-interrupts"
 
 if [ ! -x "$Z80" ] || [ ! -x "$Z80ASM" ] || [ ! -x "$Z80DASM" ] || [ ! -x "$TEST_INTERRUPTS" ]; then
@@ -362,5 +426,6 @@ done
 check_term_test
 check_debugger
 check_vscode_extension
+check_z80_gtk
 
 exit "$overall_status"

@@ -37,6 +37,18 @@ sibling of `bin/z80-gtk` via `_NSGetExecutablePath()` on macOS and the
 `/proc/self/exe` link on Linux, not trusted from `argv[0]`), exactly as
 if it had been typed directly at a shell.
 
+## Automated check
+
+`z80-gtk` in `cpm/tests/run_tests.sh` runs this app in a real, mapped
+window on Xvfb (a virtual X display nobody sees) with
+`Z80_GTK_TEXT_FILE` set, which makes the window write its terminal's text
+to that file when `bin/z80` exits, and quit. The program it runs prints
+its own CP/M command tail, so the text proves the arguments and working
+directory arrived. It runs where `xvfb-run` exists (Linux) and skips
+loudly elsewhere: a window on the Mac's own desktop is not an option,
+and a VTE widget never put in a window gives no reliable reading
+(`docs/postmortems/2026-09-25-a-stand-in-answers-only-where-it-matches.md`).
+
 ## Status: work in progress, blocked on a macOS 26 OS bug
 
 Builds cleanly, and terminal rendering itself is now confirmed working —

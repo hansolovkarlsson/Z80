@@ -70,6 +70,12 @@ Real, understood, and deliberately not solved yet — not oversights.
   scanline model (Milestone 2) — but anything genuinely tied to field
   timing, including the hardware cursor-blink modes (R10 bits 6:5 = 10/11)
   and the character generator's Row Flash attribute, still is not.
+- **The cursor flickers a little in `--interactive` on Linux.** Seen by
+  the user in a terminal on the Ubuntu 24.04 VM's desktop (2026-09-26),
+  where the session otherwise works; `bin/abc802-gtk` there does not
+  show it. Shelved as minor and not investigated, so whether it is the
+  ROM's software blink meeting the 30fps redraw, or the terminal's own
+  cursor handling, is not known.
 - **Channel A's RS-232 port has nothing attached.** Transmitted bytes are
   discarded and nothing is ever received.
 - **Two drive types, one card.** `MO` (ABC830, 160KB) and `MF`

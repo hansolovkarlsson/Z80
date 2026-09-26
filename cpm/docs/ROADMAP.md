@@ -84,10 +84,12 @@ Aspirational, not yet scoped:
   and passes `make test` on Ubuntu 24.04 (ARM64), GTK apps included (see
   [`COMPLETED.md`](COMPLETED.md)), and all four GTK apps have been run by
   hand on the Ubuntu desktop. Not yet covered there: x86-64 Linux (only
-  ARM64 has been run), a live `--interactive` session in a Linux terminal
-  (the suites drive it through a pty), and the VS Code extension checks,
-  which look for VS Code at its macOS path. `bin/z80-gtk` still has no
-  automated check on either platform.
+  ARM64 has been run), and a live `--interactive` session in a Linux
+  terminal for `bin/abc80` and `bin/abc806` (`bin/abc802`'s was run by
+  hand on 2026-09-26 and works, with a small cursor flicker shelved in
+  its roadmap; the suites drive all three through a pty). `bin/z80-gtk`'s check
+  needs Xvfb, so it runs on Linux only and skips on the Mac, where a real
+  window would take over the desktop.
   Windows needs a real console layer in place of `termios`/`select()`,
   or a POSIX environment such as MSYS2.
 - A custom ROM/OS on top of it — open design questions include a stack VM

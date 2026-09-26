@@ -88,13 +88,28 @@ static char **g_child_argv = NULL;
 // to be.
 static char g_cwd[4096];
 
+// Z80_GTK_TEXT_FILE, when set, makes the window write the terminal's
+// text to that file once bin/z80 exits, and then quit. It exists for
+// cpm/tests/run_tests.sh, which runs this app in a real, mapped window
+// on a virtual X display (Xvfb): the text is read from a window that
+// is actually on screen, not from a widget that never was, which
+// docs/postmortems/2026-09-25-a-stand-in-answers-only-where-it-matches.md
+// found gives no reliable reading.
 static void on_child_exited(VteTerminal *terminal, int status, gpointer user_data) {
-    (void)terminal;
     (void)status;
     (void)user_data;
-    // Deliberately left open (not auto-closing the window) - matches
-    // real terminal-app behavior of leaving the pane open after the
-    // child exits, so the program's own final output (bin/z80's own
+    const char *dump = getenv("Z80_GTK_TEXT_FILE");
+    if (dump && *dump) {
+        char *text = vte_terminal_get_text_format(terminal, VTE_FORMAT_TEXT);
+        if (!text || !g_file_set_contents(dump, text, -1, NULL))
+            g_printerr("Could not write the terminal's text to %s\n", dump);
+        g_free(text);
+        g_application_quit(g_application_get_default());
+        return;
+    }
+    // Otherwise deliberately left open (not auto-closing the window) -
+    // matches real terminal-app behavior of leaving the pane open after
+    // the child exits, so the program's own final output (bin/z80's own
     // "Program terminated normally..."/T-state count) stays visible
     // until the user closes it themselves.
 }

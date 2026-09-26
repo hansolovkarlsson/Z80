@@ -24,6 +24,8 @@
 # The guest needs build-essential and pkg-config; libgtk-4-dev and
 # libsdl2-dev add the ABC GTK apps, and libvte-2.91-gtk4-dev adds
 # bin/z80-gtk (make test builds each app only when its packages exist).
+# xvfb adds bin/z80-gtk's check, and VS Code (Microsoft's arm64 .deb)
+# the extension's; each skips loudly without them.
 
 set -e
 VM="${LINUX_VM:-Ubuntu 24.04.3 ARM64}"
@@ -32,9 +34,13 @@ GDIR="${LINUX_DIR:-/home/$GUSER/Z80}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # bsdtar's macOS metadata would only produce warnings in the guest.
+# Extracted with -m, so every file sent is stamped with the time it
+# arrived rather than when it was edited on the Mac: with the Mac's time
+# kept, a source edited before the guest's last build looked older than
+# its object file, make skipped it, and an old binary ran (2026-09-26).
 send() {
     COPYFILE_DISABLE=1 tar --no-xattrs -czf - "$@" |
-        prlctl exec "$VM" runuser -u "$GUSER" -- tar -xzf - -C "$GDIR" 2>&1 |
+        prlctl exec "$VM" runuser -u "$GUSER" -- tar -xzmf - -C "$GDIR" 2>&1 |
         grep -v "Ignoring unknown extended header" || true
 }
 

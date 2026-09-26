@@ -1480,6 +1480,39 @@ some dash options for itself, so `mkdir -p DIR` arrives as `mkdir DIR`,
 and a quoted command line is split into words. Commands go to
 `bash -s` on stdin instead.
 
+### The last two skips (2026-09-26)
+
+**The VS Code extension checks run on Linux.** `asm/vscode/test/run_tests.sh`
+looked only at `/Applications/Visual Studio Code.app`. It now also tries
+`~/Applications`, `/usr/share/code` (Microsoft's `.deb` and `.rpm`) and
+the snap's `/snap/code/current/usr/share/code`, taking `MacOS/Code` with
+`Resources/app` on macOS and `code` with `resources/app` on Linux;
+`VSCODE_APP` still overrides the search. The layout was confirmed by
+installing the arm64 `.deb` (1.139.1) in the guest rather than assumed,
+and all 8 checks pass there with no display, since Electron runs as
+plain Node.
+
+**`bin/z80-gtk` has an automated check**, `z80-gtk` in the CP/M suite.
+It runs the real app in a real, mapped window on Xvfb, a virtual X
+display, so nothing appears on any desktop; a window on the Mac's own
+display is ruled out because that desktop is in use for other work.
+`Z80_GTK_TEXT_FILE` makes the window write its terminal's text when
+`bin/z80` exits, and quit. The program is assembled by the check and
+prints its CP/M command tail; it is named by a relative path and given
+two arguments, so `TAIL[ HELLO THERE]` in the window proves the launcher
+found `bin/z80`, forwarded every argument and started it in the right
+directory. Three injected regressions each failed it for the right
+reason: forwarding only `argv[1]` (no tail), spawning in `/` (`Failed
+to open 'sub/tail.com'`), and never writing the dump (timeout, status
+124). A run takes about 155 ms, and ten in a row all passed. It skips
+loudly where `xvfb-run` is missing, which includes the Mac. Whether it
+would catch 2026-09-25's blank-window bug (the pty attached after the
+spawn) is not known: that was seen in a macOS window, and was not tried
+here.
+
+Totals after both: Linux 154 passed, 0 skipped; macOS 153 passed, with
+`z80-gtk` its one skip.
+
 ## Phase 4, VS Code support for z80asm: done
 
 `asm/vscode/` is a VS Code extension with no dependencies and no build

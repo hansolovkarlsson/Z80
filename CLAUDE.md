@@ -1228,7 +1228,11 @@ injection. `make test` builds each app first whenever `pkg-config` finds
 its packages, so a *build* break fails the run too; before that, each check
 simply skipped when its binary was absent, and `bin/abc80-gtk` stopped
 compiling for part of a day for exactly that reason, found only by
-building it by hand.
+building it by hand. `bin/z80-gtk` has one too, `z80-gtk` in the CP/M
+suite, but it cannot be headless (VTE draws the picture, and an unmapped
+VTE widget gives no reliable text), so it runs the real window on Xvfb
+and **runs on Linux only**, skipping loudly on the Mac: nothing here may
+open a window on the user's desktop, which is in use for other work.
 See
 `abc80/gtk/README.md` and `abc80/docs/ABC80_ROADMAP.md`'s Milestone 11
 for the full write-up (that milestone now has no open items).

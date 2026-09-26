@@ -71,7 +71,10 @@ only on `PATH` is never used, since Homebrew ships an unrelated `z80asm`.
 
 `test/run_tests.sh` (part of `make test`, through the CP/M suite) runs on
 VS Code's own bundled Node and TextMate engine, so it needs no other
-install and tests the grammar with the code that will run it. It checks:
+install and tests the grammar with the code that will run it. It finds VS
+Code where the macOS app, the Linux `.deb`/`.rpm` (`/usr/share/code`) or
+the snap puts it, or wherever `VSCODE_APP` says, and skips loudly
+otherwise. It checks:
 
 - **the keyword lists against the assembler's source**, both ways. They are
   a copy of `asm/src`'s, written into `build_grammar.py`, and the check is

@@ -21,6 +21,43 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-26 (1): The last two Linux skips
+
+Two of the standup's fixes, both about checks that never ran on Linux.
+
+The VS Code checks only knew the macOS app path. The fix is a search
+list, but the Linux layout (`/usr/share/code/code` beside
+`resources/app`) was a recollection until the arm64 `.deb` was
+installed in the guest and listed, and only then did the 8 checks run.
+
+`bin/z80-gtk` was harder to check honestly. Yesterday's postmortem had
+just shown that a VTE widget never put in a window gives no reliable
+text, and a real window on the Mac is out: the user's desktop is in use
+for other work, which is now a standing rule rather than a preference
+per case. Xvfb answers both: the window is really mapped, on a display
+nobody sees. The app gained one env-gated exit hook that dumps the
+terminal's text and quits, and the check asserts on a program that
+prints its own command tail, which proves arguments and working
+directory in one line.
+
+**A false failure on the way.** After a sync, five runs in a row hung
+until their timeout, with the new code apparently in the guest. It was
+not: `scripts/linuxvm.sh sync` extracted with the Mac's modification
+times, the synced `main.c` was stamped 07:37, and an instrumented build
+made in the guest at 07:39 was newer, so `make` kept that binary, which
+predated the change. The sync now extracts with `tar -m`, so files are
+stamped when they arrive and every sync rebuilds what it touched. The
+very first 30-second hang, before any instrumented build existed, is
+not fully accounted for by this; after a forced clean build, ten runs
+all passed in about 155 ms each.
+
+The third fix needed the real place, so it went to the user: `bin/abc802
+--interactive` in a terminal on the Ubuntu desktop works, with a small
+cursor flicker that is shelved in the ABC802 roadmap rather than chased,
+and `bin/abc802-gtk` there works without it.
+
+---
+
 ## 2026-09-25 (6): The ABC802 codes without keywords
 
 The remaining table mysteries all turned out to be about codes rather
