@@ -21,6 +21,37 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-26 (5): Two cursors, not a flicker
+
+The "flicker" shelved twice this morning was described precisely once
+the user looked for it: the cursor blinked in the screen and below it by
+turns. That is two cursors, and the second was the terminal's own, left
+visible since the first `--interactive` milestone because nothing ever
+hid it. The morning's guess in the ABC802 roadmap had already pointed at
+the terminal side from the two machines sharing the symptom; the
+description turned the guess into a cause in one step, which is the
+2026-09-25 lesson again from the other side: a precise report from the
+real place beats any amount of reasoning here. Hiding it is one escape
+sequence per machine, plus a debugger hook so the prompt keeps one.
+
+---
+
+## 2026-09-26 (4): A path, not a platform
+
+Asked what was left of the Linux port, the answer included a live
+`bin/abc80 --interactive` in a Linux terminal, with the command to try
+written from the repo root, because that is how `bin/abc802` and
+`bin/abc806` are run. The user found it failed on both platforms: the
+ABC80 target alone defaults to a ROM path relative to `abc80/`, its help
+text says so, and the instruction had been written from its siblings'
+convention without checking. The fix makes the default work from both
+places. The same round found `bin/abc806 --interactive` working on
+Linux with the ABC802's cursor flicker, which, since the ABC802's ROM
+blinks its cursor in software and the ABC806's does not, points at the
+terminal side the two share.
+
+---
+
 ## 2026-09-26 (3): The +8 word, found by reading rather than searching
 
 The static search for code reading +8 of a function-chain header had

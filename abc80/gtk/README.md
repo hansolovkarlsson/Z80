@@ -40,8 +40,9 @@ cd abc80
 ../bin/abc80-gtk --help
 ```
 
-(Run from inside `abc80/` so the default `resources/rom` path resolves —
-same convention as `bin/abc80`.) `--disk`/`--ram32k`/`--quickload`/
+(With no `rom_dir`, the ROM is found from the repo root as
+`abc80/resources/rom` or from inside `abc80/` as `resources/rom`, the
+same as `bin/abc80`.) `--disk`/`--ram32k`/`--quickload`/
 `--quicksave` all behave identically to `bin/abc80`'s own flags (all four
 share the CLI's own `abcbus.c`/`cassette.c` implementations unchanged), as
 does `--dos-rom`. The floppy is a real ABC-bus card (`abcbus/disk.c`,

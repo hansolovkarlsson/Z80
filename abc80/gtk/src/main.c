@@ -1405,7 +1405,8 @@ static void print_usage(const char *prog) {
     printf("  %s [rom_dir] [--disk FILE] [--ram32k] [--amber] [--turbo N] [--quickload FILE] [--quicksave FILE]\n", prog);
     printf("\n");
     printf("  rom_dir            Directory containing the four ROM images\n");
-    printf("                     (default: resources/rom - run from inside abc80/)\n");
+    printf("                     (default: abc80/resources/rom from the repo root,\n");
+    printf("                     or resources/rom from inside abc80/)\n");
     printf("  --disk FILE        Load the real ABC-DOS ROM at 0x6000 and fit a real\n");
     printf("                     ABC-bus floppy controller serving FILE, a 160K ABC830\n");
     printf("                     image. Without it no card is fitted and the bus floats.\n");
@@ -1440,8 +1441,16 @@ static void print_usage(const char *prog) {
     z80dbg_print_usage(stdout);
 }
 
+// With no rom_dir given, the ROM is found from either place it is run:
+// the repo root, where bin/abc802 and bin/abc806 find theirs, or inside
+// abc80/, where this target's tests and documents run it.
+static const char *default_rom_dir(void) {
+    return access("abc80/resources/rom/3506_3.a5.bin", R_OK) == 0
+        ? "abc80/resources/rom" : "resources/rom";
+}
+
 int main(int argc, char *argv[]) {
-    const char *rom_dir = "resources/rom";
+    const char *rom_dir = default_rom_dir();
     const char *disk_args[8];
     int disk_count = 0;
     const char *dos_rom = NULL;

@@ -3264,3 +3264,43 @@ under a minute, would have found it at any point. A recorded guess reads
 like a recorded finding after enough time passes, which is an argument for
 writing "not investigated" as loudly as this roadmap did, and for treating
 that phrase as an invitation rather than a conclusion.
+
+## The ROM is found from the repo root too (2026-09-26)
+
+`bin/abc80` and `bin/abc80-gtk` defaulted to `resources/rom`, so they
+worked only when run from inside `abc80/`, while `bin/abc802` and
+`bin/abc806` default to paths from the repo root. Asked to try
+`bin/abc80 --interactive` from the root on Linux, the user got `Failed to
+open ROM image 'resources/rom/3506_3.a5.bin'`, and the same on the Mac,
+so it was never a Linux problem. With no `rom_dir`, both now use
+`abc80/resources/rom` when that holds the first ROM image and
+`resources/rom` otherwise, so the old way keeps working and the tests,
+which run from `abc80/` with an explicit `resources/rom`, are unchanged.
+`rom-dir-default-from-root` runs `bin/abc80` from the root with no
+arguments and wants `PRINT 6*7` answered; with the old default restored
+it fails on the missing image. The small dump tools
+(`bin/abc80-chargen-dump` and the rest) still take their paths from
+inside `abc80/`.
+
+## The terminal cursor is hidden in `--interactive` (2026-09-26)
+
+Run by hand in a terminal, on Linux and on the Mac, all three ABC
+machines showed a cursor that seemed to jump: it blinked in the screen
+and, alternately, just below it. There were two cursors. The machine
+draws its own into the screen, and the terminal's real cursor, never
+hidden, sat wherever each redraw ended and blinked there too. The ABC802
+blinks its cursor in ROM software and the ABC806 has the emulator supply
+the phase, so the same symptom on both pointed at the shared terminal
+side rather than either machine, which the user's description of the
+two positions then confirmed.
+
+Each machine's console setup now hides the terminal's cursor
+(`ESC [ ? 25 l`, only when standard output is a terminal) and its exit
+path shows it again, so Ctrl-\ leaves the shell with a cursor. The
+debugger prompt needs one to type at, so `z80dbg_set_cursor_hidden()`
+tells it the machine hid it: the prompt shows the cursor while it reads
+and hides it again when the machine resumes. `bin/z80` and the GTK
+windows never call it and are unchanged. A raw capture through a pty
+gave the expected order (hide, show at quit; under `--debug`, show at
+the prompt and hide on resuming), and the user confirmed in real
+terminals on both platforms that only the machine's cursor blinks now.

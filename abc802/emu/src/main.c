@@ -67,10 +67,19 @@
 // tool's own quit key.
 static struct termios abc802_orig_termios;
 static int abc802_termios_saved = 0;
+// The terminal's own cursor is hidden for the session, since the machine
+// draws its cursor into the screen: left visible, it blinked wherever the
+// last redraw ended, below the screen, so the two looked like one cursor
+// jumping between them (seen on 2026-09-26 on all three ABC machines).
+static bool abc802_cursor_hidden = false;
 
 static void abc802_console_shutdown(void) {
     if (abc802_termios_saved) {
         tcsetattr(STDIN_FILENO, TCSANOW, &abc802_orig_termios);
+    }
+    if (abc802_cursor_hidden) {
+        fputs("\x1b[?25h", stdout);
+        fflush(stdout);
     }
 }
 
@@ -90,6 +99,11 @@ static void abc802_console_init(bool debugger) {
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+    if (isatty(STDOUT_FILENO)) {
+        fputs("\x1b[?25l", stdout);
+        fflush(stdout);
+        abc802_cursor_hidden = true;
+    }
 }
 
 // Set by the signal handler, checked by the main loop so it can exit
@@ -409,6 +423,7 @@ int main(int argc, char **argv) {
 
     if (interactive) {
         abc802_console_init(dbg != NULL);
+        if (dbg) z80dbg_set_cursor_hidden(dbg, abc802_cursor_hidden);
         struct sigaction sa = {0};
         sa.sa_handler = abc802_handle_quit_signal;
         sigemptyset(&sa.sa_mask);

@@ -148,10 +148,19 @@ static bool interactive_mode = false;
 // Ctrl-\ (SIGQUIT), handled below exactly like SIGINT used to be.
 static struct termios abc80_orig_termios;
 static int abc80_termios_saved = 0;
+// The terminal's own cursor is hidden for the session, since the machine
+// draws its cursor into the screen: left visible, it blinked wherever the
+// last redraw ended, below the screen, so the two looked like one cursor
+// jumping between them (seen on 2026-09-26 on all three ABC machines).
+static bool abc80_cursor_hidden = false;
 
 static void abc80_console_shutdown(void) {
     if (abc80_termios_saved) {
         tcsetattr(STDIN_FILENO, TCSANOW, &abc80_orig_termios);
+    }
+    if (abc80_cursor_hidden) {
+        fputs("\x1b[?25h", stdout);
+        fflush(stdout);
     }
 }
 
@@ -172,6 +181,11 @@ static void abc80_console_init(bool debugger) {
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+    if (isatty(STDOUT_FILENO)) {
+        fputs("\x1b[?25l", stdout);
+        fflush(stdout);
+        abc80_cursor_hidden = true;
+    }
 }
 
 // Set by abc80_handle_quit_signal() (registered only in --interactive
@@ -499,12 +513,21 @@ static bool load_rom(const char *rom_dir, const RomImage *rom, uint8_t *ram) {
     return true;
 }
 
+// With no rom_dir given, the ROM is found from either place it is run:
+// the repo root, where bin/abc802 and bin/abc806 find theirs, or inside
+// abc80/, where this target's tests and documents run it.
+static const char *default_rom_dir(void) {
+    return access("abc80/resources/rom/3506_3.a5.bin", R_OK) == 0
+        ? "abc80/resources/rom" : "resources/rom";
+}
+
 static void print_usage(const char *prog) {
     printf("Usage:\n");
     printf("  %s [rom_dir] [max_instructions] [--quickload FILE] [--quicksave FILE]\n", prog);
     printf("\n");
     printf("  rom_dir            Directory containing the four ROM images\n");
-    printf("                     (default: resources/rom - run from inside abc80/)\n");
+    printf("                     (default: abc80/resources/rom from the repo root,\n");
+    printf("                     or resources/rom from inside abc80/)\n");
     printf("  max_instructions   Safety cap for this debug run\n");
     printf("                     (default: %d)\n", DEFAULT_MAX_INSTRUCTIONS);
     printf("  --quickload FILE   Inject a saved program into BASIC's program\n");
@@ -591,7 +614,7 @@ int main(int argc, char *argv[]) {
             max_instructions = atol(argv[i]);
         }
     }
-    if (!rom_dir) rom_dir = "resources/rom";
+    if (!rom_dir) rom_dir = default_rom_dir();
     // No fixed cap in interactive mode unless the caller explicitly asked
     // for one - real-time pacing below already bounds how much CPU a live
     // session burns, so there's no need for --interactive to also end the
@@ -669,6 +692,7 @@ int main(int argc, char *argv[]) {
 
     if (interactive_mode) {
         abc80_console_init(dbg != NULL);
+        if (dbg) z80dbg_set_cursor_hidden(dbg, abc80_cursor_hidden);
         struct sigaction sa = {0};
         sa.sa_handler = abc80_handle_quit_signal;
         sigemptyset(&sa.sa_mask);

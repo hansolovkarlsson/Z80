@@ -88,6 +88,10 @@ bool z80dbg_is_stopped(const Z80Debugger *dbg);
 // Stops before the next instruction, as Ctrl-C does: for a key in a window.
 void z80dbg_request_stop(Z80Debugger *dbg);
 
+// For a machine whose live session hides the terminal's cursor (it draws
+// its own): the prompt shows it while it reads, and hides it again after.
+void z80dbg_set_cursor_hidden(Z80Debugger *dbg, bool hidden);
+
 // Call once, after the machine is set up and before the first step. Opens
 // the command source (the script, or /dev/tty) and installs the Ctrl-C
 // handler. Returns false, with a message, if there is nowhere to read

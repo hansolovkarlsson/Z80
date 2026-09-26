@@ -71,6 +71,8 @@ struct Z80Debugger {
     bool in_is_tty;
     struct termios saved_termios;
     bool termios_saved;
+    bool cursor_hidden;      // the machine hid the terminal's cursor
+    bool cursor_shown;       // and the prompt is showing it
     char last_command[256];
 
     DbgSymbol *symbols;
@@ -515,9 +517,18 @@ static void enter_prompt_terminal(Z80Debugger *dbg) {
     cooked.c_lflag |= ICANON | ECHO | ISIG;
     cooked.c_iflag |= ICRNL;
     tcsetattr(fd, TCSANOW, &cooked);
+    if (dbg->cursor_hidden) {
+        fputs("\x1b[?25h", stderr);   // a prompt needs its cursor
+        dbg->cursor_shown = true;
+    }
 }
 
 static void leave_prompt_terminal(Z80Debugger *dbg) {
+    if (dbg->cursor_shown) {
+        fputs("\x1b[?25l", stderr);
+        fflush(stderr);
+        dbg->cursor_shown = false;
+    }
     if (!dbg->termios_saved) return;
     tcsetattr(fileno(dbg->in), TCSANOW, &dbg->saved_termios);
     dbg->termios_saved = false;
@@ -783,6 +794,7 @@ static int prompt(Z80Debugger *dbg, Z80 *cpu) {
 // ------------------------------------------------------------------- async
 
 void z80dbg_set_async(Z80Debugger *dbg, bool async) { dbg->async = async; }
+void z80dbg_set_cursor_hidden(Z80Debugger *dbg, bool hidden) { dbg->cursor_hidden = hidden; }
 // Only a terminal needs watching. A script is read by the debugger itself
 // whenever it wants the next line, since a file is always readable and a
 // watch on it would spin the caller's main loop.

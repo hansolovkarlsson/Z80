@@ -76,6 +76,17 @@ basic_numbers() {
 CAP=4000000
 DISK_CAP=6000000
 
+# With no rom_dir, bin/abc80 finds the ROM from the repo root as well as
+# from inside abc80/ (this suite's own directory, where every other check
+# runs), so it starts the way bin/abc802 and bin/abc806 do. Until
+# 2026-09-26 the default was resources/rom alone, and run from the root
+# it could not open its first ROM image.
+out=$(cd "$ROOT" && printf 'PRINT 6*7\r' | "$ABC80" 2>&1)
+tl_begin "rom-dir-default-from-root"
+tl_want_not "$out" "Failed to open ROM" "a ROM image it could not find"
+tl_want_eq "$(basic_numbers "$out")" "42" "BASIC answering PRINT 6*7"
+tl_end "$out"
+
 out=$(run_basic $CAP $'PRINT 6*7\r')
 tl_begin "boot-to-basic"
 tl_want "$out" "ABC80" "the ROM's own prompt"

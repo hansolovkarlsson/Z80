@@ -1321,3 +1321,26 @@ One check was added, `basic-fn-header-plus8`, which runs the patched copy
 against the real ROM; with the patch made a no-op it fails on both
 patched assertions. `fn_descriptor_lookup` went into `abc802.sym`. With
 this, the ABC802 roadmap has no open ROM table questions.
+
+## The terminal cursor is hidden in `--interactive` (2026-09-26)
+
+Run by hand in a terminal, on Linux and on the Mac, all three ABC
+machines showed a cursor that seemed to jump: it blinked in the screen
+and, alternately, just below it. There were two cursors. The machine
+draws its own into the screen, and the terminal's real cursor, never
+hidden, sat wherever each redraw ended and blinked there too. The ABC802
+blinks its cursor in ROM software and the ABC806 has the emulator supply
+the phase, so the same symptom on both pointed at the shared terminal
+side rather than either machine, which the user's description of the
+two positions then confirmed.
+
+Each machine's console setup now hides the terminal's cursor
+(`ESC [ ? 25 l`, only when standard output is a terminal) and its exit
+path shows it again, so Ctrl-\ leaves the shell with a cursor. The
+debugger prompt needs one to type at, so `z80dbg_set_cursor_hidden()`
+tells it the machine hid it: the prompt shows the cursor while it reads
+and hides it again when the machine resumes. `bin/z80` and the GTK
+windows never call it and are unchanged. A raw capture through a pty
+gave the expected order (hide, show at quit; under `--debug`, show at
+the prompt and hide on resuming), and the user confirmed in real
+terminals on both platforms that only the machine's cursor blinks now.

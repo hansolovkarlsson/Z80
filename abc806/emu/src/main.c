@@ -73,9 +73,18 @@
 // belongs; ISIG stays on, so Ctrl-\ remains this tool's quit key.
 static struct termios orig_termios;
 static int termios_saved = 0;
+// The terminal's own cursor is hidden for the session, since the machine
+// draws its cursor into the screen: left visible, it blinked wherever the
+// last redraw ended, below the screen, so the two looked like one cursor
+// jumping between them (seen on 2026-09-26 on all three ABC machines).
+static bool cursor_hidden = false;
 
 static void console_shutdown(void) {
     if (termios_saved) tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
+    if (cursor_hidden) {
+        fputs("\x1b[?25h", stdout);
+        fflush(stdout);
+    }
 }
 
 static void console_init(bool debugger) {
@@ -94,6 +103,11 @@ static void console_init(bool debugger) {
     raw.c_cc[VMIN] = 1;
     raw.c_cc[VTIME] = 0;
     tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+    if (isatty(STDOUT_FILENO)) {
+        fputs("\x1b[?25l", stdout);
+        fflush(stdout);
+        cursor_hidden = true;
+    }
 }
 
 // Set by the handler and checked by the main loop, so a quit leaves
@@ -368,6 +382,7 @@ int main(int argc, char **argv) {
     double last_render_sec = -1.0;
     if (interactive) {
         console_init(dbg != NULL);
+        if (dbg) z80dbg_set_cursor_hidden(dbg, cursor_hidden);
         signal(SIGINT, handle_quit_signal);
         signal(SIGQUIT, handle_quit_signal);
         clock_gettime(CLOCK_MONOTONIC, &run_start);
