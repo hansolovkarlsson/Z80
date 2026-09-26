@@ -23,6 +23,7 @@ Each one answers the same four questions:
 
 | Date | Postmortem | One-line lesson |
 |---|---|---|
+| 2026-09-26 | [Two cursors, and a check that strips escapes](2026-09-26-two-cursors-and-a-check-that-strips-escapes.md) | A check that strips escapes cannot see what a terminal shows; and a copied console carries its omissions to every copy |
 | 2026-09-25 | [A stand-in answers only where it matches](2026-09-25-a-stand-in-answers-only-where-it-matches.md) | A substitute environment is evidence only after it reproduces something known; for the user's window or keyboard, hand them a diagnostic that runs there |
 | 2026-09-24 | [A paused machine looks like a running one](2026-09-24-a-paused-machine-looks-like-a-running-one.md) | A screen is evidence only of the states it can tell apart; ask the CPU where it is before saying what it is doing |
 | 2026-09-24 | [The command ran, but not the program](2026-09-24-the-command-ran-but-not-the-program.md) | Running a command proves a program by that name ran; check which one before trusting what it printed |
