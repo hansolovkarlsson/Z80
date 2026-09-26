@@ -220,6 +220,8 @@ prompt appear on opening. Why VTE loses the output the other way is not
 known. One more trap on the way: `vte_pty_spawn_async()` refuses
 `G_SPAWN_DO_NOT_REAP_CHILD` with a runtime check and spawns nothing,
 because it adds that flag itself.
+The lesson of both the probe and the F12 premise below is written up as
+[`a stand-in answers only where it matches`](postmortems/2026-09-25-a-stand-in-answers-only-where-it-matches.md).
 
 **F12 was the user's choice of a second break key**, for layouts where
 Ctrl-] cannot be typed (Swedish macOS puts `]` on Option-9). In a terminal

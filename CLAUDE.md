@@ -508,7 +508,10 @@ command proves only that *a* program by that name ran; `scripts/config.sh`
 let Homebrew's `z80asm` stand in for this repo's), and "a paused machine
 looks like a running one" (one Ctrl-C pauses ABC802 BASIC silently, which
 was written up as a missing break until a profile showed the CPU in the
-key-wait loop). Each machine target's *finished* work now lives in its
+key-wait loop), and "a stand-in answers only where it matches" (a
+windowless VTE probe, and a key tried only in a GTK window, each gave a
+confident wrong answer about the real window or keyboard; a diagnostic the
+user ran there settled both). Each machine target's *finished* work now lives in its
 own `*_COMPLETED.md` (`cpm/docs/COMPLETED.md`,
 `abc80/docs/ABC80_COMPLETED.md`, `abc802/docs/ABC802_COMPLETED.md`,
 `abc806/docs/ABC806_COMPLETED.md`) rather than in its roadmap, so each `ROADMAP.md` answers only "what works, what
