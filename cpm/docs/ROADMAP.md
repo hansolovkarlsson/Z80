@@ -75,6 +75,12 @@ Aspirational, not yet scoped:
   a Swedish layout) under `--interactive` in a real terminal. Each ABC machine has a hand-written ROM symbol
   file in its `resources/rom/`, which grows as investigations pin down
   more addresses.
+  **A read watch** is the missing command. `w` stops on writes only, so
+  finding which code reads +8 of an ABC802 function-chain header
+  (2026-09-26) took a throwaway line in the machine's bus read hook,
+  logging the PC of every read in a range, which answered in one run.
+  A read form of `w` would make that a debugger command; worth adding
+  if the need comes up again.
 - **More machine targets, such as the ZX Spectrum.** It is Z80-based, so it
   would link `z80core/` the way the three ABC targets do rather than
   bringing a core of its own, which is what keeps it in this repo, unlike
@@ -87,7 +93,13 @@ Aspirational, not yet scoped:
   `--interactive` sessions in a Linux terminal (2026-09-26). Not yet
   covered there: x86-64 Linux (only ARM64 has been run). `bin/z80-gtk`'s check
   needs Xvfb, so it runs on Linux only and skips on the Mac, where a real
-  window would take over the desktop.
+  window would take over the desktop. **One hang is unexplained**: the
+  first run of that check by hand in the guest waited out its whole
+  30-second timeout with no text written, before any stale binary could
+  have been involved (see `docs/JOURNAL.md`, 2026-09-26 (1)). About 25
+  runs since, by hand and in the suite, have all finished in about
+  155 ms. If it recurs, capture the process tree and whether `bin/z80`
+  was spawned before the timeout fires.
   Windows needs a real console layer in place of `termios`/`select()`,
   or a POSIX environment such as MSYS2.
 - A custom ROM/OS on top of it — open design questions include a stack VM

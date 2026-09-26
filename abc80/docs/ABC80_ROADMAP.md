@@ -164,6 +164,12 @@ None committed. Candidates, in rough order of how much they would add:
   works" into "the DOS works".
 - **Printer/IEC ROM cards** in the rest of the expansion range — no image
   committed, no milestone.
+- **Listen to `bin/abc80-gtk`'s live sound on Linux.** The window was run
+  by hand on the Ubuntu desktop (2026-09-25) and worked, but whether the
+  SDL2 tone was heard was not recorded, and every automated check runs
+  headless with no audio device. A hand check: in the window, type
+  `OUT 6,64` for the tone (about 640 Hz, measured in Milestone 11) and
+  `OUT 6,1` to stop it, and listen.
 
 ## Sources consulted
 
