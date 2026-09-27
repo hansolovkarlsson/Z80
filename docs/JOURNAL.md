@@ -21,6 +21,16 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-27 (3): The ABC80 window's sound, by ear
+
+The last of the standup's three fixes needed a listener, so it went to
+the user: run `bin/abc80-gtk` on Linux and listen (the roadmap suggested
+`OUT 6,64` for the tone). The user reported hearing the sound. That
+closes the ABC80 roadmap item; the note is in
+`abc80/docs/ABC80_COMPLETED.md`. Nothing in the tree changed.
+
+---
+
 ## 2026-09-27 (2): Waiting for the Xvfb hang
 
 The one unexplained `z80-gtk` hang from 2026-09-26 has no evidence

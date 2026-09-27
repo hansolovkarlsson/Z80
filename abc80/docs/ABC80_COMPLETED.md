@@ -3304,3 +3304,13 @@ windows never call it and are unchanged. A raw capture through a pty
 gave the expected order (hide, show at quit; under `--debug`, show at
 the prompt and hide on resuming), and the user confirmed in real
 terminals on both platforms that only the machine's cursor blinks now.
+
+## `bin/abc80-gtk`'s live sound is heard on Linux (2026-09-27)
+
+The window had been run by hand on Linux (2026-09-25) and worked, but
+whether its SDL2 tone was heard was never recorded, and no automated
+check can hear it: every one runs headless, with no audio device. The
+user ran the window on Linux and reported hearing the sound. Milestone
+11's zero-crossing measurement of the tone's frequency (about 640 Hz for
+`OUT 6,64`) was made on the Mac and still stands as the only numeric
+check; this one is by ear.
