@@ -21,6 +21,40 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-26 (6): A second Linux host, over ssh
+
+The afternoon tried handing this project to another machine rather than
+changing it: a Raspberry Pi 4 on the local network (Debian 13 "trixie",
+arm64, GCC 14.2, 4 GB), driven from the Mac over `ssh` the way
+`scripts/linuxvm.sh` drives the Parallels guest over `prlctl exec`. The
+tree went in as a `git clone` from GitHub at `9b9cd55`, not a copy of
+the working tree, so what was tested is exactly what is published.
+Nothing in the repository changed.
+
+The first run was the useful one, because a fresh clone on a bare
+machine skips everything the repository does not carry. `make -j4` built
+in about 7 seconds and `make test` passed in 12 minutes, but with 29
+skips across the ABC suites: the disk images are gitignored third-party
+dumps, and the Pi had no GTK 4, SDL2 or VTE development packages. The
+images went over with `rsync` from the Mac's copy, and the three ABC
+suites then ran every disk check. The packages needed `sudo`, which
+needs a password, so that step went to the user. The final full run
+took 14 minutes and passed with no failures; its only skips are the VS
+Code checks, expected off the Mac, and `z80-gtk`, because the Pi has no
+`xvfb-run`.
+
+**A wrong turn worth recording.** GCC 14 warned about bounded
+`strncpy`/`snprintf` calls in `asm/src/`, and they were first reported
+as a new porting finding that the Mac and Ubuntu builds did not show.
+Half of that was false: `cpm/docs/COMPLETED.md` has recorded eight such
+warnings under GCC 13.3 since 2026-09-25, each a deliberate truncation
+into a terminated buffer. The true part is smaller: GCC 14.2 reports
+ten, and clang still reports none. The record was one `grep` away, and
+reading it before calling a finding new would have saved the
+correction. Details are in `cpm/docs/COMPLETED.md`.
+
+---
+
 ## 2026-09-26 (5): Two cursors, not a flicker
 
 The "flicker" shelved twice this morning was described precisely once

@@ -97,8 +97,9 @@ Aspirational, not yet scoped:
   and passes `make test` on Ubuntu 24.04 (ARM64), GTK apps included (see
   [`COMPLETED.md`](COMPLETED.md)), and all four GTK apps have been run by
   hand on the Ubuntu desktop, as have all three ABC machines'
-  `--interactive` sessions in a Linux terminal (2026-09-26). Not yet
-  covered there: x86-64 Linux (only ARM64 has been run). `bin/z80-gtk`'s check
+  `--interactive` sessions in a Linux terminal (2026-09-26). It also
+  passes on Debian 13 on a Raspberry Pi 4 with GCC 14 (2026-09-26). Not
+  yet covered there: x86-64 Linux (only ARM64 has been run). `bin/z80-gtk`'s check
   needs Xvfb, so it runs on Linux only and skips on the Mac, where a real
   window would take over the desktop. **One hang is unexplained**: the
   first run of that check by hand in the guest waited out its whole

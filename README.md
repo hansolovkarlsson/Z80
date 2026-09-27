@@ -60,7 +60,8 @@ make clean         # remove build output
 ```
 
 It builds and passes `make test` on **macOS** and on **Linux** (Ubuntu
-24.04, ARM64; checked 2026-09-25). On Linux, install `build-essential`
+24.04, ARM64, checked 2026-09-25; Debian 13 on a Raspberry Pi 4, checked
+2026-09-26). On Linux, install `build-essential`
 and `pkg-config`; `libgtk-4-dev` and `libsdl2-dev` add the ABC GTK apps,
 and `libvte-2.91-gtk4-dev` adds `bin/z80-gtk`. `make test` builds each
 GTK app only when its packages are present. The VS Code extension checks

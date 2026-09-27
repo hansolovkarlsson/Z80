@@ -547,9 +547,11 @@ disassembler in `disasm/src/`, and the ABC floppy-image tool in
 root.
 
 It builds and passes `make test` on macOS and on Linux (Ubuntu 24.04,
-ARM64); `scripts/linuxvm.sh` drives a Parallels Linux guest from the Mac
-(copy the tree in, run `make`), since the host's own build must not share
-object files with the guest's.
+ARM64, and Debian 13 on a Raspberry Pi 4); `scripts/linuxvm.sh` drives a
+Parallels Linux guest from the Mac (copy the tree in, run `make`), since
+the host's own build must not share object files with the guest's. The
+Pi is reached as `ssh pi` and holds its own clone in `~/Projects/Z80`,
+with the gitignored disk images copied in by `rsync`.
 
 ```
 make               # builds bin/z80, bin/z80asm, bin/z80dasm and bin/abcdisk

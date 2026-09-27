@@ -1513,6 +1513,32 @@ here.
 Totals after both: Linux 154 passed, 0 skipped; macOS 153 passed, with
 `z80-gtk` its one skip.
 
+### Debian 13 on a Raspberry Pi 4 (2026-09-26)
+
+A second Linux host, and real hardware rather than a VM: a Raspberry Pi
+4 (4 GB) running Debian 13 "trixie" for arm64, with GCC 14.2. It was
+driven from the Mac over `ssh`, and the tree was a fresh `git clone` of
+`origin/main` at `9b9cd55`, so it tested the published tree. No source
+change was needed.
+
+- **Build:** `make -j4` takes about 7 seconds. GCC 14.2 gives ten
+  `-Wstringop-truncation`/`-Wformat-truncation` warnings in the
+  assembler, all in `asm/src/assemble.c`, `encode.c` and
+  `preprocess.c`, where GCC 13.3 gave the eight recorded above; clang
+  gives none. They are the same deliberate bounded copies. The GTK
+  sources compile without a warning.
+- **A fresh clone skips what the repository does not carry.** With no
+  disk images and no GTK packages, `make test` passed with 29 ABC skips.
+  The images were copied from the Mac's gitignored
+  `abc80/resources/disks/` and `abc802/resources/disks/`, which let all
+  19 disk checks run and pass; `libgtk-4-dev`, `libsdl2-dev` and
+  `libvte-2.91-gtk4-dev` then brought in the four GTK apps and their ten
+  headless checks.
+- **Result:** 148 passed, 0 failed, in 13 minutes 57 seconds: CP/M 23,
+  ABC80 28, ABC802 50, ABC806 47. The skips are the 8 VS Code checks and
+  `z80-gtk`, which needs `xvfb-run` and the Pi does not have it; with
+  both, that is the 157 of the Ubuntu guest.
+
 ## Phase 4, VS Code support for z80asm: done
 
 `asm/vscode/` is a VS Code extension with no dependencies and no build
