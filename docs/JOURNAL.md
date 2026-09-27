@@ -58,7 +58,8 @@ cores busy: 140 passes, mean 0.17, 0.16 and 0.35 s, slowest 0.43 s.
 Clearing the user font cache made no difference, which suggests the
 system cache under `/var/cache` serves the fonts; that one needs root,
 so it was not cleared. The hang stays open, and the next occurrence in
-the suite will now arrive with its process tree.
+the suite will now arrive with its process tree. The whole CP/M suite then
+passed in the VM, 32 checks with `z80-gtk` among them.
 
 `prlctl exec` failed now and then during this with `PrlJob_GetResult:
 Invalid argument` and ran nothing, including once on a command that
@@ -92,7 +93,9 @@ detail from the ABC802 injection: with only the machine's hide removed,
 the cursor still reads hidden after resuming from the prompt, because the
 machine still tells the debugger it hid it and the debugger hides it on
 the way out. The check caught it anyway, at `running`. Suite totals are
-now 159 passed, 0 failed, 1 skipped on the Mac.
+now 159 passed, 0 failed, 1 skipped on the Mac. On Linux they first ran
+on the Raspberry Pi at `2ad526b`, where the user reported `make test`
+passing with nothing failed.
 
 ---
 
