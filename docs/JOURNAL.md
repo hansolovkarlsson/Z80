@@ -21,7 +21,44 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
-## 2026-09-27: A check that keeps the escapes
+## 2026-09-27 (2): Waiting for the Xvfb hang
+
+The one unexplained `z80-gtk` hang from 2026-09-26 has no evidence
+behind it: nobody knows whether `bin/z80` was ever spawned. The check
+now takes that evidence itself. A watcher started beside the run
+records the process tree at 25 s, five seconds before the timeout, with
+each process's wait channel, and the tree is printed with the failure.
+Proved by making the test program loop forever: the tree showed
+`bin/z80` spawned and running under the window.
+
+**The capture's own bug, found by the loop.** The first version killed
+the watcher subshell but not the `sleep 25` inside it. The orphaned
+`sleep` kept the output pipe open, so anything reading the check's output
+through `$(...)` waited 25 s for end of file. The loop of 140 runs did
+exactly that and was still going after ten minutes, which looked like
+hangs until the process list showed the loop blocked on a pipe with no
+children. The watcher now traps its termination and kills its own
+`sleep`, and a captured run returns in 0.22 s with nothing left behind.
+
+Then the reproduction attempt, against three guesses. The VM had booted
+a minute before the first run, so the first launch after a fresh boot
+was tried first: it passed in 0.25 s. After that, 100 plain runs, 20
+with the user's fontconfig cache deleted before each, and 20 with both
+cores busy: 140 passes, mean 0.17, 0.16 and 0.35 s, slowest 0.43 s.
+Clearing the user font cache made no difference, which suggests the
+system cache under `/var/cache` serves the fonts; that one needs root,
+so it was not cleared. The hang stays open, and the next occurrence in
+the suite will now arrive with its process tree.
+
+`prlctl exec` failed now and then during this with `PrlJob_GetResult:
+Invalid argument` and ran nothing, including once on a command that
+should have stopped the loop, which is why the loop outlived its first
+stop. Rerunning the same kind of command worked; no pattern was pinned
+down.
+
+---
+
+## 2026-09-27 (1): A check that keeps the escapes
 
 Yesterday's postmortem ended with half of its lesson unapplied: the
 missing cursor escape was fixed, but nothing in the suites could see

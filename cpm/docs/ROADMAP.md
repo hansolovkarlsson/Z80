@@ -97,10 +97,14 @@ Aspirational, not yet scoped:
   window would take over the desktop. **One hang is unexplained**: the
   first run of that check by hand in the guest waited out its whole
   30-second timeout with no text written, before any stale binary could
-  have been involved (see `docs/JOURNAL.md`, 2026-09-26 (1)). About 25
-  runs since, by hand and in the suite, have all finished in about
-  155 ms. If it recurs, capture the process tree and whether `bin/z80`
-  was spawned before the timeout fires.
+  have been involved (see `docs/JOURNAL.md`, 2026-09-26 (1)). It has not
+  recurred in about 170 runs since, including 140 in a loop on 2026-09-27
+  (plain, with the user font cache cleared before each, and with both
+  cores busy) and the first launch after a fresh boot; all finished in
+  under half a second. The check now records the process tree itself if a
+  run is still going at 25 s, so a recurrence in the suite says whether
+  `bin/z80` was spawned and what each process was waiting in. Nothing
+  more to do until it recurs.
   Windows needs a real console layer in place of `termios`/`select()`,
   or a POSIX environment such as MSYS2.
 - A custom ROM/OS on top of it — open design questions include a stack VM

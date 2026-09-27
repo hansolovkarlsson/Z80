@@ -389,14 +389,32 @@ open:   db 'TAIL[$'
 close:  db ']', 13, 10, '$'
 EOF
     "$Z80ASM" "$dir/tail.asm" -o "$dir/sub/tail.com" > /dev/null 2>&1
+    # One run hung for the whole timeout on 2026-09-26 and has not
+    # recurred (cpm/docs/ROADMAP.md). A normal run takes about 155 ms, so a
+    # run still going at 25 s is that hang: the watcher records the
+    # process tree while it is still stuck, which says whether bin/z80
+    # was ever spawned and what each process was waiting in.
+    # The watcher kills its own sleep when it is killed: an orphaned sleep
+    # holds whatever pipe this suite's output goes to for the rest of its
+    # 25 s, which made every run captured by $(...) take 25 s.
+    rm -f "$dir/ps.txt"
+    (sleep 25 & nap=$!
+     trap 'kill $nap; exit' TERM
+     wait $nap
+     ps -e --forest -o pid,ppid,stat,etime,wchan:24,args |
+         grep -E 'PID|timeout 30|xvfb-run|Xvfb|bin/z80' | grep -v grep > "$dir/ps.txt") > /dev/null 2>&1 &
+    local watcher=$!
     out=$(cd "$dir" && Z80_GTK_TEXT_FILE="$dir/text.txt" \
           timeout 30 xvfb-run -a "$gtk" sub/tail.com hello there 2>&1)
-    local status=$? text
+    local status=$? text tree=""
+    kill "$watcher" 2> /dev/null
+    wait "$watcher" 2> /dev/null
     text=$(cat "$dir/text.txt" 2>/dev/null)
+    [ -s "$dir/ps.txt" ] && tree=$'\nProcesses at 25 s, while hung:\n'"$(cat "$dir/ps.txt")"
     reasons="$([ "$status" -eq 0 ] || echo "    expected the window to quit by itself (exit status $status)")
 $(want "$text" "TAIL[ HELLO THERE]" "the program's command tail in the terminal")
 $(want "$text" "Program terminated normally" "bin/z80's closing line in the terminal")"
-    report "z80-gtk" "$(printf '%s' "$reasons" | grep .)" "$text"$'\n'"$out"
+    report "z80-gtk" "$(printf '%s' "$reasons" | grep .)" "$text"$'\n'"$out$tree"
 }
 
 TEST_INTERRUPTS="$ROOT/bin/z80-test-interrupts"
