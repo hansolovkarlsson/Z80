@@ -81,13 +81,6 @@ Aspirational, not yet scoped:
   logging the PC of every read in a range, which answered in one run.
   A read form of `w` would make that a debugger command; worth adding
   if the need comes up again.
-- **No check asserts on terminal state.** `scripts/ptysession.py` strips
-  ANSI escapes before a check sees the output, so the ABC machines'
-  never-hidden terminal cursor survived six weeks and three targets
-  (see [the postmortem](../../docs/postmortems/2026-09-26-two-cursors-and-a-check-that-strips-escapes.md)).
-  A raw mode for it, and a check per `--interactive` machine that the
-  cursor is hidden at the start and shown at quit (and shown at a
-  `--debug` prompt), would make the next missing escape fail a run.
 - **More machine targets, such as the ZX Spectrum.** It is Z80-based, so it
   would link `z80core/` the way the three ABC targets do rather than
   bringing a core of its own, which is what keeps it in this repo, unlike

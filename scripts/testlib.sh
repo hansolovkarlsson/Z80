@@ -115,6 +115,24 @@ tl_note() {
     tl_reasons="${tl_reasons}    $1"$'\n'
 }
 
+# tl_cursor_states <raw-output>
+# From scripts/ptysession.py --raw output, prints the terminal cursor's
+# state at each mark and at the end: "running=hidden prompt=shown
+# end=shown". A terminal starts with its cursor shown, and only the
+# escapes decide it after that, so this is what the user would have seen
+# at each moment, not what the machine drew into its own screen. The
+# default ptysession output strips those escapes, which is how the ABC
+# machines never hid the terminal's cursor for six weeks
+# (docs/postmortems/2026-09-26-two-cursors-and-a-check-that-strips-escapes.md).
+tl_cursor_states() {
+    printf '%s\n' "$1" | grep -oE '\\e\[\?25[lh]|\{mark:[A-Za-z0-9_-]+\}' | awk '
+        BEGIN { state = "shown"; sep = "" }
+        /25l$/ { state = "hidden"; next }
+        /25h$/ { state = "shown"; next }
+        { name = substr($0, 7, length($0) - 7); printf "%s%s=%s", sep, name, state; sep = " " }
+        END { printf "%send=%s\n", sep, state }'
+}
+
 # tl_end [context]
 # Emits the single PASS/FAIL line. On failure, prints the collected
 # reasons and, if given, a context block (typically the captured output)

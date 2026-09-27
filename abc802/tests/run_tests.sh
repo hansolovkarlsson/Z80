@@ -846,4 +846,24 @@ tl_begin "debugger-f12"
 tl_want "$out" "[stopped]" "F12 stopping a running program at the prompt"
 tl_end "$out"
 
+# The terminal's own cursor, as against the one the machine draws into its
+# screen. It must be hidden while the machine runs, shown at a debugger
+# prompt (something is typed there), hidden again on resuming, and shown
+# once the session quits, so the shell gets it back. Only the escapes decide
+# that, so this reads ptysession's --raw output; the default strips them,
+# and with it the six weeks the cursor was never hidden at all
+# (docs/postmortems/2026-09-26-two-cursors-and-a-check-that-strips-escapes.md).
+# The second run is the same session without a debugger, the ordinary one.
+out=$(cd "$ROOT" && python3 "$ROOT/scripts/ptysession.py" --raw \
+      'wait:1,mark:running,key:1d,wait:0.5,mark:prompt,text:c,wait:0.5,mark:resumed,key:1c' \
+      -- "$ABC802" --interactive --symbols "$ROOT/abc802/resources/rom/abc802.sym" 2>&1)
+plain=$(cd "$ROOT" && python3 "$ROOT/scripts/ptysession.py" --raw \
+      'wait:1,mark:running,key:1c' -- "$ABC802" --interactive 2>&1)
+tl_begin "terminal-cursor"
+tl_want_eq "$(tl_cursor_states "$out")" "running=hidden prompt=shown resumed=hidden end=shown" \
+    "the cursor's state through a debugger stop"
+tl_want_eq "$(tl_cursor_states "$plain")" "running=hidden end=shown" \
+    "the cursor's state through a session without the debugger"
+tl_end "$out"
+
 tl_summary "abc802"

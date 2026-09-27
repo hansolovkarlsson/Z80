@@ -1431,6 +1431,30 @@ detail is in `docs/JOURNAL.md` under that date).
   the array, now fixed.
 - The start-up `Gdk-WARNING` about a skipped frame is GTK's own.
 
+### Checks on the terminal's own state (2026-09-27)
+
+The ABC machines never hid the terminal's cursor for six weeks, and no
+check could have seen it: `scripts/ptysession.py` strips ANSI escapes,
+and what a terminal shows is decided by exactly those escapes (see the
+2026-09-26 postmortem). The fix went in on 2026-09-26; this is the check.
+
+`ptysession.py --raw` strips nothing. It prints control bytes visibly
+(`\e`, `\r`, `\xHH`) and writes each `mark:NAME` step into the output as
+`{mark:NAME}` at the point the command's output had reached, so a check
+can ask what the terminal had been told by a given moment.
+`tl_cursor_states` in `scripts/testlib.sh` turns that into the cursor's
+state at each mark and at the end, starting from shown, as a terminal
+does.
+
+`terminal-cursor` in each ABC suite runs two sessions. With the debugger,
+Ctrl-], `c`, then Ctrl-\, the cursor must go `running=hidden
+prompt=shown resumed=hidden end=shown`. Without it, just Ctrl-\, it must
+go `running=hidden end=shown`. Each of the three escapes was removed in
+turn and the check failed naming it: the hide at start on the ABC802
+(`running=shown`), the show at exit on the ABC806 (`end=hidden`), and the
+debugger prompt's show in `debug/src/debug.c`, run on the ABC80
+(`prompt=hidden`).
+
 ## Linux: builds and passes (2026-09-25)
 
 The tree was built and tested on Ubuntu 24.04.4 (ARM64, GCC 13.3) in a

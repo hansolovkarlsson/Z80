@@ -27,8 +27,12 @@ outside the one place it was first needed lives here instead.
   pipe cannot test: a program in raw mode that takes its interrupt
   character from the terminal, as the ABC machines' `--interactive` does
   with Ctrl-] under the debugger. The three `debugger-interactive` checks
-  use it. Usage: `python3 scripts/ptysession.py STEPS -- COMMAND [ARG...]`;
-  its header comment lists the steps.
+  use it. `--raw` keeps the escapes (made visible) and writes each mark
+  into the output where it fell, for checks on what the terminal was told
+  rather than what it printed; the three `terminal-cursor` checks use it,
+  through `tl_cursor_states` in `testlib.sh`. Usage:
+  `python3 scripts/ptysession.py [--raw] STEPS -- COMMAND [ARG...]`; its
+  header comment lists the steps.
 - **`pngart.py`** — print a rectangle of a PNG as ASCII art, one character
   per pixel, distinct colours as distinct characters with a legend. The
   counterpart to `abc80/tests/litpix.py`, which *counts* lit pixels: a

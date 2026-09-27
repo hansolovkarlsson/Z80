@@ -21,6 +21,34 @@ strung out with "later still"; the file itself stays newest-first.
 
 ---
 
+## 2026-09-27: A check that keeps the escapes
+
+Yesterday's postmortem ended with half of its lesson unapplied: the
+missing cursor escape was fixed, but nothing in the suites could see
+terminal state, so the next missing escape would survive the same way.
+This closes that half.
+
+The choice was where to look. Rewriting the pty helper's default would
+have changed what every existing live-session check reads, so the raw
+view is an option, `--raw`, and the existing checks are untouched. The
+first shape considered was a count of hide and show escapes, but a count
+cannot say *when*, and the debugger prompt's case is entirely about when:
+the cursor must be shown while the prompt reads and hidden again after.
+So each `mark:` step is written into the raw output where the command's
+output had reached, and `tl_cursor_states` replays the escapes up to each
+mark. The answer is one string per session, which makes a failure read as
+the state that was wrong rather than as a mismatched count.
+
+Each of the three escapes was removed in turn, one per machine so each
+suite was seen to fail, and each failure named the moment it broke. One
+detail from the ABC802 injection: with only the machine's hide removed,
+the cursor still reads hidden after resuming from the prompt, because the
+machine still tells the debugger it hid it and the debugger hides it on
+the way out. The check caught it anyway, at `running`. Suite totals are
+now 159 passed, 0 failed, 1 skipped on the Mac.
+
+---
+
 ## 2026-09-26 (6): A second Linux host, over ssh
 
 The afternoon tried handing this project to another machine rather than

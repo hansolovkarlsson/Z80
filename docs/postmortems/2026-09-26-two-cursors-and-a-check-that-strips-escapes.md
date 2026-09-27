@@ -63,6 +63,10 @@ For the class, only half has changed. The byte order was verified with
 a raw pty capture that did not strip escapes, written in a scratch
 directory for the purpose; no check in the suites asserts on terminal
 state yet, so the next missing escape would survive the same way. That
-check is on the CP/M roadmap. And when a symptom is reported from a
+check is on the CP/M roadmap. **Added 2026-09-27:** it now exists.
+`scripts/ptysession.py --raw` keeps the escapes, and `terminal-cursor` in
+each ABC suite asserts the cursor is hidden while running, shown at a
+debugger prompt, hidden on resuming and shown at quit; removing each of
+the three escapes in turn failed it. And when a symptom is reported from a
 place that cannot be observed here, ask for a description before
 shelving it or guessing at it: here it was the whole diagnosis.
